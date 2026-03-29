@@ -213,6 +213,10 @@ class DiscoverFragment : Fragment() {
 					item = selectedItem!!,
 					tentacleRepository = tentacleRepository,
 					onDismiss = { selectedItem = null },
+					onNavigateToItem = { itemId ->
+						selectedItem = null
+						navigationRepository.navigate(Destinations.itemDetails(itemId))
+					},
 				)
 			}
 		}
@@ -429,6 +433,7 @@ private fun DiscoverDetailDialog(
 	item: DiscoverItem,
 	tentacleRepository: TentacleRepository,
 	onDismiss: () -> Unit,
+	onNavigateToItem: (java.util.UUID) -> Unit = {},
 ) {
 	var detail by remember { mutableStateOf<DiscoverDetail?>(null) }
 	var isLoadingDetail by remember { mutableStateOf(true) }
@@ -662,8 +667,7 @@ private fun DiscoverDetailDialog(
 													item.title, item.year, item.mediaType
 												)
 												if (itemId != null) {
-													selectedItem = null
-													navigationRepository.navigate(Destinations.itemDetails(itemId))
+													onNavigateToItem(itemId)
 												} else {
 													addStatus = "Could not find item in library"
 												}

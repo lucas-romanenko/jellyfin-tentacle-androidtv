@@ -62,7 +62,7 @@ import kotlinx.coroutines.launch
 import org.jellyfin.androidtv.data.repository.DiscoverDetail
 import org.jellyfin.androidtv.data.repository.DiscoverItem
 import org.jellyfin.androidtv.data.repository.DiscoverSection
-import org.jellyfin.androidtv.data.repository.MediaHubRepository
+import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
 import org.jellyfin.androidtv.ui.base.button.Button
@@ -73,7 +73,7 @@ import org.jellyfin.androidtv.ui.shared.toolbar.MainToolbarActiveButton
 import org.koin.android.ext.android.inject
 
 class DiscoverFragment : Fragment() {
-	private val mediaHubRepository by inject<MediaHubRepository>()
+	private val tentacleRepository by inject<TentacleRepository>()
 
 	override fun onCreateView(
 		inflater: LayoutInflater,
@@ -95,7 +95,7 @@ class DiscoverFragment : Fragment() {
 			val contentFocusRequester = remember { FocusRequester() }
 
 			LaunchedEffect(Unit) {
-				sections = mediaHubRepository.getDiscoverSections()
+				sections = tentacleRepository.getDiscoverSections()
 				isLoading = false
 			}
 
@@ -127,7 +127,7 @@ class DiscoverFragment : Fragment() {
 								isSearching = true
 								hasSearched = true
 								scope.launch {
-									searchResults = mediaHubRepository.searchDiscover(searchQuery)
+									searchResults = tentacleRepository.searchDiscover(searchQuery)
 									isSearching = false
 									try {
 										contentFocusRequester.requestFocus()
@@ -208,7 +208,7 @@ class DiscoverFragment : Fragment() {
 			if (selectedItem != null) {
 				DiscoverDetailDialog(
 					item = selectedItem!!,
-					mediaHubRepository = mediaHubRepository,
+					tentacleRepository = tentacleRepository,
 					onDismiss = { selectedItem = null },
 				)
 			}
@@ -424,7 +424,7 @@ private fun DiscoverCard(
 @Composable
 private fun DiscoverDetailDialog(
 	item: DiscoverItem,
-	mediaHubRepository: MediaHubRepository,
+	tentacleRepository: TentacleRepository,
 	onDismiss: () -> Unit,
 ) {
 	var detail by remember { mutableStateOf<DiscoverDetail?>(null) }
@@ -435,7 +435,7 @@ private fun DiscoverDetailDialog(
 	val buttonFocusRequester = remember { FocusRequester() }
 
 	LaunchedEffect(item.tmdbId) {
-		detail = mediaHubRepository.getDiscoverDetail(item.mediaType, item.tmdbId)
+		detail = tentacleRepository.getDiscoverDetail(item.mediaType, item.tmdbId)
 		isLoadingDetail = false
 	}
 
@@ -658,7 +658,7 @@ private fun DiscoverDetailDialog(
 												isAdding = true
 												addStatus = null
 												scope.launch {
-													val result = mediaHubRepository.addToRadarr(item.tmdbId)
+													val result = tentacleRepository.addToRadarr(item.tmdbId)
 													isAdding = false
 													addStatus = when {
 														result.error != null -> "Error: ${result.error}"
@@ -687,7 +687,7 @@ private fun DiscoverDetailDialog(
 												isAdding = true
 												addStatus = null
 												scope.launch {
-													val result = mediaHubRepository.addToSonarr(item.tmdbId)
+													val result = tentacleRepository.addToSonarr(item.tmdbId)
 													isAdding = false
 													addStatus = when {
 														result.error != null -> "Error: ${result.error}"

@@ -30,8 +30,8 @@ class UserSettingPreferences(
 		val homesection9 = enumPreference("homesection9", HomeSectionType.NONE)
 
 		/**
-		 * Unified home row order mixing MediaHub rows and built-in sections.
-		 * Format: comma-separated entries, each prefixed with "mh:" (MediaHub playlist ID)
+		 * Unified home row order mixing Tentacle rows and built-in sections.
+		 * Format: comma-separated entries, each prefixed with "mh:" (Tentacle playlist ID)
 		 * or "bt:" (built-in section serializedName). Empty string = not configured (use defaults).
 		 */
 		val homeUnifiedOrder = stringPreference("homeUnifiedOrder", "")

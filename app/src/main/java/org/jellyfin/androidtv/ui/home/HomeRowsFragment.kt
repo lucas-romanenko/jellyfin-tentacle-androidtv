@@ -31,7 +31,7 @@ import org.jellyfin.androidtv.constant.CustomMessage
 import org.jellyfin.androidtv.constant.HomeSectionType
 import org.jellyfin.androidtv.data.model.DataRefreshService
 import org.jellyfin.androidtv.data.repository.CustomMessageRepository
-import org.jellyfin.androidtv.data.repository.MediaHubRepository
+import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.data.repository.NotificationsRepository
 import org.jellyfin.androidtv.data.repository.UserViewsRepository
 import org.jellyfin.androidtv.data.service.BackgroundService
@@ -73,7 +73,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val navigationRepository by inject<NavigationRepository>()
 	private val itemLauncher by inject<ItemLauncher>()
 	private val keyProcessor by inject<KeyProcessor>()
-	private val mediaHubRepository by inject<MediaHubRepository>()
+	private val tentacleRepository by inject<TentacleRepository>()
 
 	private val helper by lazy { HomeFragmentHelper(requireContext(), userRepository) }
 
@@ -120,26 +120,26 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// Check for coroutine cancellation
 			if (!isActive) return@launch
 
-			// Try to load MediaHub sections (playlists + built-in Jellyfin sections).
-			// The MediaHub dashboard controls the full row order including built-in sections.
-			val mediaHubAvailable = mediaHubRepository.checkAvailable()
-			var allSections: List<org.jellyfin.androidtv.data.repository.MediaHubSection> = emptyList()
-			var mediaHubRowData: List<MediaHubRowData> = emptyList()
+			// Try to load Tentacle sections (playlists + built-in Jellyfin sections).
+			// The Tentacle dashboard controls the full row order including built-in sections.
+			val tentacleAvailable = tentacleRepository.checkAvailable()
+			var allSections: List<org.jellyfin.androidtv.data.repository.TentacleSection> = emptyList()
+			var tentacleRowData: List<TentacleRowData> = emptyList()
 
-			if (mediaHubAvailable) {
-				val sectionsResponse = mediaHubRepository.getSections()
+			if (tentacleAvailable) {
+				val sectionsResponse = tentacleRepository.getSections()
 				if (sectionsResponse != null) {
 					allSections = sectionsResponse.sections.filter { it.type == "row" || it.type == "builtin" }
 
 					// Pre-fetch playlist row items in parallel
-					mediaHubRowData = allSections
+					tentacleRowData = allSections
 						.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }
 						.map { section ->
 							async {
-								MediaHubRowData(
+								TentacleRowData(
 									title = section.displayText,
 									playlistId = section.playlistId!!,
-									items = mediaHubRepository.getSectionItems(section.playlistId),
+									items = tentacleRepository.getSectionItems(section.playlistId),
 								)
 							}
 						}
@@ -150,15 +150,15 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			if (allSections.isNotEmpty()) {
 				// Dashboard controls row order: render sections in API order
-				val mediaHubMap = mediaHubRowData.associateBy { it.playlistId }
+				val tentacleMap = tentacleRowData.associateBy { it.playlistId }
 
 				for (section in allSections) {
 					if (!isActive) return@launch
 					when (section.type) {
 						"row" -> {
 							val playlistId = section.playlistId ?: continue
-							mediaHubMap[playlistId]?.let { data ->
-								rows.add(HomeFragmentMediaHubRow(listOf(data)))
+							tentacleMap[playlistId]?.let { data ->
+								rows.add(HomeFragmentTentacleRow(listOf(data)))
 							}
 						}
 						"builtin" -> {
@@ -168,7 +168,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					}
 				}
 			} else {
-				// Fallback: no MediaHub config — use local Jellyfin preferences
+				// Fallback: no Tentacle config — use local Jellyfin preferences
 				for (section in homesections) when (section) {
 					HomeSectionType.LATEST_MEDIA -> rows.add(helper.loadRecentlyAdded(userViewsRepository.views.first()))
 					HomeSectionType.LIBRARY_TILES_SMALL -> rows.add(HomeFragmentViewsRow(small = false))
@@ -182,7 +182,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						rows.add(liveTVRow)
 						rows.add(helper.loadOnNow())
 					}
-					HomeSectionType.MEDIAHUB -> Unit
+					HomeSectionType.TENTACLE -> Unit
 					HomeSectionType.NONE -> Unit
 				}
 			}

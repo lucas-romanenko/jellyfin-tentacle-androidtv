@@ -13,12 +13,12 @@ fun SettingsHomeScreen() {
 			ListSection(
 				overlineContent = { Text("HOME SCREEN") },
 				headingContent = { Text("Configuration") },
-				captionContent = { Text("The home screen layout is managed from the MediaHub dashboard. Changes made there apply to all clients.") },
+				captionContent = { Text("The home screen layout is managed from the Tentacle dashboard. Changes made there apply to all clients.") },
 			)
 		}
 
 		item {
-			ListMessage { Text("Use the MediaHub dashboard to configure hero spotlight, playlist rows, and Jellyfin sections (Continue Watching, Next Up, etc.)") }
+			ListMessage { Text("Use the Tentacle dashboard to configure hero spotlight, playlist rows, and Jellyfin sections (Continue Watching, Next Up, etc.)") }
 		}
 	}
 }

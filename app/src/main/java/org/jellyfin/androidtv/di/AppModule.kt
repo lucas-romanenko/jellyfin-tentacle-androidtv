@@ -22,7 +22,7 @@ import org.jellyfin.androidtv.data.repository.CustomMessageRepository
 import org.jellyfin.androidtv.data.repository.CustomMessageRepositoryImpl
 import org.jellyfin.androidtv.data.repository.ExternalAppRepository
 import org.jellyfin.androidtv.data.repository.ItemMutationRepository
-import org.jellyfin.androidtv.data.repository.MediaHubRepository
+import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.data.repository.ItemMutationRepositoryImpl
 import org.jellyfin.androidtv.data.repository.NotificationsRepository
 import org.jellyfin.androidtv.data.repository.NotificationsRepositoryImpl
@@ -144,11 +144,11 @@ val appModule = module {
 	single<MediaSegmentRepository> { MediaSegmentRepositoryImpl(get(), get()) }
 	single<ExternalAppRepository> { ExternalAppRepository(get()) }
 
-	// MediaHub plugin integration
+	// Tentacle plugin integration
 	single {
 		val okHttpFactory = get<OkHttpFactory>()
 		val httpClientOptions = get<HttpClientOptions>()
-		MediaHubRepository(get(), get(), okHttpFactory.createClient(httpClientOptions))
+		TentacleRepository(get(), get(), okHttpFactory.createClient(httpClientOptions))
 	}
 
 	viewModel { StartupViewModel(get(), get(), get(), get()) }

@@ -16,17 +16,17 @@ import org.jellyfin.sdk.model.api.BaseItemDtoQueryResult
 import timber.log.Timber
 
 /**
- * Repository for communicating with the MediaHub Jellyfin plugin endpoints.
+ * Repository for communicating with the Tentacle Jellyfin plugin endpoints.
  *
- * The MediaHub plugin exposes custom API endpoints on the Jellyfin server:
- * - GET /MediaHubHome/Sections?userId={userId} — list of home screen sections
- * - GET /MediaHubHome/Section/{playlistId}?userId={userId} — items for a section
- * - GET /MediaHubHome/Hero?userId={userId} — hero/spotlight items
+ * The Tentacle plugin exposes custom API endpoints on the Jellyfin server:
+ * - GET /TentacleHome/Sections?userId={userId} — list of home screen sections
+ * - GET /TentacleHome/Section/{playlistId}?userId={userId} — items for a section
+ * - GET /TentacleHome/Hero?userId={userId} — hero/spotlight items
  *
  * These endpoints return standard Jellyfin BaseItemDto objects, so the existing
  * CardPresenter and item navigation work without modification.
  */
-class MediaHubRepository(
+class TentacleRepository(
 	private val api: ApiClient,
 	private val userRepository: UserRepository,
 	private val httpClient: OkHttpClient,
@@ -38,7 +38,7 @@ class MediaHubRepository(
 	}
 
 	/**
-	 * Check if the MediaHub plugin is available on the server.
+	 * Check if the Tentacle plugin is available on the server.
 	 * Caches the result for the session to avoid repeated failed requests.
 	 */
 	private var availabilityChecked = false
@@ -49,22 +49,22 @@ class MediaHubRepository(
 
 		return withContext(Dispatchers.IO) {
 			try {
-				val url = buildUrl("/MediaHubHome/Sections")
+				val url = buildUrl("/TentacleHome/Sections")
 				val request = Request.Builder().url(url).get().build()
 				val response = httpClient.newCall(request).execute()
 				isAvailable = response.isSuccessful
 				availabilityChecked = true
 
 				if (isAvailable) {
-					Timber.i("MediaHub plugin detected on server")
+					Timber.i("Tentacle plugin detected on server")
 				} else {
-					Timber.i("MediaHub plugin not available (HTTP ${response.code})")
+					Timber.i("Tentacle plugin not available (HTTP ${response.code})")
 				}
 
 				response.close()
 				isAvailable
 			} catch (e: Exception) {
-				Timber.w(e, "MediaHub plugin not reachable")
+				Timber.w(e, "Tentacle plugin not reachable")
 				availabilityChecked = true
 				isAvailable = false
 				false
@@ -73,12 +73,12 @@ class MediaHubRepository(
 	}
 
 	/**
-	 * Fetch the list of home screen sections from the MediaHub plugin.
+	 * Fetch the list of home screen sections from the Tentacle plugin.
 	 * Returns null if the plugin is not available or returns an error.
 	 */
-	suspend fun getSections(): MediaHubSectionsResponse? = withContext(Dispatchers.IO) {
+	suspend fun getSections(): TentacleSectionsResponse? = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl("/MediaHubHome/Sections")
+			val url = buildUrl("/TentacleHome/Sections")
 			val request = Request.Builder().url(url).get().build()
 			val response = httpClient.newCall(request).execute()
 
@@ -90,12 +90,12 @@ class MediaHubRepository(
 			val body = response.body?.string() ?: return@withContext null
 			response.close()
 
-			val result = json.decodeFromString<MediaHubSectionsResponse>(body)
+			val result = json.decodeFromString<TentacleSectionsResponse>(body)
 			if (!result.enabled) return@withContext null
 
 			result
 		} catch (e: Exception) {
-			Timber.w(e, "Failed to fetch MediaHub sections")
+			Timber.w(e, "Failed to fetch Tentacle sections")
 			null
 		}
 	}
@@ -106,7 +106,7 @@ class MediaHubRepository(
 	 */
 	suspend fun getSectionItems(playlistId: String): List<BaseItemDto> = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl("/MediaHubHome/Section/$playlistId")
+			val url = buildUrl("/TentacleHome/Section/$playlistId")
 			val request = Request.Builder().url(url).get().build()
 			val response = httpClient.newCall(request).execute()
 
@@ -119,10 +119,10 @@ class MediaHubRepository(
 			response.close()
 
 			val result = json.decodeFromString<BaseItemDtoQueryResult>(body)
-			Timber.d("MediaHub section '$playlistId': ${result.items.size} items, first imageTags=${result.items.firstOrNull()?.imageTags}")
+			Timber.d("Tentacle section '$playlistId': ${result.items.size} items, first imageTags=${result.items.firstOrNull()?.imageTags}")
 			result.items
 		} catch (e: Exception) {
-			Timber.e(e, "Failed to fetch MediaHub section items for $playlistId")
+			Timber.e(e, "Failed to fetch Tentacle section items for $playlistId")
 			emptyList()
 		}
 	}
@@ -132,7 +132,7 @@ class MediaHubRepository(
 	 */
 	suspend fun getHeroItems(): List<BaseItemDto> = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl("/MediaHubHome/Hero")
+			val url = buildUrl("/TentacleHome/Hero")
 			val request = Request.Builder().url(url).get().build()
 			val response = httpClient.newCall(request).execute()
 
@@ -145,21 +145,21 @@ class MediaHubRepository(
 			response.close()
 
 			val result = json.decodeFromString<BaseItemDtoQueryResult>(body)
-			Timber.d("MediaHub hero: ${result.items.size} items")
+			Timber.d("Tentacle hero: ${result.items.size} items")
 			result.items
 		} catch (e: Exception) {
-			Timber.e(e, "Failed to fetch MediaHub hero items")
+			Timber.e(e, "Failed to fetch Tentacle hero items")
 			emptyList()
 		}
 	}
 
 	/**
-	 * Fetch discover sections (trending, popular, coming soon, etc.) from MediaHub.
+	 * Fetch discover sections (trending, popular, coming soon, etc.) from Tentacle.
 	 * These are TMDB-sourced items, not Jellyfin library items.
 	 */
 	suspend fun getDiscoverSections(): List<DiscoverSection> = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl("/MediaHubDiscover/Items")
+			val url = buildUrl("/TentacleDiscover/Items")
 			val request = Request.Builder().url(url).get().build()
 			val response = httpClient.newCall(request).execute()
 
@@ -174,18 +174,18 @@ class MediaHubRepository(
 			val result = json.decodeFromString<DiscoverResponse>(body)
 			result.sections
 		} catch (e: Exception) {
-			Timber.w(e, "Failed to fetch MediaHub discover sections")
+			Timber.w(e, "Failed to fetch Tentacle discover sections")
 			emptyList()
 		}
 	}
 
 	/**
-	 * Search TMDB for movies/series via MediaHub.
+	 * Search TMDB for movies/series via Tentacle.
 	 */
 	suspend fun searchDiscover(query: String, type: String = "all"): List<DiscoverItem> = withContext(Dispatchers.IO) {
 		try {
 			val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
-			val baseUrl = buildUrl("/MediaHubDiscover/Search")
+			val baseUrl = buildUrl("/TentacleDiscover/Search")
 			val url = "$baseUrl&q=$encodedQuery&type=$type"
 			val request = Request.Builder().url(url).get().build()
 			val response = httpClient.newCall(request).execute()
@@ -211,7 +211,7 @@ class MediaHubRepository(
 	 */
 	suspend fun getDiscoverDetail(mediaType: String, tmdbId: Int): DiscoverDetail? = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl("/MediaHubDiscover/Detail/$mediaType/$tmdbId")
+			val url = buildUrl("/TentacleDiscover/Detail/$mediaType/$tmdbId")
 			val request = Request.Builder().url(url).get().build()
 			val response = httpClient.newCall(request).execute()
 
@@ -231,11 +231,11 @@ class MediaHubRepository(
 	}
 
 	/**
-	 * Add a movie to Radarr via MediaHub.
+	 * Add a movie to Radarr via Tentacle.
 	 */
 	suspend fun addToRadarr(tmdbId: Int): AddResult = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl("/MediaHubDiscover/AddToRadarr")
+			val url = buildUrl("/TentacleDiscover/AddToRadarr")
 			val jsonBody = """{"tmdb_ids":[$tmdbId]}"""
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
@@ -256,11 +256,11 @@ class MediaHubRepository(
 	}
 
 	/**
-	 * Add a series to Sonarr via MediaHub.
+	 * Add a series to Sonarr via Tentacle.
 	 */
 	suspend fun addToSonarr(tmdbId: Int): AddResult = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl("/MediaHubDiscover/AddToSonarr")
+			val url = buildUrl("/TentacleDiscover/AddToSonarr")
 			val jsonBody = """{"tmdb_ids":[$tmdbId]}"""
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
@@ -281,12 +281,12 @@ class MediaHubRepository(
 	}
 
 	/**
-	 * Reorder MediaHub home screen sections.
+	 * Reorder Tentacle home screen sections.
 	 * Sends the new playlist ID order to the server via the C# plugin proxy.
 	 */
 	suspend fun reorderSections(playlistIds: List<String>): Boolean = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl("/MediaHubHome/Reorder")
+			val url = buildUrl("/TentacleHome/Reorder")
 			val orderJson = playlistIds.joinToString(",") { "\"$it\"" }
 			val jsonBody = """{"order":[$orderJson]}"""
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
@@ -294,21 +294,21 @@ class MediaHubRepository(
 			val response = httpClient.newCall(request).execute()
 			val success = response.isSuccessful
 			response.close()
-			if (success) Timber.i("MediaHub sections reordered successfully")
-			else Timber.w("MediaHub reorder failed: HTTP ${response.code}")
+			if (success) Timber.i("Tentacle sections reordered successfully")
+			else Timber.w("Tentacle reorder failed: HTTP ${response.code}")
 			success
 		} catch (e: Exception) {
-			Timber.w(e, "Failed to reorder MediaHub sections")
+			Timber.w(e, "Failed to reorder Tentacle sections")
 			false
 		}
 	}
 
 	/**
-	 * Fetch all available playlists from MediaHub (for hero picker, etc.).
+	 * Fetch all available playlists from Tentacle (for hero picker, etc.).
 	 */
-	suspend fun getAvailablePlaylists(): List<MediaHubPlaylist> = withContext(Dispatchers.IO) {
+	suspend fun getAvailablePlaylists(): List<TentaclePlaylist> = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl("/MediaHubHome/Playlists")
+			val url = buildUrl("/TentacleHome/Playlists")
 			val request = Request.Builder().url(url).get().build()
 			val response = httpClient.newCall(request).execute()
 
@@ -320,10 +320,10 @@ class MediaHubRepository(
 			val body = response.body?.string() ?: return@withContext emptyList()
 			response.close()
 
-			val result = json.decodeFromString<MediaHubPlaylistsResponse>(body)
+			val result = json.decodeFromString<TentaclePlaylistsResponse>(body)
 			result.playlists
 		} catch (e: Exception) {
-			Timber.w(e, "Failed to fetch MediaHub playlists")
+			Timber.w(e, "Failed to fetch Tentacle playlists")
 			emptyList()
 		}
 	}
@@ -331,9 +331,9 @@ class MediaHubRepository(
 	/**
 	 * Get the current hero config (which playlist is set as hero).
 	 */
-	suspend fun getHeroConfig(): MediaHubHeroConfig? = withContext(Dispatchers.IO) {
+	suspend fun getHeroConfig(): TentacleHeroConfig? = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl("/MediaHubHome/HeroConfig")
+			val url = buildUrl("/TentacleHome/HeroConfig")
 			val request = Request.Builder().url(url).get().build()
 			val response = httpClient.newCall(request).execute()
 
@@ -345,7 +345,7 @@ class MediaHubRepository(
 			val body = response.body?.string() ?: return@withContext null
 			response.close()
 
-			json.decodeFromString<MediaHubHeroConfig>(body)
+			json.decodeFromString<TentacleHeroConfig>(body)
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch hero config")
 			null
@@ -357,7 +357,7 @@ class MediaHubRepository(
 	 */
 	suspend fun setHeroPlaylist(playlistId: String): Boolean = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl("/MediaHubHome/Hero")
+			val url = buildUrl("/TentacleHome/Hero")
 			val jsonBody = """{"playlist_id":"$playlistId"}"""
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
@@ -390,13 +390,13 @@ class MediaHubRepository(
 }
 
 @Serializable
-data class MediaHubSectionsResponse(
+data class TentacleSectionsResponse(
 	val enabled: Boolean = false,
-	val sections: List<MediaHubSection> = emptyList(),
+	val sections: List<TentacleSection> = emptyList(),
 )
 
 @Serializable
-data class MediaHubSection(
+data class TentacleSection(
 	val id: String = "",
 	val type: String = "",
 	val displayText: String = "",
@@ -487,19 +487,19 @@ data class AddResult(
 )
 
 @Serializable
-data class MediaHubPlaylistsResponse(
-	val playlists: List<MediaHubPlaylist> = emptyList(),
+data class TentaclePlaylistsResponse(
+	val playlists: List<TentaclePlaylist> = emptyList(),
 )
 
 @Serializable
-data class MediaHubPlaylist(
+data class TentaclePlaylist(
 	val name: String = "",
 	@SerialName("playlist_id")
 	val playlistId: String = "",
 )
 
 @Serializable
-data class MediaHubHeroConfig(
+data class TentacleHeroConfig(
 	val enabled: Boolean = false,
 	val playlistId: String = "",
 	val displayName: String = "",

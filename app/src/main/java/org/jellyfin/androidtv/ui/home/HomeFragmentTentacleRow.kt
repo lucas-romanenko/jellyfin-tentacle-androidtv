@@ -11,14 +11,14 @@ import org.jellyfin.sdk.model.api.BaseItemDto
 import timber.log.Timber
 
 /**
- * Home screen row that displays MediaHub curated playlist content.
+ * Home screen row that displays Tentacle curated playlist content.
  *
- * Items are pre-fetched on the IO thread and passed in as [MediaHubRowData].
+ * Items are pre-fetched on the IO thread and passed in as [TentacleRowData].
  * Each entry becomes a standard Leanback ListRow with Jellyfin BaseItemDto
  * objects, so clicking items navigates to the normal detail screen.
  */
-class HomeFragmentMediaHubRow(
-	private val rowDataList: List<MediaHubRowData>,
+class HomeFragmentTentacleRow(
+	private val rowDataList: List<TentacleRowData>,
 ) : HomeFragmentRow {
 
 	override fun addToRowsAdapter(
@@ -26,6 +26,9 @@ class HomeFragmentMediaHubRow(
 		cardPresenter: CardPresenter,
 		rowsAdapter: MutableObjectAdapter<Row>,
 	) {
+		// Use a uniform poster presenter for consistent card sizing
+		val posterPresenter = CardPresenter(true, org.jellyfin.androidtv.constant.ImageType.POSTER, 150, true)
+
 		for (rowData in rowDataList) {
 			if (rowData.items.isEmpty()) continue
 
@@ -33,7 +36,7 @@ class HomeFragmentMediaHubRow(
 			val rowAdapter = ItemRowAdapter(
 				context,
 				rowData.items,
-				cardPresenter,
+				posterPresenter,
 				rowsAdapter,
 				true, // staticItems flag
 			)
@@ -44,15 +47,15 @@ class HomeFragmentMediaHubRow(
 			rowAdapter.Retrieve()
 			rowsAdapter.add(row)
 
-			Timber.d("Added MediaHub row '${rowData.title}' with ${rowData.items.size} items")
+			Timber.d("Added Tentacle row '${rowData.title}' with ${rowData.items.size} items")
 		}
 	}
 }
 
 /**
- * Pre-fetched data for a single MediaHub home screen row.
+ * Pre-fetched data for a single Tentacle home screen row.
  */
-data class MediaHubRowData(
+data class TentacleRowData(
 	val title: String,
 	val playlistId: String,
 	val items: List<BaseItemDto>,

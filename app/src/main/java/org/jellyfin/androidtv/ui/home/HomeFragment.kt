@@ -46,7 +46,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.auth.repository.ServerRepository
 import org.jellyfin.androidtv.auth.repository.SessionRepository
-import org.jellyfin.androidtv.data.repository.MediaHubRepository
+import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.data.repository.NotificationsRepository
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.navigation.Destinations
@@ -61,7 +61,7 @@ class HomeFragment : Fragment() {
 	private val sessionRepository by inject<SessionRepository>()
 	private val serverRepository by inject<ServerRepository>()
 	private val notificationRepository by inject<NotificationsRepository>()
-	private val mediaHubRepository by inject<MediaHubRepository>()
+	private val tentacleRepository by inject<TentacleRepository>()
 	private val navigationRepository by inject<NavigationRepository>()
 	private val api by inject<ApiClient>()
 
@@ -80,8 +80,8 @@ class HomeFragment : Fragment() {
 
 		LaunchedEffect(Unit) {
 			heroItems = withContext(Dispatchers.IO) {
-				if (mediaHubRepository.checkAvailable()) {
-					mediaHubRepository.getHeroItems()
+				if (tentacleRepository.checkAvailable()) {
+					tentacleRepository.getHeroItems()
 				} else {
 					emptyList()
 				}

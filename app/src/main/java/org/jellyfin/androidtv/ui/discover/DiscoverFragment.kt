@@ -685,7 +685,7 @@ private fun DiscoverDetailDialog(
 										)
 									}
 								}
-								if (item.mediaType == "movie") {
+								if (!item.inLibrary && item.mediaType == "movie") {
 									Button(
 										onClick = {
 											if (!isAdding) {
@@ -715,7 +715,7 @@ private fun DiscoverDetailDialog(
 											fontSize = 14.sp,
 										)
 									}
-								} else {
+								} else if (!item.inLibrary) {
 									Button(
 										onClick = {
 											if (!isAdding) {

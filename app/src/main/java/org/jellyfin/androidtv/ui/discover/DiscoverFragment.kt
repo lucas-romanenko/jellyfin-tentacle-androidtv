@@ -69,11 +69,14 @@ import org.jellyfin.androidtv.ui.base.button.Button
 import org.jellyfin.androidtv.ui.base.button.ButtonDefaults
 import org.jellyfin.androidtv.ui.search.composable.SearchTextInput
 import org.jellyfin.androidtv.ui.shared.toolbar.MainToolbar
+import org.jellyfin.androidtv.ui.navigation.Destinations
+import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.shared.toolbar.MainToolbarActiveButton
 import org.koin.android.ext.android.inject
 
 class DiscoverFragment : Fragment() {
 	private val tentacleRepository by inject<TentacleRepository>()
+	private val navigationRepository by inject<NavigationRepository>()
 
 	override fun onCreateView(
 		inflater: LayoutInflater,
@@ -651,6 +654,33 @@ private fun DiscoverDetailDialog(
 							Row(
 								horizontalArrangement = Arrangement.spacedBy(16.dp),
 							) {
+								if (item.inLibrary) {
+									Button(
+										onClick = {
+											scope.launch {
+												val itemId = tentacleRepository.findJellyfinItem(
+													item.title, item.year, item.mediaType
+												)
+												if (itemId != null) {
+													selectedItem = null
+													navigationRepository.navigate(Destinations.itemDetails(itemId))
+												} else {
+													addStatus = "Could not find item in library"
+												}
+											}
+										},
+										colors = ButtonDefaults.colors(
+											containerColor = Color(0xFF4CAF50),
+											contentColor = Color.White,
+										),
+										modifier = Modifier.focusRequester(buttonFocusRequester),
+									) {
+										Text(
+											text = "View in Library",
+											fontSize = 14.sp,
+										)
+									}
+								}
 								if (item.mediaType == "movie") {
 									Button(
 										onClick = {
@@ -674,7 +704,7 @@ private fun DiscoverDetailDialog(
 											containerColor = Color(0xFF2196F3),
 											contentColor = Color.White,
 										),
-										modifier = Modifier.focusRequester(buttonFocusRequester),
+										modifier = if (!item.inLibrary) Modifier.focusRequester(buttonFocusRequester) else Modifier,
 									) {
 										Text(
 											text = if (isAdding) "Adding..." else "Add to Radarr",
@@ -704,7 +734,7 @@ private fun DiscoverDetailDialog(
 											containerColor = Color(0xFF7B1FA2),
 											contentColor = Color.White,
 										),
-										modifier = Modifier.focusRequester(buttonFocusRequester),
+										modifier = if (!item.inLibrary) Modifier.focusRequester(buttonFocusRequester) else Modifier,
 									) {
 										Text(
 											text = if (isAdding) "Adding..." else "Add to Sonarr",

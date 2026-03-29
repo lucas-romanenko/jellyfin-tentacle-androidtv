@@ -286,6 +286,40 @@ class TentacleRepository(
 	}
 
 	/**
+	 * Find a Jellyfin library item by searching for its title.
+	 * Returns the item UUID if found, null otherwise.
+	 */
+	suspend fun findJellyfinItem(title: String, year: String, mediaType: String): java.util.UUID? = withContext(Dispatchers.IO) {
+		try {
+			val userId = userRepository.currentUser.value?.id ?: return@withContext null
+			val searchTerm = title
+			val includeType = if (mediaType == "series") "Series" else "Movie"
+			val itemKind = org.jellyfin.sdk.model.api.BaseItemKind.fromNameOrNull(includeType)
+
+			val result by api.itemsApi.getItems(
+				userId = userId,
+				searchTerm = searchTerm,
+				includeItemTypes = itemKind?.let(::setOf),
+				recursive = true,
+				limit = 5,
+			)
+			val items = result.items.orEmpty()
+
+			// Try exact title + year match first
+			val match = items.firstOrNull { item ->
+				val itemTitle = item.name.orEmpty()
+				val itemYear = item.productionYear?.toString() ?: ""
+				itemTitle.equals(title, ignoreCase = true) && (year.isEmpty() || itemYear == year)
+			} ?: items.firstOrNull() // Fall back to first result
+
+			match?.id
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to find Jellyfin item for '$title'")
+			null
+		}
+	}
+
+	/**
 	 * Reorder Tentacle home screen sections.
 	 * Sends the new playlist ID order to the server via the C# plugin proxy.
 	 */

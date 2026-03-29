@@ -11,8 +11,11 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.client.extensions.itemsApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemDtoQueryResult
+import org.jellyfin.sdk.model.api.BaseItemKind
+import org.jellyfin.sdk.model.api.request.GetItemsRequest
 import timber.log.Timber
 
 /**
@@ -291,19 +294,15 @@ class TentacleRepository(
 	 */
 	suspend fun findJellyfinItem(title: String, year: String, mediaType: String): java.util.UUID? = withContext(Dispatchers.IO) {
 		try {
-			val userId = userRepository.currentUser.value?.id ?: return@withContext null
-			val searchTerm = title
-			val includeType = if (mediaType == "series") "Series" else "Movie"
-			val itemKind = org.jellyfin.sdk.model.api.BaseItemKind.fromNameOrNull(includeType)
-
-			val result by api.itemsApi.getItems(
-				userId = userId,
-				searchTerm = searchTerm,
-				includeItemTypes = itemKind?.let(::setOf),
+			val itemKind = if (mediaType == "series") BaseItemKind.SERIES else BaseItemKind.MOVIE
+			val request = GetItemsRequest(
+				searchTerm = title,
+				includeItemTypes = setOf(itemKind),
 				recursive = true,
 				limit = 5,
 			)
-			val items = result.items.orEmpty()
+			val result = api.itemsApi.getItems(request).content
+			val items = result.items
 
 			// Try exact title + year match first
 			val match = items.firstOrNull { item ->

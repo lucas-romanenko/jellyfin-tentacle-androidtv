@@ -13,8 +13,8 @@ android {
 		minSdk = libs.versions.android.minSdk.get().toInt()
 		targetSdk = libs.versions.android.targetSdk.get().toInt()
 
-		// Release version
-		applicationId = namespace
+		// Unique app ID so Tentacle can coexist with official Jellyfin
+		applicationId = "org.jellyfin.tentacle"
 		versionName = project.getVersionName()
 		versionCode = getVersionCode(versionName!!)
 	}
@@ -42,9 +42,9 @@ android {
 			proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
 
 			// Set package names used in various XML files
-			resValue("string", "app_id", namespace!!)
-			resValue("string", "app_search_suggest_authority", "${namespace}.content")
-			resValue("string", "app_search_suggest_intent_data", "content://${namespace}.content/intent")
+			resValue("string", "app_id", defaultConfig.applicationId!!)
+			resValue("string", "app_search_suggest_authority", "${defaultConfig.applicationId}.content")
+			resValue("string", "app_search_suggest_intent_data", "content://${defaultConfig.applicationId}.content/intent")
 
 			// Set flavored application name
 			resValue("string", "app_name", "@string/app_name_release")

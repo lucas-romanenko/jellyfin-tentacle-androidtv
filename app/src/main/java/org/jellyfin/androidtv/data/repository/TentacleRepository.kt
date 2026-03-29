@@ -237,6 +237,7 @@ class TentacleRepository(
 		try {
 			val url = buildUrl("/TentacleDiscover/AddToRadarr")
 			val jsonBody = """{"tmdb_ids":[$tmdbId]}"""
+			Timber.d("addToRadarr: POST $url body=$jsonBody")
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
 			val response = httpClient.newCall(request).execute()
@@ -244,11 +245,15 @@ class TentacleRepository(
 			val body = response.body?.string() ?: return@withContext AddResult(error = "Empty response")
 			response.close()
 
+			Timber.d("addToRadarr: HTTP ${response.code} body=$body")
+
 			if (!response.isSuccessful) {
-				return@withContext AddResult(error = "HTTP ${response.code}")
+				return@withContext AddResult(error = "HTTP ${response.code}: $body")
 			}
 
-			json.decodeFromString<AddResult>(body)
+			val result = json.decodeFromString<AddResult>(body)
+			Timber.d("addToRadarr: parsed result added=${result.added} exists=${result.alreadyExists} failed=${result.failed} error=${result.error}")
+			result
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to add tmdb:$tmdbId to Radarr")
 			AddResult(error = e.message ?: "Unknown error")

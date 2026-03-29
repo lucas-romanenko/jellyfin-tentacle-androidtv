@@ -664,6 +664,7 @@ private fun DiscoverDetailDialog(
 														result.error != null -> "Error: ${result.error}"
 														result.added > 0 -> "Added to Radarr!"
 														result.alreadyExists > 0 -> "Already in Radarr"
+														result.failed > 0 -> "Radarr rejected the request"
 														else -> "Failed to add"
 													}
 												}
@@ -693,6 +694,7 @@ private fun DiscoverDetailDialog(
 														result.error != null -> "Error: ${result.error}"
 														result.added > 0 -> "Added to Sonarr!"
 														result.alreadyExists > 0 -> "Already in Sonarr"
+														result.failed > 0 -> "Sonarr rejected the request"
 														else -> "Failed to add"
 													}
 												}

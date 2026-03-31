@@ -50,6 +50,7 @@ enum class MainToolbarActiveButton {
 	Home,
 	Search,
 	Discover,
+	Activity,
 
 	None,
 }
@@ -134,8 +135,8 @@ private fun MainToolbar(
 					Button(
 						onClick = {
 							if (activeButton != MainToolbarActiveButton.Home) {
-								// If we're on Discover, go back to preserve Home fragment state
-								if (activeButton == MainToolbarActiveButton.Discover) {
+								// If we're on Discover/Activity, go back to preserve Home fragment state
+								if (activeButton == MainToolbarActiveButton.Discover || activeButton == MainToolbarActiveButton.Activity) {
 									navigationRepository.goBack()
 								} else {
 									navigationRepository.navigate(
@@ -165,6 +166,15 @@ private fun MainToolbar(
 						},
 						colors = if (activeButton == MainToolbarActiveButton.Discover) activeButtonColors else ButtonDefaults.colors(),
 						content = { Text(stringResource(R.string.lbl_discover)) }
+					)
+					Button(
+						onClick = {
+							if (activeButton != MainToolbarActiveButton.Activity) {
+								navigationRepository.navigate(Destinations.activity)
+							}
+						},
+						colors = if (activeButton == MainToolbarActiveButton.Activity) activeButtonColors else ButtonDefaults.colors(),
+						content = { Text(stringResource(R.string.lbl_activity)) }
 					)
 				}
 			}

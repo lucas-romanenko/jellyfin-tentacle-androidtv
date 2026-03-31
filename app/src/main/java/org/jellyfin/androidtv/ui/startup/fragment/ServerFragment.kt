@@ -107,6 +107,23 @@ class ServerFragment : Fragment() {
 
 				binding.users.isFocusable = users.any()
 				binding.noUsersWarning.isVisible = users.isEmpty()
+
+				// Center the user icons by adding start padding
+				binding.users.post {
+					val childCount = binding.users.childCount
+					if (childCount > 0) {
+						var totalWidth = 0
+						for (i in 0 until childCount) {
+							val child = binding.users.getChildAt(i)
+							totalWidth += child.width
+							if (i < childCount - 1) totalWidth += (child.layoutParams as? androidx.recyclerview.widget.RecyclerView.LayoutParams)?.marginEnd ?: 0
+						}
+						val pad = ((binding.users.width - totalWidth) / 2).coerceAtLeast(0)
+						binding.users.setPadding(pad, 0, pad, 0)
+						binding.users.clipToPadding = false
+					}
+				}
+
 				binding.root.requestFocus()
 			}.launchIn(viewLifecycleOwner.lifecycleScope)
 

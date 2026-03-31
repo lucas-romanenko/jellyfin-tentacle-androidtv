@@ -28,6 +28,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,9 +60,11 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
+import android.content.Context
 import org.jellyfin.androidtv.data.repository.DiscoverDetail
 import org.jellyfin.androidtv.data.repository.DiscoverItem
 import org.jellyfin.androidtv.data.repository.DiscoverSection
+import org.jellyfin.androidtv.data.repository.QualityProfile
 import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
@@ -442,10 +445,31 @@ private fun DiscoverDetailDialog(
 	var isAdding by remember { mutableStateOf(false) }
 	val scope = rememberCoroutineScope()
 	val buttonFocusRequester = remember { FocusRequester() }
+	val context = LocalContext.current
 
+	// Quality profiles
+	var qualityProfiles by remember { mutableStateOf<List<QualityProfile>>(emptyList()) }
+	var selectedProfileId by remember { mutableStateOf<Int?>(null) }
+
+	// Load detail + quality profiles
 	LaunchedEffect(item.tmdbId) {
 		detail = tentacleRepository.getDiscoverDetail(item.mediaType, item.tmdbId)
 		isLoadingDetail = false
+
+		// Fetch profiles based on media type
+		val profiles = if (item.mediaType == "movie") {
+			tentacleRepository.getRadarrProfiles()
+		} else {
+			tentacleRepository.getSonarrProfiles()
+		}
+		qualityProfiles = profiles
+
+		// Restore last selected profile from prefs
+		val prefKey = if (item.mediaType == "movie") "tentacle_radarr_profile" else "tentacle_sonarr_profile"
+		val prefs = context.getSharedPreferences("tentacle", Context.MODE_PRIVATE)
+		val savedId = prefs.getInt(prefKey, -1)
+		selectedProfileId = if (savedId != -1 && profiles.any { it.id == savedId }) savedId
+			else profiles.firstOrNull()?.id
 	}
 
 	// Focus the action button once detail loads
@@ -686,65 +710,92 @@ private fun DiscoverDetailDialog(
 										)
 									}
 								}
-								if (!item.inLibrary && item.mediaType == "movie") {
-									Button(
-										onClick = {
-											if (!isAdding) {
-												isAdding = true
-												addStatus = null
-												scope.launch {
-													val result = tentacleRepository.addToRadarr(item.tmdbId)
-													isAdding = false
-													addStatus = when {
-														result.error != null -> "Error: ${result.error}"
-														result.added > 0 -> "Added to Radarr!"
-														result.alreadyExists > 0 -> "Already in Radarr"
-														result.failed > 0 -> "Radarr rejected the request"
-														else -> "Failed to add"
-													}
-												}
-											}
-										},
-										colors = ButtonDefaults.colors(
-											containerColor = Color(0xFF2196F3),
-											contentColor = Color.White,
-										),
-										modifier = if (!item.inLibrary) Modifier.focusRequester(buttonFocusRequester) else Modifier,
-									) {
-										Text(
-											text = if (isAdding) "Adding..." else "Add to Radarr",
-											fontSize = 14.sp,
-										)
+								if (!item.inLibrary) {
+									// Quality profile cycling button
+									if (qualityProfiles.size > 1) {
+										val selectedName = qualityProfiles.find { it.id == selectedProfileId }?.name ?: "Default"
+										Button(
+											onClick = {
+												val currentIndex = qualityProfiles.indexOfFirst { it.id == selectedProfileId }
+												val nextIndex = (currentIndex + 1) % qualityProfiles.size
+												val nextProfile = qualityProfiles[nextIndex]
+												selectedProfileId = nextProfile.id
+												val prefKey = if (item.mediaType == "movie") "tentacle_radarr_profile" else "tentacle_sonarr_profile"
+												context.getSharedPreferences("tentacle", Context.MODE_PRIVATE)
+													.edit().putInt(prefKey, nextProfile.id).apply()
+											},
+											colors = ButtonDefaults.colors(
+												containerColor = Color(0xFF374151),
+												contentColor = Color.White,
+											),
+										) {
+											Text(
+												text = selectedName,
+												fontSize = 14.sp,
+											)
+										}
 									}
-								} else if (!item.inLibrary) {
-									Button(
-										onClick = {
-											if (!isAdding) {
-												isAdding = true
-												addStatus = null
-												scope.launch {
-													val result = tentacleRepository.addToSonarr(item.tmdbId)
-													isAdding = false
-													addStatus = when {
-														result.error != null -> "Error: ${result.error}"
-														result.added > 0 -> "Added to Sonarr!"
-														result.alreadyExists > 0 -> "Already in Sonarr"
-														result.failed > 0 -> "Sonarr rejected the request"
-														else -> "Failed to add"
+
+									if (item.mediaType == "movie") {
+										Button(
+											onClick = {
+												if (!isAdding) {
+													isAdding = true
+													addStatus = null
+													scope.launch {
+														val result = tentacleRepository.addToRadarr(item.tmdbId, selectedProfileId)
+														isAdding = false
+														addStatus = when {
+															result.error != null -> "Error: ${result.error}"
+															result.added > 0 -> "Added to Radarr!"
+															result.alreadyExists > 0 -> "Already in Radarr"
+															result.failed > 0 -> "Radarr rejected the request"
+															else -> "Failed to add"
+														}
 													}
 												}
-											}
-										},
-										colors = ButtonDefaults.colors(
-											containerColor = Color(0xFF7B1FA2),
-											contentColor = Color.White,
-										),
-										modifier = if (!item.inLibrary) Modifier.focusRequester(buttonFocusRequester) else Modifier,
-									) {
-										Text(
-											text = if (isAdding) "Adding..." else "Add to Sonarr",
-											fontSize = 14.sp,
-										)
+											},
+											colors = ButtonDefaults.colors(
+												containerColor = Color(0xFF2196F3),
+												contentColor = Color.White,
+											),
+											modifier = Modifier.focusRequester(buttonFocusRequester),
+										) {
+											Text(
+												text = if (isAdding) "Adding..." else "Add to Radarr",
+												fontSize = 14.sp,
+											)
+										}
+									} else {
+										Button(
+											onClick = {
+												if (!isAdding) {
+													isAdding = true
+													addStatus = null
+													scope.launch {
+														val result = tentacleRepository.addToSonarr(item.tmdbId, selectedProfileId)
+														isAdding = false
+														addStatus = when {
+															result.error != null -> "Error: ${result.error}"
+															result.added > 0 -> "Added to Sonarr!"
+															result.alreadyExists > 0 -> "Already in Sonarr"
+															result.failed > 0 -> "Sonarr rejected the request"
+															else -> "Failed to add"
+														}
+													}
+												}
+											},
+											colors = ButtonDefaults.colors(
+												containerColor = Color(0xFF7B1FA2),
+												contentColor = Color.White,
+											),
+											modifier = Modifier.focusRequester(buttonFocusRequester),
+										) {
+											Text(
+												text = if (isAdding) "Adding..." else "Add to Sonarr",
+												fontSize = 14.sp,
+											)
+										}
 									}
 								}
 							}

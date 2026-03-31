@@ -234,12 +234,52 @@ class TentacleRepository(
 	}
 
 	/**
+	 * Get Radarr quality profiles.
+	 */
+	suspend fun getRadarrProfiles(): List<QualityProfile> = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/RadarrProfiles")
+			val request = Request.Builder().url(url).get().build()
+			val response = httpClient.newCall(request).execute()
+			val body = response.body?.string() ?: return@withContext emptyList()
+			response.close()
+			if (!response.isSuccessful) return@withContext emptyList()
+			json.decodeFromString<List<QualityProfile>>(body)
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to fetch Radarr profiles")
+			emptyList()
+		}
+	}
+
+	/**
+	 * Get Sonarr quality profiles.
+	 */
+	suspend fun getSonarrProfiles(): List<QualityProfile> = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/SonarrProfiles")
+			val request = Request.Builder().url(url).get().build()
+			val response = httpClient.newCall(request).execute()
+			val body = response.body?.string() ?: return@withContext emptyList()
+			response.close()
+			if (!response.isSuccessful) return@withContext emptyList()
+			json.decodeFromString<List<QualityProfile>>(body)
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to fetch Sonarr profiles")
+			emptyList()
+		}
+	}
+
+	/**
 	 * Add a movie to Radarr via Tentacle.
 	 */
-	suspend fun addToRadarr(tmdbId: Int): AddResult = withContext(Dispatchers.IO) {
+	suspend fun addToRadarr(tmdbId: Int, qualityProfileId: Int? = null): AddResult = withContext(Dispatchers.IO) {
 		try {
 			val url = buildUrl("/TentacleDiscover/AddToRadarr")
-			val jsonBody = """{"tmdb_ids":[$tmdbId]}"""
+			val jsonBody = buildString {
+				append("""{"tmdb_ids":[$tmdbId]""")
+				if (qualityProfileId != null) append(""","quality_profile_id":$qualityProfileId""")
+				append("}")
+			}
 			Timber.d("addToRadarr: POST $url body=$jsonBody")
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
@@ -266,10 +306,14 @@ class TentacleRepository(
 	/**
 	 * Add a series to Sonarr via Tentacle.
 	 */
-	suspend fun addToSonarr(tmdbId: Int): AddResult = withContext(Dispatchers.IO) {
+	suspend fun addToSonarr(tmdbId: Int, qualityProfileId: Int? = null): AddResult = withContext(Dispatchers.IO) {
 		try {
 			val url = buildUrl("/TentacleDiscover/AddToSonarr")
-			val jsonBody = """{"tmdb_ids":[$tmdbId]}"""
+			val jsonBody = buildString {
+				append("""{"tmdb_ids":[$tmdbId]""")
+				if (qualityProfileId != null) append(""","quality_profile_id":$qualityProfileId""")
+				append("}")
+			}
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
 			val response = httpClient.newCall(request).execute()
@@ -537,6 +581,12 @@ data class CastMember(
 @Serializable
 data class DiscoverSearchResponse(
 	val items: List<DiscoverItem> = emptyList(),
+)
+
+@Serializable
+data class QualityProfile(
+	val id: Int = 0,
+	val name: String = "",
 )
 
 @Serializable

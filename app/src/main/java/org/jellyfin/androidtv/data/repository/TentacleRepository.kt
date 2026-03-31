@@ -412,6 +412,30 @@ class TentacleRepository(
 	}
 
 	/**
+	 * Fetch download activity (active downloads + unreleased items) from Tentacle.
+	 */
+	suspend fun getActivity(): ActivityResponse? = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/Activity")
+			val request = Request.Builder().url(url).get().build()
+			val response = httpClient.newCall(request).execute()
+
+			if (!response.isSuccessful) {
+				response.close()
+				return@withContext null
+			}
+
+			val body = response.body?.string() ?: return@withContext null
+			response.close()
+
+			json.decodeFromString<ActivityResponse>(body)
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to fetch Tentacle activity")
+			null
+		}
+	}
+
+	/**
 	 * Reset the availability cache (e.g. after server reconnect).
 	 */
 	fun resetAvailabilityCache() {
@@ -541,4 +565,46 @@ data class TentacleHeroConfig(
 	val enabled: Boolean = false,
 	val playlistId: String = "",
 	val displayName: String = "",
+)
+
+@Serializable
+data class ActivityResponse(
+	val downloads: List<ActivityDownload> = emptyList(),
+	val unreleased: List<ActivityUnreleased> = emptyList(),
+)
+
+@Serializable
+data class ActivityDownload(
+	@SerialName("tmdb_id")
+	val tmdbId: Int = 0,
+	val title: String = "",
+	val year: String = "",
+	@SerialName("poster_path")
+	val posterPath: String? = null,
+	@SerialName("media_type")
+	val mediaType: String = "movie",
+	val source: String = "",
+	val status: String = "",
+	val progress: Double = 0.0,
+	@SerialName("size_remaining")
+	val sizeRemaining: String = "",
+	val eta: String = "",
+	val quality: String = "",
+	val episode: String = "",
+)
+
+@Serializable
+data class ActivityUnreleased(
+	@SerialName("tmdb_id")
+	val tmdbId: Int = 0,
+	val title: String = "",
+	val year: String = "",
+	@SerialName("poster_path")
+	val posterPath: String? = null,
+	@SerialName("media_type")
+	val mediaType: String = "movie",
+	val source: String = "",
+	@SerialName("release_date")
+	val releaseDate: String = "",
+	val status: String = "",
 )

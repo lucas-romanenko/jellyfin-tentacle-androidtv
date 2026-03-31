@@ -59,6 +59,10 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import org.jellyfin.androidtv.data.repository.ActivityDownload
+import org.jellyfin.androidtv.data.repository.ActivityResponse
+import org.jellyfin.androidtv.data.repository.ActivityUnreleased
 import org.jellyfin.androidtv.data.repository.DiscoverDetail
 import org.jellyfin.androidtv.data.repository.DiscoverItem
 import org.jellyfin.androidtv.data.repository.DiscoverSection
@@ -88,6 +92,9 @@ class DiscoverFragment : Fragment() {
 			var isLoading by remember { mutableStateOf(true) }
 			var selectedItem by remember { mutableStateOf<DiscoverItem?>(null) }
 
+			// Activity state
+			var activity by remember { mutableStateOf<ActivityResponse?>(null) }
+
 			// Search state
 			var searchQuery by rememberSaveable { mutableStateOf("") }
 			var searchResults by remember { mutableStateOf<List<DiscoverItem>>(emptyList()) }
@@ -100,6 +107,14 @@ class DiscoverFragment : Fragment() {
 			LaunchedEffect(Unit) {
 				sections = tentacleRepository.getDiscoverSections()
 				isLoading = false
+			}
+
+			// Poll activity every 15 seconds
+			LaunchedEffect(Unit) {
+				while (true) {
+					activity = tentacleRepository.getActivity()
+					delay(15_000)
+				}
 			}
 
 			// Focus first content row after loading instead of search
@@ -183,6 +198,20 @@ class DiscoverFragment : Fragment() {
 						contentPadding = PaddingValues(bottom = 48.dp),
 						verticalArrangement = Arrangement.spacedBy(24.dp),
 					) {
+						// Downloading row
+						if (activity != null && activity!!.downloads.isNotEmpty()) {
+							item(key = "activity_downloads") {
+								ActivityDownloadsRow(downloads = activity!!.downloads)
+							}
+						}
+
+						// Upcoming row
+						if (activity != null && activity!!.unreleased.isNotEmpty()) {
+							item(key = "activity_unreleased") {
+								ActivityUnreleasedRow(unreleased = activity!!.unreleased)
+							}
+						}
+
 						// Search results section
 						if (hasSearched) {
 							item(key = "search_results") {
@@ -297,6 +326,332 @@ private fun DiscoverSectionRow(
 			items(section.items, key = { it.tmdbId }) { item ->
 				DiscoverCard(item = item, onClick = { onItemClick(item) })
 			}
+		}
+	}
+}
+
+@Composable
+private fun ActivityDownloadsRow(downloads: List<ActivityDownload>) {
+	Column(
+		modifier = Modifier.focusGroup(),
+	) {
+		Text(
+			text = "Downloading",
+			fontSize = 20.sp,
+			fontWeight = FontWeight.Bold,
+			color = Color.White,
+			modifier = Modifier.padding(start = 48.dp, bottom = 12.dp),
+		)
+
+		LazyRow(
+			contentPadding = PaddingValues(horizontal = 48.dp),
+			horizontalArrangement = Arrangement.spacedBy(16.dp),
+		) {
+			items(downloads, key = { "${it.tmdbId}_${it.episode}" }) { download ->
+				ActivityDownloadCard(download = download)
+			}
+		}
+	}
+}
+
+@Composable
+private fun ActivityDownloadCard(download: ActivityDownload) {
+	var isFocused by remember { mutableStateOf(false) }
+
+	Column(
+		modifier = Modifier
+			.width(150.dp)
+			.onFocusChanged { isFocused = it.isFocused }
+			.focusable(),
+	) {
+		Box(
+			modifier = Modifier
+				.fillMaxWidth()
+				.aspectRatio(2f / 3f)
+				.clip(RoundedCornerShape(8.dp))
+				.background(Color(0xFF1a1a2e))
+				.then(
+					if (isFocused) Modifier.border(3.dp, Color.White, RoundedCornerShape(8.dp))
+					else Modifier
+				)
+		) {
+			if (download.posterPath != null) {
+				AsyncImage(
+					model = "$TMDB_IMAGE_BASE${download.posterPath}",
+					contentDescription = download.title,
+					contentScale = ContentScale.Crop,
+					modifier = Modifier.fillMaxSize(),
+				)
+			} else {
+				Box(
+					modifier = Modifier.fillMaxSize(),
+					contentAlignment = Alignment.Center,
+				) {
+					Text(
+						text = download.title,
+						fontSize = 12.sp,
+						color = Color.White.copy(alpha = 0.5f),
+						maxLines = 2,
+						overflow = TextOverflow.Ellipsis,
+						modifier = Modifier.padding(8.dp),
+					)
+				}
+			}
+
+			// Darken bottom for progress bar readability
+			Box(
+				modifier = Modifier
+					.fillMaxWidth()
+					.height(48.dp)
+					.align(Alignment.BottomCenter)
+					.background(
+						Brush.verticalGradient(
+							colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f)),
+						)
+					)
+			)
+
+			// Progress bar at bottom
+			Column(
+				modifier = Modifier
+					.align(Alignment.BottomCenter)
+					.fillMaxWidth()
+					.padding(horizontal = 8.dp, vertical = 6.dp),
+			) {
+				// Progress percentage + ETA
+				Row(
+					modifier = Modifier.fillMaxWidth(),
+					horizontalArrangement = Arrangement.SpaceBetween,
+				) {
+					Text(
+						text = "${download.progress.toInt()}%",
+						fontSize = 10.sp,
+						color = Color.White,
+						fontWeight = FontWeight.Bold,
+					)
+					if (download.eta.isNotBlank()) {
+						Text(
+							text = download.eta,
+							fontSize = 10.sp,
+							color = Color.White.copy(alpha = 0.7f),
+						)
+					}
+				}
+
+				Spacer(modifier = Modifier.height(2.dp))
+
+				// Progress bar track
+				Box(
+					modifier = Modifier
+						.fillMaxWidth()
+						.height(4.dp)
+						.clip(RoundedCornerShape(2.dp))
+						.background(Color.White.copy(alpha = 0.2f))
+				) {
+					Box(
+						modifier = Modifier
+							.fillMaxHeight()
+							.fillMaxWidth(fraction = (download.progress / 100.0).toFloat().coerceIn(0f, 1f))
+							.clip(RoundedCornerShape(2.dp))
+							.background(Color(0xFF4CAF50))
+					)
+				}
+			}
+
+			// Status badge
+			Box(
+				modifier = Modifier
+					.align(Alignment.TopEnd)
+					.padding(6.dp)
+					.background(
+						color = when (download.status) {
+							"downloading" -> Color(0xCC4CAF50)
+							"queued" -> Color(0xCCFF9800)
+							else -> Color(0xCC757575)
+						},
+						shape = RoundedCornerShape(4.dp),
+					)
+					.padding(horizontal = 6.dp, vertical = 2.dp),
+			) {
+				Text(
+					text = download.status.replaceFirstChar { it.uppercase() },
+					fontSize = 10.sp,
+					color = Color.White,
+				)
+			}
+
+			// Focus highlight overlay
+			if (isFocused) {
+				Box(
+					modifier = Modifier
+						.fillMaxSize()
+						.background(Color.White.copy(alpha = 0.08f))
+				)
+			}
+		}
+
+		Spacer(modifier = Modifier.height(6.dp))
+
+		Text(
+			text = download.title,
+			fontSize = 13.sp,
+			fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Normal,
+			color = if (isFocused) Color.White else Color.White.copy(alpha = 0.8f),
+			maxLines = 1,
+			overflow = TextOverflow.Ellipsis,
+		)
+
+		// Quality + remaining size
+		val subtitle = buildList {
+			if (download.quality.isNotBlank()) add(download.quality)
+			if (download.sizeRemaining.isNotBlank()) add(download.sizeRemaining)
+		}.joinToString(" • ")
+
+		if (subtitle.isNotBlank()) {
+			Text(
+				text = subtitle,
+				fontSize = 11.sp,
+				color = Color.White.copy(alpha = 0.5f),
+				maxLines = 1,
+				overflow = TextOverflow.Ellipsis,
+			)
+		}
+	}
+}
+
+@Composable
+private fun ActivityUnreleasedRow(unreleased: List<ActivityUnreleased>) {
+	Column(
+		modifier = Modifier.focusGroup(),
+	) {
+		Text(
+			text = "Upcoming",
+			fontSize = 20.sp,
+			fontWeight = FontWeight.Bold,
+			color = Color.White,
+			modifier = Modifier.padding(start = 48.dp, bottom = 12.dp),
+		)
+
+		LazyRow(
+			contentPadding = PaddingValues(horizontal = 48.dp),
+			horizontalArrangement = Arrangement.spacedBy(16.dp),
+		) {
+			items(unreleased, key = { it.tmdbId }) { item ->
+				ActivityUnreleasedCard(item = item)
+			}
+		}
+	}
+}
+
+@Composable
+private fun ActivityUnreleasedCard(item: ActivityUnreleased) {
+	var isFocused by remember { mutableStateOf(false) }
+
+	Column(
+		modifier = Modifier
+			.width(150.dp)
+			.onFocusChanged { isFocused = it.isFocused }
+			.focusable(),
+	) {
+		Box(
+			modifier = Modifier
+				.fillMaxWidth()
+				.aspectRatio(2f / 3f)
+				.clip(RoundedCornerShape(8.dp))
+				.background(Color(0xFF1a1a2e))
+				.then(
+					if (isFocused) Modifier.border(3.dp, Color.White, RoundedCornerShape(8.dp))
+					else Modifier
+				)
+		) {
+			if (item.posterPath != null) {
+				AsyncImage(
+					model = "$TMDB_IMAGE_BASE${item.posterPath}",
+					contentDescription = item.title,
+					contentScale = ContentScale.Crop,
+					modifier = Modifier.fillMaxSize(),
+				)
+			} else {
+				Box(
+					modifier = Modifier.fillMaxSize(),
+					contentAlignment = Alignment.Center,
+				) {
+					Text(
+						text = item.title,
+						fontSize = 12.sp,
+						color = Color.White.copy(alpha = 0.5f),
+						maxLines = 2,
+						overflow = TextOverflow.Ellipsis,
+						modifier = Modifier.padding(8.dp),
+					)
+				}
+			}
+
+			// Release date badge
+			if (item.releaseDate.isNotBlank()) {
+				Box(
+					modifier = Modifier
+						.align(Alignment.BottomStart)
+						.padding(6.dp)
+						.background(
+							color = Color(0xCC1E88E5),
+							shape = RoundedCornerShape(4.dp),
+						)
+						.padding(horizontal = 6.dp, vertical = 2.dp),
+				) {
+					Text(
+						text = item.releaseDate,
+						fontSize = 10.sp,
+						color = Color.White,
+					)
+				}
+			}
+
+			// Media type badge
+			Box(
+				modifier = Modifier
+					.align(Alignment.TopEnd)
+					.padding(6.dp)
+					.background(
+						color = if (item.mediaType == "movie") Color(0xCC1E88E5) else Color(0xCC7B1FA2),
+						shape = RoundedCornerShape(4.dp),
+					)
+					.padding(horizontal = 6.dp, vertical = 2.dp),
+			) {
+				Text(
+					text = if (item.mediaType == "movie") "Movie" else "Series",
+					fontSize = 10.sp,
+					color = Color.White,
+				)
+			}
+
+			// Focus highlight overlay
+			if (isFocused) {
+				Box(
+					modifier = Modifier
+						.fillMaxSize()
+						.background(Color.White.copy(alpha = 0.08f))
+				)
+			}
+		}
+
+		Spacer(modifier = Modifier.height(6.dp))
+
+		Text(
+			text = item.title,
+			fontSize = 13.sp,
+			fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Normal,
+			color = if (isFocused) Color.White else Color.White.copy(alpha = 0.8f),
+			maxLines = 1,
+			overflow = TextOverflow.Ellipsis,
+		)
+
+		if (item.year.isNotBlank()) {
+			Text(
+				text = item.year,
+				fontSize = 11.sp,
+				color = Color.White.copy(alpha = 0.5f),
+			)
 		}
 	}
 }

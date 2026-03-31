@@ -55,7 +55,7 @@ private fun AppThemeBackground() {
 		Box(
 			modifier = Modifier
 				.fillMaxSize()
-				.background(Color.Black)
+				.background(Color(0xFF0F0D1A))
 		)
 	}
 }

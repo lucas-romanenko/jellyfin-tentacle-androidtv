@@ -6,7 +6,7 @@ import androidx.compose.ui.graphics.Color
 import org.jellyfin.design.Tokens
 
 fun colorScheme(): ColorScheme = ColorScheme(
-	background = Tokens.Color.colorGrey975,
+	background = Color(0xFF0F0D1A),
 	onBackground = Tokens.Color.colorBluegrey25,
 	button = Color(0xB3747474),
 	onButton = Color(0xFFDDDDDD),

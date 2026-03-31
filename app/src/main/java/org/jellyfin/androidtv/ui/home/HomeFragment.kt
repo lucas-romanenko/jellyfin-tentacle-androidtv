@@ -115,7 +115,7 @@ class HomeFragment : Fragment() {
 		}
 
 		JellyfinTheme {
-			Box(modifier = Modifier.fillMaxSize().background(Color(0xFF101010))) {
+			Box(modifier = Modifier.fillMaxSize().background(Color(0xFF0F0D1A))) {
 				// Rows layer — mounted after first hero collapse, stays alive forever
 				if (rowsShouldMount) {
 					Column(modifier = Modifier.fillMaxSize()) {

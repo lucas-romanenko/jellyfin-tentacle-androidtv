@@ -49,7 +49,7 @@ import org.jellyfin.androidtv.util.apiclient.itemBackdropImages
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemDto
 
-private val AppBackground = Color(0xFF101010)
+private val AppBackground = Color(0xFF0F0D1A)
 
 @Composable
 fun HeroSpotlight(

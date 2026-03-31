@@ -130,18 +130,19 @@ class SelectServerFragment : Fragment() {
 
 		viewLifecycleOwner.lifecycleScope.launch {
 			viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-				binding.discoveryProgressIndicator.isVisible = true
-				binding.discoveryServers.isVisible = true
-				binding.discoveryServers.isFocusable = false
-
 				startupViewModel.storedServers.onEach { servers ->
 					storedServerAdapter.items = servers.map { StatefulServer(server = it) }
 
-					binding.storedServersTitle.isVisible = servers.isNotEmpty()
-					binding.storedServers.isVisible = servers.isNotEmpty()
-					binding.storedServers.isFocusable = servers.isNotEmpty()
-					binding.welcomeTitle.isVisible = servers.isEmpty()
-					binding.welcomeContent.isVisible = servers.isEmpty()
+					// Toggle between welcome (centered) and stored servers view
+					binding.welcomeContainer.isVisible = servers.isEmpty()
+					binding.storedServersContainer.isVisible = servers.isNotEmpty()
+
+					if (servers.isNotEmpty()) {
+						// Show discovery in stored servers mode
+						binding.discoveryProgressIndicator.isVisible = true
+						binding.discoveryServers.isVisible = true
+						binding.discoveryServers.isFocusable = false
+					}
 
 					// Make sure focus is properly set when no servers exist
 					if (servers.isEmpty()) binding.enterServerAddress.requestFocus()
@@ -187,12 +188,14 @@ class SelectServerFragment : Fragment() {
 		}
 
 		// Manual
-		binding.enterServerAddress.setOnClickListener {
+		val navigateToServerAdd = View.OnClickListener {
 			parentFragmentManager.commit {
 				addToBackStack(null)
 				replace<ServerAddFragment>(R.id.content_view)
 			}
 		}
+		binding.enterServerAddress.setOnClickListener(navigateToServerAdd)
+		binding.enterServerAddressStored.setOnClickListener(navigateToServerAdd)
 
 		// App info
 		@Suppress("SetTextI18n")

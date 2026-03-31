@@ -8,9 +8,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,11 +34,11 @@ fun SplashScreen() {
 			modifier = Modifier.fillMaxSize(),
 		) {
 			Image(
-				painter = painterResource(R.drawable.app_logo),
+				painter = painterResource(R.drawable.app_logo_wide),
 				contentDescription = stringResource(R.string.app_name),
 				modifier = Modifier
-					.width(400.dp)
-					.fillMaxHeight()
+					.fillMaxWidth()
+					.padding(horizontal = 120.dp)
 			)
 		}
 	}

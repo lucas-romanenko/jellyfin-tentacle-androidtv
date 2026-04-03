@@ -480,6 +480,164 @@ class TentacleRepository(
 	}
 
 	/**
+	 * Fetch TMDB seasons for a series.
+	 */
+	suspend fun getSeasons(tmdbId: Int): SeasonsResponse? = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/Seasons/$tmdbId")
+			val request = Request.Builder().url(url).get().build()
+			val response = httpClient.newCall(request).execute()
+			if (!response.isSuccessful) { response.close(); return@withContext null }
+			val body = response.body?.string() ?: return@withContext null
+			response.close()
+			json.decodeFromString<SeasonsResponse>(body)
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to fetch seasons for tmdb:$tmdbId")
+			null
+		}
+	}
+
+	/**
+	 * Fetch TMDB episodes for a specific season.
+	 */
+	suspend fun getSeasonEpisodes(tmdbId: Int, seasonNumber: Int): List<TmdbEpisode> = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/Season/$tmdbId/$seasonNumber")
+			val request = Request.Builder().url(url).get().build()
+			val response = httpClient.newCall(request).execute()
+			if (!response.isSuccessful) { response.close(); return@withContext emptyList() }
+			val body = response.body?.string() ?: return@withContext emptyList()
+			response.close()
+			json.decodeFromString<SeasonEpisodesResponse>(body).episodes
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to fetch episodes for tmdb:$tmdbId season $seasonNumber")
+			emptyList()
+		}
+	}
+
+	/**
+	 * Fetch Sonarr episode monitoring state for a series.
+	 */
+	suspend fun getSonarrEpisodes(tmdbId: Int): SonarrEpisodesResponse = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/SonarrEpisodes/$tmdbId")
+			val request = Request.Builder().url(url).get().build()
+			val response = httpClient.newCall(request).execute()
+			if (!response.isSuccessful) { response.close(); return@withContext SonarrEpisodesResponse() }
+			val body = response.body?.string() ?: return@withContext SonarrEpisodesResponse()
+			response.close()
+			json.decodeFromString<SonarrEpisodesResponse>(body)
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to fetch Sonarr episodes for tmdb:$tmdbId")
+			SonarrEpisodesResponse()
+		}
+	}
+
+	/**
+	 * Fetch VOD episodes (existing .strm files on disk) for a series.
+	 */
+	suspend fun getVodEpisodes(tmdbId: Int): VodEpisodesResponse = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/VodEpisodes/$tmdbId")
+			val request = Request.Builder().url(url).get().build()
+			val response = httpClient.newCall(request).execute()
+			if (!response.isSuccessful) { response.close(); return@withContext VodEpisodesResponse() }
+			val body = response.body?.string() ?: return@withContext VodEpisodesResponse()
+			response.close()
+			json.decodeFromString<VodEpisodesResponse>(body)
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to fetch VOD episodes for tmdb:$tmdbId")
+			VodEpisodesResponse()
+		}
+	}
+
+	/**
+	 * Toggle follow/unfollow for a series (syncs with Sonarr monitorNewItems).
+	 */
+	suspend fun toggleFollow(tmdbId: Int, follow: Boolean): FollowResult = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/Follow/$tmdbId")
+			val jsonBody = """{"follow":$follow}"""
+			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
+			val request = Request.Builder().url(url).post(requestBody).build()
+			val response = httpClient.newCall(request).execute()
+			val body = response.body?.string() ?: return@withContext FollowResult()
+			response.close()
+			if (!response.isSuccessful) return@withContext FollowResult()
+			json.decodeFromString<FollowResult>(body)
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to toggle follow for tmdb:$tmdbId")
+			FollowResult()
+		}
+	}
+
+	/**
+	 * Add a series to Sonarr with monitoring options and optional episode selection.
+	 */
+	suspend fun addToSonarrWithEpisodes(
+		tmdbId: Int,
+		qualityProfileId: Int? = null,
+		monitor: String = "all",
+		selectedEpisodes: List<SelectedEpisode>? = null,
+		autoFollow: Boolean = true,
+	): AddResult = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/AddToSonarr")
+			val jsonBody = buildString {
+				append("""{"tmdb_ids":[$tmdbId]""")
+				if (qualityProfileId != null) append(""","quality_profile_id":$qualityProfileId""")
+				append(""","monitor":"$monitor"""")
+				if (selectedEpisodes != null) {
+					append(""","selected_episodes":[""")
+					append(selectedEpisodes.joinToString(",") {
+						"""{"season":${it.season},"episode":${it.episode}}"""
+					})
+					append("]")
+				}
+				if (autoFollow) append(""","auto_follow":true""")
+				append("}")
+			}
+			Timber.d("addToSonarrWithEpisodes: POST body=$jsonBody")
+			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
+			val request = Request.Builder().url(url).post(requestBody).build()
+			val response = httpClient.newCall(request).execute()
+			val body = response.body?.string() ?: return@withContext AddResult(error = "Empty response")
+			response.close()
+			if (!response.isSuccessful) return@withContext AddResult(error = "HTTP ${response.code}: $body")
+			json.decodeFromString<AddResult>(body)
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to add tmdb:$tmdbId to Sonarr with episodes")
+			AddResult(error = e.message ?: "Unknown error")
+		}
+	}
+
+	/**
+	 * Manage episode monitoring for an existing Sonarr series.
+	 */
+	suspend fun manageEpisodes(tmdbId: Int, selectedEpisodes: List<SelectedEpisode>): ManageEpisodesResult = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/ManageEpisodes")
+			val jsonBody = buildString {
+				append("""{"tmdb_id":$tmdbId,"selected_episodes":[""")
+				append(selectedEpisodes.joinToString(",") {
+					"""{"season":${it.season},"episode":${it.episode}}"""
+				})
+				append("]}")
+			}
+			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
+			val request = Request.Builder().url(url).post(requestBody).build()
+			val response = httpClient.newCall(request).execute()
+			val body = response.body?.string() ?: return@withContext ManageEpisodesResult()
+			response.close()
+			if (!response.isSuccessful) return@withContext ManageEpisodesResult()
+			json.decodeFromString<ManageEpisodesResult>(body)
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to manage episodes for tmdb:$tmdbId")
+			ManageEpisodesResult()
+		}
+	}
+
+	/**
 	 * Reset the availability cache (e.g. after server reconnect).
 	 */
 	fun resetAvailabilityCache() {
@@ -570,6 +728,12 @@ data class DiscoverDetail(
 	val directors: List<String> = emptyList(),
 	@SerialName("media_type")
 	val mediaType: String = "movie",
+	// Series-specific fields (enriched by plugin from library endpoint)
+	val following: Boolean? = null,
+	@SerialName("series_status")
+	val seriesStatus: String? = null,
+	@SerialName("in_library")
+	val inLibrary: Boolean = false,
 )
 
 @Serializable
@@ -657,4 +821,88 @@ data class ActivityUnreleased(
 	@SerialName("release_date")
 	val releaseDate: String = "",
 	val status: String = "",
+)
+
+// --- Seasons & Episodes ---
+
+@Serializable
+data class SeasonsResponse(
+	val title: String = "",
+	val seasons: List<TmdbSeason> = emptyList(),
+)
+
+@Serializable
+data class TmdbSeason(
+	@SerialName("season_number")
+	val seasonNumber: Int? = null,
+	val name: String = "",
+	@SerialName("episode_count")
+	val episodeCount: Int = 0,
+	@SerialName("air_date")
+	val airDate: String? = null,
+	@SerialName("poster_path")
+	val posterPath: String? = null,
+)
+
+@Serializable
+data class SeasonEpisodesResponse(
+	val episodes: List<TmdbEpisode> = emptyList(),
+)
+
+@Serializable
+data class TmdbEpisode(
+	@SerialName("episode_number")
+	val episodeNumber: Int = 0,
+	val name: String = "",
+	val overview: String = "",
+	@SerialName("air_date")
+	val airDate: String? = null,
+	val runtime: Int? = null,
+	@SerialName("still_path")
+	val stillPath: String? = null,
+)
+
+@Serializable
+data class SonarrEpisodesResponse(
+	@SerialName("in_sonarr")
+	val inSonarr: Boolean = false,
+	@SerialName("sonarr_id")
+	val sonarrId: Int? = null,
+	val reason: String? = null,
+	val episodes: List<SonarrEpisode> = emptyList(),
+)
+
+@Serializable
+data class SonarrEpisode(
+	val id: Int = 0,
+	val seasonNumber: Int = 0,
+	val episodeNumber: Int = 0,
+	val monitored: Boolean = false,
+	val hasFile: Boolean = false,
+	val airDateUtc: String? = null,
+)
+
+@Serializable
+data class VodEpisodesResponse(
+	@SerialName("has_episodes")
+	val hasEpisodes: Boolean = false,
+	val episodes: Map<String, List<Int>> = emptyMap(),
+)
+
+@Serializable
+data class FollowResult(
+	val success: Boolean = false,
+	val following: Boolean = false,
+)
+
+@Serializable
+data class ManageEpisodesResult(
+	val success: Boolean = false,
+	val monitored: Int = 0,
+	val searching: Int = 0,
+)
+
+data class SelectedEpisode(
+	val season: Int,
+	val episode: Int,
 )

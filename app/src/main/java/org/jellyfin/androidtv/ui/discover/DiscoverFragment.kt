@@ -65,6 +65,7 @@ import org.jellyfin.androidtv.data.repository.DiscoverDetail
 import org.jellyfin.androidtv.data.repository.DiscoverItem
 import org.jellyfin.androidtv.data.repository.DiscoverSection
 import org.jellyfin.androidtv.data.repository.QualityProfile
+import org.jellyfin.androidtv.data.repository.SonarrEpisodesResponse
 import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
@@ -432,6 +433,16 @@ private fun DiscoverCard(
 	}
 }
 
+private data class MonitorOption(val key: String, val label: String)
+
+private val MONITOR_OPTIONS = listOf(
+	MonitorOption("all", "All Episodes"),
+	MonitorOption("firstSeason", "First Season"),
+	MonitorOption("lastSeason", "Last Season"),
+	MonitorOption("pilot", "Pilot"),
+	MonitorOption("pick", "Pick Episodes"),
+)
+
 @Composable
 private fun DiscoverDetailDialog(
 	item: DiscoverItem,
@@ -451,10 +462,27 @@ private fun DiscoverDetailDialog(
 	var qualityProfiles by remember { mutableStateOf<List<QualityProfile>>(emptyList()) }
 	var selectedProfileId by remember { mutableStateOf<Int?>(null) }
 
+	// Sonarr monitoring option (for series not in library)
+	var monitorOptionIndex by remember { mutableStateOf(0) }
+
+	// Episode picker state
+	var showEpisodePicker by remember { mutableStateOf(false) }
+	var episodePickerMode by remember { mutableStateOf(EpisodePickerMode.ADD_NEW) }
+
+	// Following state (for series in library)
+	var isFollowing by remember { mutableStateOf<Boolean?>(null) }
+	var isTogglingFollow by remember { mutableStateOf(false) }
+
+	// Sonarr state (for series in library)
+	var sonarrState by remember { mutableStateOf<SonarrEpisodesResponse?>(null) }
+
 	// Load detail + quality profiles
 	LaunchedEffect(item.tmdbId) {
 		detail = tentacleRepository.getDiscoverDetail(item.mediaType, item.tmdbId)
 		isLoadingDetail = false
+
+		// Set following state from detail enrichment
+		detail?.following?.let { isFollowing = it }
 
 		// Fetch profiles based on media type
 		val profiles = if (item.mediaType == "movie") {
@@ -470,6 +498,11 @@ private fun DiscoverDetailDialog(
 		val savedId = prefs.getInt(prefKey, -1)
 		selectedProfileId = if (savedId != -1 && profiles.any { it.id == savedId }) savedId
 			else profiles.firstOrNull()?.id
+
+		// For in-library series, check if in Sonarr
+		if (item.inLibrary && item.mediaType == "series") {
+			sonarrState = tentacleRepository.getSonarrEpisodes(item.tmdbId)
+		}
 	}
 
 	// Focus the action button once detail loads
@@ -483,7 +516,9 @@ private fun DiscoverDetailDialog(
 	}
 
 	Dialog(
-		onDismissRequest = onDismiss,
+		onDismissRequest = {
+			if (showEpisodePicker) showEpisodePicker = false else onDismiss()
+		},
 		properties = DialogProperties(
 			usePlatformDefaultWidth = false,
 		),
@@ -492,10 +527,19 @@ private fun DiscoverDetailDialog(
 			modifier = Modifier
 				.fillMaxSize()
 				.background(Color.Black.copy(alpha = 0.5f))
-				.clickable { onDismiss() }
+				.clickable(
+					interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+					indication = null,
+				) {
+					if (showEpisodePicker) showEpisodePicker = false else onDismiss()
+				}
 				.onKeyEvent { event ->
 					if (event.type == KeyEventType.KeyUp && event.key == Key.Back) {
-						onDismiss()
+						if (showEpisodePicker) {
+							showEpisodePicker = false
+						} else {
+							onDismiss()
+						}
 						true
 					} else {
 						false
@@ -509,9 +553,26 @@ private fun DiscoverDetailDialog(
 					.fillMaxHeight(0.85f)
 					.clip(RoundedCornerShape(16.dp))
 					.background(Color(0xFF1a1a2e))
-					.clickable { /* consume click to prevent dismiss */ }
+					.clickable(
+					interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+					indication = null,
+				) { /* consume click to prevent dismiss */ }
 			) {
-				if (isLoadingDetail) {
+				if (showEpisodePicker) {
+					// Episode picker replaces detail content within the same dialog
+					EpisodePickerContent(
+						tmdbId = item.tmdbId,
+						title = detail?.title ?: item.title,
+						mode = episodePickerMode,
+						qualityProfileId = selectedProfileId,
+						tentacleRepository = tentacleRepository,
+						onDismiss = { showEpisodePicker = false },
+						onComplete = { message ->
+							showEpisodePicker = false
+							addStatus = message
+						},
+					)
+				} else if (isLoadingDetail) {
 					Box(
 						modifier = Modifier.fillMaxSize(),
 						contentAlignment = Alignment.Center,
@@ -682,9 +743,12 @@ private fun DiscoverDetailDialog(
 
 							// Action buttons
 							Row(
-								horizontalArrangement = Arrangement.spacedBy(16.dp),
+								horizontalArrangement = Arrangement.spacedBy(12.dp),
 							) {
 								if (item.inLibrary) {
+									// --- In-library actions ---
+
+									// View in Library button
 									Button(
 										onClick = {
 											scope.launch {
@@ -704,13 +768,72 @@ private fun DiscoverDetailDialog(
 										),
 										modifier = Modifier.focusRequester(buttonFocusRequester),
 									) {
-										Text(
-											text = "View in Library",
-											fontSize = 14.sp,
-										)
+										Text(text = "View in Library", fontSize = 14.sp)
+									}
+
+									// Series-specific in-library actions
+									if (item.mediaType == "series") {
+										// Follow toggle (hide for ended/canceled)
+										val seriesStatus = d?.seriesStatus ?: ""
+										val isEndedOrCanceled = seriesStatus.equals("Ended", ignoreCase = true) ||
+											seriesStatus.equals("Canceled", ignoreCase = true)
+
+										if (!isEndedOrCanceled && isFollowing != null) {
+											Button(
+												onClick = {
+													if (!isTogglingFollow) {
+														isTogglingFollow = true
+														scope.launch {
+															val result = tentacleRepository.toggleFollow(
+																item.tmdbId, !(isFollowing ?: false)
+															)
+															if (result.success) {
+																isFollowing = result.following
+															}
+															isTogglingFollow = false
+														}
+													}
+												},
+												colors = ButtonDefaults.colors(
+													containerColor = if (isFollowing == true) Color(0xFF7C6AE8) else Color(0xFF374151),
+													contentColor = Color.White,
+												),
+											) {
+												Text(
+													text = when {
+														isTogglingFollow -> "..."
+														isFollowing == true -> "Following"
+														else -> "Follow"
+													},
+													fontSize = 14.sp,
+												)
+											}
+										}
+
+										// Episodes button (Manage or Download More)
+										val inSonarr = sonarrState?.inSonarr == true
+										Button(
+											onClick = {
+												episodePickerMode = if (inSonarr) EpisodePickerMode.MANAGE
+													else EpisodePickerMode.DOWNLOAD_MORE
+												showEpisodePicker = true
+											},
+											colors = ButtonDefaults.colors(
+												containerColor = Color(0xFF7B1FA2),
+												contentColor = Color.White,
+											),
+										) {
+											Text(
+												text = if (inSonarr) "Manage Episodes" else "Download More",
+												fontSize = 14.sp,
+											)
+										}
 									}
 								}
+
 								if (!item.inLibrary) {
+									// --- Not-in-library actions ---
+
 									// Quality profile cycling button
 									if (qualityProfiles.size > 1) {
 										val selectedName = qualityProfiles.find { it.id == selectedProfileId }?.name ?: "Default"
@@ -729,14 +852,12 @@ private fun DiscoverDetailDialog(
 												contentColor = Color.White,
 											),
 										) {
-											Text(
-												text = selectedName,
-												fontSize = 14.sp,
-											)
+											Text(text = selectedName, fontSize = 14.sp)
 										}
 									}
 
 									if (item.mediaType == "movie") {
+										// Add to Radarr (unchanged)
 										Button(
 											onClick = {
 												if (!isAdding) {
@@ -767,20 +888,46 @@ private fun DiscoverDetailDialog(
 											)
 										}
 									} else {
+										// Monitoring option cycling button
+										val currentOption = MONITOR_OPTIONS[monitorOptionIndex]
+										Button(
+											onClick = {
+												monitorOptionIndex = (monitorOptionIndex + 1) % MONITOR_OPTIONS.size
+											},
+											colors = ButtonDefaults.colors(
+												containerColor = Color(0xFF374151),
+												contentColor = Color.White,
+											),
+										) {
+											Text(text = "Episodes: ${currentOption.label}", fontSize = 14.sp)
+										}
+
+										// Add to Sonarr button
 										Button(
 											onClick = {
 												if (!isAdding) {
-													isAdding = true
-													addStatus = null
-													scope.launch {
-														val result = tentacleRepository.addToSonarr(item.tmdbId, selectedProfileId)
-														isAdding = false
-														addStatus = when {
-															result.error != null -> "Error: ${result.error}"
-															result.added > 0 -> "Added to Sonarr!"
-															result.alreadyExists > 0 -> "Already in Sonarr"
-															result.failed > 0 -> "Sonarr rejected the request"
-															else -> "Failed to add"
+													val option = MONITOR_OPTIONS[monitorOptionIndex]
+													if (option.key == "pick") {
+														// Open episode picker
+														episodePickerMode = EpisodePickerMode.ADD_NEW
+														showEpisodePicker = true
+													} else {
+														isAdding = true
+														addStatus = null
+														scope.launch {
+															val result = tentacleRepository.addToSonarrWithEpisodes(
+																tmdbId = item.tmdbId,
+																qualityProfileId = selectedProfileId,
+																monitor = option.key,
+															)
+															isAdding = false
+															addStatus = when {
+																result.error != null -> "Error: ${result.error}"
+																result.added > 0 -> "Added to Sonarr!"
+																result.alreadyExists > 0 -> "Already in Sonarr"
+																result.failed > 0 -> "Sonarr rejected the request"
+																else -> "Failed to add"
+															}
 														}
 													}
 												}

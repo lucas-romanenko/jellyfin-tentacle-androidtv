@@ -1,0 +1,12 @@
+package org.jellyfin.playback.media3.exoplayer
+
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+
+class ExoPlayerOptions(
+	val preferFfmpeg: () -> Boolean = { false },
+	val enableDebugLogging: () -> Boolean = { false },
+	val enableLibAssRenderer: () -> Boolean = { false },
+	val assSubtitleFontScale: () -> Float = { 1.0f },
+	val baseDataSourceFactory: DataSource.Factory = DefaultHttpDataSource.Factory(),
+)

@@ -1,0 +1,92 @@
+package org.jellyfin.androidtv.ui
+
+import android.content.Context
+import android.content.SharedPreferences
+import android.util.AttributeSet
+import android.view.LayoutInflater
+import android.widget.RelativeLayout
+import androidx.core.view.isVisible
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import org.jellyfin.androidtv.databinding.ClockUserBugBinding
+import org.jellyfin.androidtv.preference.UserPreferences
+import org.jellyfin.androidtv.preference.constant.ClockBehavior
+import org.jellyfin.androidtv.ui.navigation.Destinations
+import org.jellyfin.androidtv.ui.navigation.NavigationRepository
+import org.jellyfin.androidtv.ui.shuffle.ShuffleManager
+import org.jellyfin.androidtv.ui.shuffle.showShuffleDialog
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
+
+class ClockUserView @JvmOverloads constructor(
+	context: Context,
+	attrs: AttributeSet? = null,
+	defStyleAttr: Int = 0,
+	defStyleRes: Int = 0,
+) : RelativeLayout(context, attrs, defStyleAttr, defStyleRes), KoinComponent {
+	private val binding: ClockUserBugBinding = ClockUserBugBinding.inflate(LayoutInflater.from(context), this, true)
+	private val userPreferences by inject<UserPreferences>()
+	private val navigationRepository by inject<NavigationRepository>()
+	private val shuffleManager by inject<ShuffleManager>()
+	
+	private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+	private val preferenceChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+		if (key == UserPreferences.clockBehavior.key || key == UserPreferences.showShuffleButton.key) {
+			post { updateVisibility() }
+		}
+	}
+
+	var isVideoPlayer = false
+		set(value) {
+			field = value
+			updateVisibility()
+		}
+
+	val homeButton get() = binding.home
+	val shuffleButton get() = binding.shuffle
+
+	init {
+		updateVisibility()
+		userPreferences.registerChangeListener(preferenceChangeListener)
+
+		binding.home.setOnClickListener {
+			navigationRepository.reset(Destinations.home, clearHistory = true)
+		}
+
+		binding.shuffle.setOnClickListener {
+			scope.launch {
+				shuffleManager.quickShuffle(context)
+			}
+		}
+
+		binding.shuffle.setOnLongClickListener {
+			showShuffleDialog(context, navigationRepository)
+			true
+		}
+	}
+
+	private fun updateVisibility() {
+		val showClock = userPreferences[UserPreferences.clockBehavior]
+
+		binding.clock.isVisible = when (showClock) {
+			ClockBehavior.ALWAYS -> true
+			ClockBehavior.NEVER -> false
+			ClockBehavior.IN_VIDEO -> isVideoPlayer
+			ClockBehavior.IN_MENUS -> !isVideoPlayer
+		}
+
+		binding.home.isVisible = !isVideoPlayer
+		binding.shuffle.isVisible = !isVideoPlayer && 
+			userPreferences[UserPreferences.showShuffleButton]
+	}
+	
+	override fun onDetachedFromWindow() {
+		super.onDetachedFromWindow()
+		userPreferences.unregisterChangeListener(preferenceChangeListener)
+		scope.cancel()
+	}
+}

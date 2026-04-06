@@ -1,0 +1,45 @@
+
+# JetBrains / IDE
+*.iml
+.DS_Store
+/.idea/
+
+# Local configuration
+local.properties
+keystore.properties
+
+# Gradle
+/.gradle/
+.gradle
+gradle-app.setting
+
+# Build output
+/build/
+**/build/
+/app/build/
+build/generated/
+build/outputs/
+
+# Kotlin
+.kotlin/
+*.kotlin_module
+
+# Android Studio
+/captures/
+.externalNativeBuild/
+.cxx/
+
+# Signing
+*.keystore
+*.jks
+release.keystore
+
+# Misc
+out/
+*.log
+*.orig
+openapitools.json
+
+# Secrets / service files (uncomment if you keep these locally)
+# /google-services.json
+# /app/google-services.json

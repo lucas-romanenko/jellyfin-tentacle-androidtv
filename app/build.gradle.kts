@@ -20,7 +20,7 @@ android {
 		targetSdk = libs.versions.android.targetSdk.get().toInt()
 
 		// Release version - custom applicationId to avoid conflict with official Jellyfin
-		applicationId = "org.moonfin.androidtv"
+		applicationId = "org.jellyfin.tentacle"
 		versionName = project.getVersionName()
 		versionCode = getVersionCode(versionName!!)
 	}
@@ -57,11 +57,18 @@ android {
 			if (keystorePropertiesFile.exists()) {
 				val keystoreProperties = Properties()
 				keystoreProperties.load(FileInputStream(keystorePropertiesFile))
-				
+
 				storeFile = file(keystoreProperties["storeFile"] as String)
 				storePassword = keystoreProperties["storePassword"] as String
 				keyAlias = keystoreProperties["keyAlias"] as String
 				keyPassword = keystoreProperties["keyPassword"] as String
+			} else {
+				// Fall back to debug signing for sideloading without a keystore
+				val debugConfig = signingConfigs.getByName("debug")
+				storeFile = debugConfig.storeFile
+				storePassword = debugConfig.storePassword
+				keyAlias = debugConfig.keyAlias
+				keyPassword = debugConfig.keyPassword
 			}
 		}
 	}

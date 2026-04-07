@@ -21,6 +21,7 @@ import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.data.repository.ItemMutationRepository
 import org.jellyfin.androidtv.data.repository.MultiServerRepository
 import org.jellyfin.androidtv.data.repository.ParentalControlsRepository
+import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.UserSettingPreferences
 import org.jellyfin.sdk.api.client.ApiClient
@@ -59,6 +60,7 @@ class MediaBarSlideshowViewModel(
 	private val multiServerRepository: MultiServerRepository,
 	private val parentalControlsRepository: ParentalControlsRepository,
 	private val userPreferences: UserPreferences,
+	private val tentacleRepository: TentacleRepository,
 ) : ViewModel() {
 	private fun getConfig() = MediaBarConfig(
 		maxItems = userSettingPreferences[UserSettingPreferences.mediaBarItemCount].toIntOrNull() ?: 10
@@ -356,6 +358,68 @@ class MediaBarSlideshowViewModel(
 		try {
 			_state.value = MediaBarState.Loading
 
+			// Tentacle hero: highest priority — if plugin is available and hero is configured
+			try {
+				if (tentacleRepository.checkAvailable()) {
+					val heroItems = tentacleRepository.getHeroItems()
+					if (heroItems.isNotEmpty()) {
+						Timber.d("MediaBar: Using ${heroItems.size} Tentacle hero items")
+						serverApiClients[null] = api
+						items = heroItems.mapNotNull { item ->
+							val backdropUrl = item.backdropImageTags?.firstOrNull()?.let { tag ->
+								api.imageApi.getItemImageUrl(
+									itemId = item.id,
+									imageType = ImageType.BACKDROP,
+									tag = tag,
+									maxWidth = 1920,
+									quality = 90
+								)
+							} ?: return@mapNotNull null
+
+							val logoUrl = item.imageTags?.get(ImageType.LOGO)?.let { tag ->
+								api.imageApi.getItemImageUrl(
+									itemId = item.id,
+									imageType = ImageType.LOGO,
+									tag = tag,
+									maxWidth = 800,
+								)
+							}
+
+							MediaBarSlideItem(
+								itemId = item.id,
+								serverId = null,
+								title = item.name.orEmpty(),
+								overview = item.overview,
+								backdropUrl = backdropUrl,
+								logoUrl = logoUrl,
+								rating = item.officialRating,
+								year = item.productionYear,
+								genres = item.genres.orEmpty().take(3),
+								runtime = item.runTimeTicks?.let { ticks -> (ticks / 10000) },
+								criticRating = item.criticRating?.toInt(),
+								communityRating = item.communityRating,
+								tmdbId = item.providerIds?.get("Tmdb"),
+								imdbId = item.providerIds?.get("Imdb"),
+								itemType = item.type ?: BaseItemKind.MOVIE,
+							)
+						}
+						if (items.isNotEmpty()) {
+							_state.value = MediaBarState.Ready(items)
+							preloadAdjacentImages(0)
+							startAutoPlay()
+							startTrailerResolution(0)
+							preResolveAdjacentTrailers(0)
+							return@launch
+						}
+					} else {
+						Timber.d("MediaBar: Tentacle hero returned empty (hero disabled or no items)")
+					}
+				}
+			} catch (e: Exception) {
+				Timber.w(e, "MediaBar: Tentacle hero fetch failed, falling back")
+			}
+
+			// Moonfin plugin source (fallback if Tentacle unavailable or hero disabled)
 			val pluginSyncEnabled = userPreferences[UserPreferences.pluginSyncEnabled]
 			val mediaBarSourceType = userSettingPreferences[UserSettingPreferences.mediaBarSourceType]
 

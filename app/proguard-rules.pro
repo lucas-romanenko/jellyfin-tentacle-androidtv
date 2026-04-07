@@ -90,3 +90,34 @@
 
 # jsoup (used by Pipe Extractor)
 -dontwarn com.google.re2j.**
+
+# Tentacle plugin data classes (uses kotlinx.serialization via json.decodeFromString)
+-keep class org.jellyfin.androidtv.data.repository.TentacleRepository$* { *; }
+-keep class org.jellyfin.androidtv.data.repository.TentacleSectionsResponse { *; }
+-keep class org.jellyfin.androidtv.data.repository.TentacleSection { *; }
+-keep class org.jellyfin.androidtv.data.repository.DiscoverResponse { *; }
+-keep class org.jellyfin.androidtv.data.repository.DiscoverSection { *; }
+-keep class org.jellyfin.androidtv.data.repository.DiscoverItem { *; }
+-keep class org.jellyfin.androidtv.data.repository.DiscoverDetail { *; }
+-keep class org.jellyfin.androidtv.data.repository.DiscoverSearchResponse { *; }
+-keep class org.jellyfin.androidtv.data.repository.QualityProfile { *; }
+-keep class org.jellyfin.androidtv.data.repository.AddResult { *; }
+-keep class org.jellyfin.androidtv.data.repository.CastMember { *; }
+-keep class org.jellyfin.androidtv.data.repository.TentaclePlaylistsResponse { *; }
+-keep class org.jellyfin.androidtv.data.repository.TentaclePlaylist { *; }
+-keep class org.jellyfin.androidtv.data.repository.TentacleHeroConfig { *; }
+-keep class org.jellyfin.androidtv.data.repository.ActivityResponse { *; }
+-keep class org.jellyfin.androidtv.data.repository.ActivityDownload { *; }
+-keep class org.jellyfin.androidtv.data.repository.ActivityUnreleased { *; }
+-keep class org.jellyfin.androidtv.data.repository.SeasonsResponse { *; }
+-keep class org.jellyfin.androidtv.data.repository.TmdbSeason { *; }
+-keep class org.jellyfin.androidtv.data.repository.SeasonEpisodesResponse { *; }
+-keep class org.jellyfin.androidtv.data.repository.TmdbEpisode { *; }
+-keep class org.jellyfin.androidtv.data.repository.SonarrEpisodesResponse { *; }
+-keep class org.jellyfin.androidtv.data.repository.SonarrEpisode { *; }
+-keep class org.jellyfin.androidtv.data.repository.VodEpisodesResponse { *; }
+-keep class org.jellyfin.androidtv.data.repository.FollowResult { *; }
+-keep class org.jellyfin.androidtv.data.repository.ManageEpisodesResult { *; }
+-keep class org.jellyfin.androidtv.data.repository.QueryResultResponse { *; }
+-keep class org.jellyfin.androidtv.ui.activity.* { *; }
+-keep class org.jellyfin.androidtv.ui.discover.* { *; }

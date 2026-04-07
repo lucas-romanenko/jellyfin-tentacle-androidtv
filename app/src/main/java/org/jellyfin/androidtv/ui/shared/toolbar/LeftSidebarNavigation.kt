@@ -515,6 +515,29 @@ private fun CollapsibleSidebarContent(
 					Spacer(modifier = Modifier.height(2.dp))
 				}
 
+
+				SidebarIconItem(
+					icon = ImageVector.vectorResource(R.drawable.ic_add),
+					label = stringResource(R.string.lbl_add_media),
+					showLabel = isExpanded,
+					isExpanded = isExpanded,
+					onClick = {
+						navigationRepository.navigate(Destinations.tentacleDiscover)
+					}
+				)
+				Spacer(modifier = Modifier.height(2.dp))
+
+				SidebarIconItem(
+					icon = ImageVector.vectorResource(R.drawable.ic_down),
+					label = stringResource(R.string.lbl_downloads),
+					showLabel = isExpanded,
+					isExpanded = isExpanded,
+					onClick = {
+						navigationRepository.navigate(Destinations.tentacleActivity)
+					}
+				)
+				Spacer(modifier = Modifier.height(2.dp))
+
 				if (enableFolderView) {
 					SidebarIconItem(
 						icon = ImageVector.vectorResource(R.drawable.ic_folder),

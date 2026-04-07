@@ -94,6 +94,8 @@ enum class NavbarActiveButton {
 	Library,
 	Search,
 	Jellyseerr,
+	Discover,
+	Activity,
 
 	None,
 }
@@ -445,6 +447,24 @@ private fun Navbar(
 						colors = toolbarButtonColors,
 					)
 				}
+
+				ExpandableIconButton(
+					icon = ImageVector.vectorResource(R.drawable.ic_add),
+					label = stringResource(R.string.lbl_add_media),
+					onClick = {
+						navigationRepository.navigate(Destinations.tentacleDiscover)
+					},
+					colors = toolbarButtonColors,
+				)
+
+				ExpandableIconButton(
+					icon = ImageVector.vectorResource(R.drawable.ic_down),
+					label = stringResource(R.string.lbl_downloads),
+					onClick = {
+						navigationRepository.navigate(Destinations.tentacleActivity)
+					},
+					colors = toolbarButtonColors,
+				)
 
 				if (enableFolderView) {
 					ExpandableIconButton(

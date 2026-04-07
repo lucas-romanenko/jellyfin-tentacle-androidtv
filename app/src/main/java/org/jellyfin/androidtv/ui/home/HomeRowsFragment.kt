@@ -18,6 +18,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +39,7 @@ import org.jellyfin.androidtv.constant.QueryType
 import org.jellyfin.androidtv.data.model.DataRefreshService
 import org.jellyfin.androidtv.data.repository.CustomMessageRepository
 import org.jellyfin.androidtv.data.repository.NotificationsRepository
+import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.data.repository.UserViewsRepository
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.data.service.BlurContext
@@ -91,6 +93,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val keyProcessor by inject<KeyProcessor>()
 	private val mediaBarViewModel by inject<MediaBarSlideshowViewModel>()
 	private val themeMusicPlayer by inject<ThemeMusicPlayer>()
+	private val tentacleRepository by inject<TentacleRepository>()
 
 	private val helper by lazy { HomeFragmentHelper(requireContext(), userRepository) }
 
@@ -181,51 +184,99 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			if (userSettingPreferences[UserSettingPreferences.mediaBarEnabled]) {
 				rows.add(mediaBarRow)
 			}
-			
-			// Actually add the sections
-			val mergeContinueWatching = userPreferences[UserPreferences.mergeContinueWatchingNextUp]
-			var mergedRowAdded = false
-			
-			for (section in homesections) when (section) {
-				HomeSectionType.MEDIA_BAR -> { /* Now handled by separate toggle above */ }
-				HomeSectionType.LATEST_MEDIA -> rows.add(helper.loadRecentlyAdded(cachedViews ?: userViewsRepository.views.first()))
-				HomeSectionType.RECENTLY_RELEASED -> rows.add(helper.loadRecentlyReleased())
-				HomeSectionType.LIBRARY_TILES_SMALL -> rows.add(HomeFragmentViewsRow(small = false))
-				HomeSectionType.LIBRARY_BUTTONS -> rows.add(HomeFragmentViewsRow(small = true))
-				HomeSectionType.RESUME -> {
-					if (mergeContinueWatching && !mergedRowAdded) {
-						rows.add(helper.loadMergedContinueWatching())
-						mergedRowAdded = true
-					} else if (!mergeContinueWatching) {
-						rows.add(helper.loadResumeVideo())
-					}
-				}
-				HomeSectionType.RESUME_AUDIO -> rows.add(helper.loadResumeAudio())
-				HomeSectionType.RESUME_BOOK -> Unit // Books are not (yet) supported
-				HomeSectionType.ACTIVE_RECORDINGS -> rows.add(helper.loadLatestLiveTvRecordings())
-				HomeSectionType.NEXT_UP -> {
-					// Skip Next Up if already merged with Continue Watching
-					if (!mergeContinueWatching) {
-						rows.add(helper.loadNextUp())
-					} else if (!mergedRowAdded) {
-						// If user has Next Up but not Resume in their section list, add merged row here
-						rows.add(helper.loadMergedContinueWatching())
-						mergedRowAdded = true
-					}
-				}
-				HomeSectionType.PLAYLISTS -> {
-					val row = helper.loadPlaylists()
-					if (row is HomeFragmentPlaylistsRow) {
-						this@HomeRowsFragment.playlistsRow = row
-						rows.add(row)
-					}
-				}
-				HomeSectionType.LIVE_TV -> if (includeLiveTvRows) {
-					rows.add(liveTVRow)
-					rows.add(helper.loadOnNow())
-				}
 
-				HomeSectionType.NONE -> Unit
+			// Try to load Tentacle dashboard sections (playlists + built-in Jellyfin sections).
+			// The Tentacle dashboard controls the full row order including built-in sections.
+			val tentacleAvailable = tentacleRepository.checkAvailable()
+			var tentacleSections: List<org.jellyfin.androidtv.data.repository.TentacleSection> = emptyList()
+
+			if (tentacleAvailable) {
+				val sectionsResponse = tentacleRepository.getSections()
+				if (sectionsResponse != null) {
+					tentacleSections = sectionsResponse.sections.filter { it.type == "row" || it.type == "builtin" }
+
+					// Pre-fetch playlist row items in parallel
+					val tentacleRowData = tentacleSections
+						.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }
+						.map { section ->
+							async {
+								TentacleRowData(
+									title = section.displayText,
+									playlistId = section.playlistId!!,
+									items = tentacleRepository.getSectionItems(section.playlistId),
+								)
+							}
+						}
+						.awaitAll()
+						.filter { it.items.isNotEmpty() }
+
+					val tentacleMap = tentacleRowData.associateBy { it.playlistId }
+
+					// Render sections in dashboard order
+					for (section in tentacleSections) {
+						if (!isActive) return@launch
+						when (section.type) {
+							"row" -> {
+								val playlistId = section.playlistId ?: continue
+								tentacleMap[playlistId]?.let { data ->
+									rows.add(HomeFragmentTentacleRow(listOf(data)))
+								}
+							}
+							"builtin" -> {
+								val sectionId = section.sectionId ?: continue
+								addBuiltInSection(rows, sectionId, includeLiveTvRows, cachedViews)
+							}
+						}
+					}
+				}
+			}
+
+			// If no Tentacle dashboard, fall back to standard Moonfin home sections
+			if (tentacleSections.isEmpty()) {
+				val mergeContinueWatching = userPreferences[UserPreferences.mergeContinueWatchingNextUp]
+				var mergedRowAdded = false
+
+				for (section in homesections) when (section) {
+					HomeSectionType.MEDIA_BAR -> { /* Now handled by separate toggle above */ }
+					HomeSectionType.LATEST_MEDIA -> rows.add(helper.loadRecentlyAdded(cachedViews ?: userViewsRepository.views.first()))
+					HomeSectionType.RECENTLY_RELEASED -> rows.add(helper.loadRecentlyReleased())
+					HomeSectionType.LIBRARY_TILES_SMALL -> rows.add(HomeFragmentViewsRow(small = false))
+					HomeSectionType.LIBRARY_BUTTONS -> rows.add(HomeFragmentViewsRow(small = true))
+					HomeSectionType.RESUME -> {
+						if (mergeContinueWatching && !mergedRowAdded) {
+							rows.add(helper.loadMergedContinueWatching())
+							mergedRowAdded = true
+						} else if (!mergeContinueWatching) {
+							rows.add(helper.loadResumeVideo())
+						}
+					}
+					HomeSectionType.RESUME_AUDIO -> rows.add(helper.loadResumeAudio())
+					HomeSectionType.RESUME_BOOK -> Unit // Books are not (yet) supported
+					HomeSectionType.ACTIVE_RECORDINGS -> rows.add(helper.loadLatestLiveTvRecordings())
+					HomeSectionType.NEXT_UP -> {
+						// Skip Next Up if already merged with Continue Watching
+						if (!mergeContinueWatching) {
+							rows.add(helper.loadNextUp())
+						} else if (!mergedRowAdded) {
+							// If user has Next Up but not Resume in their section list, add merged row here
+							rows.add(helper.loadMergedContinueWatching())
+							mergedRowAdded = true
+						}
+					}
+					HomeSectionType.PLAYLISTS -> {
+						val row = helper.loadPlaylists()
+						if (row is HomeFragmentPlaylistsRow) {
+							this@HomeRowsFragment.playlistsRow = row
+							rows.add(row)
+						}
+					}
+					HomeSectionType.LIVE_TV -> if (includeLiveTvRows) {
+						rows.add(liveTVRow)
+						rows.add(helper.loadOnNow())
+					}
+
+					HomeSectionType.NONE -> Unit
+				}
 			}
 
 			// Store rows for refreshing
@@ -450,6 +501,41 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			// Refresh playlists row
 			playlistsRow?.refresh()
+		}
+	}
+
+	private suspend fun addBuiltInSection(
+		rows: MutableList<HomeFragmentRow>,
+		sectionId: String,
+		includeLiveTvRows: Boolean,
+		cachedViews: Collection<org.jellyfin.sdk.model.api.BaseItemDto>?,
+	) {
+		val mergeContinueWatching = userPreferences[UserPreferences.mergeContinueWatchingNextUp]
+		when (sectionId) {
+			"latestmedia" -> rows.add(helper.loadRecentlyAdded(cachedViews ?: userViewsRepository.views.first()))
+			"recentlyreleased" -> rows.add(helper.loadRecentlyReleased())
+			"smalllibrarytiles" -> rows.add(HomeFragmentViewsRow(small = false))
+			"smalllibrarytiles_small", "librarybuttons" -> rows.add(HomeFragmentViewsRow(small = true))
+			"resume", "resumevideo" -> {
+				if (mergeContinueWatching) rows.add(helper.loadMergedContinueWatching())
+				else rows.add(helper.loadResumeVideo())
+			}
+			"resumeaudio" -> rows.add(helper.loadResumeAudio())
+			"activerecordings" -> rows.add(helper.loadLatestLiveTvRecordings())
+			"nextup" -> {
+				if (!mergeContinueWatching) rows.add(helper.loadNextUp())
+			}
+			"playlists" -> {
+				val row = helper.loadPlaylists()
+				if (row is HomeFragmentPlaylistsRow) {
+					this@HomeRowsFragment.playlistsRow = row
+					rows.add(row)
+				}
+			}
+			"livetv" -> if (includeLiveTvRows) {
+				rows.add(liveTVRow)
+				rows.add(helper.loadOnNow())
+			}
 		}
 	}
 

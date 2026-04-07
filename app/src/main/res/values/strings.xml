@@ -1170,4 +1170,6 @@
     </plurals>
     <string name="lbl_sort_and_filter">Sort and Filter</string>
     <string name="lbl_status_title">Status</string>
+    <string name="lbl_downloads">Downloads</string>
+    <string name="lbl_add_media">Add Media</string>
 </resources>

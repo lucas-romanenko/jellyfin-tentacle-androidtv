@@ -15,6 +15,8 @@ import org.jellyfin.androidtv.ui.browsing.v2.MusicBrowseFragment
 import org.jellyfin.androidtv.ui.browsing.v2.RecordingsBrowseFragment
 import org.jellyfin.androidtv.ui.browsing.v2.ScheduleBrowseFragment
 import org.jellyfin.androidtv.ui.browsing.v2.SeriesRecordingsBrowseFragment
+import org.jellyfin.androidtv.ui.activity.ActivityFragment
+import org.jellyfin.androidtv.ui.discover.DiscoverFragment as TentacleDiscoverFragment
 import org.jellyfin.androidtv.ui.home.HomeFragment
 import org.jellyfin.androidtv.ui.itemdetail.FullDetailsFragment
 import org.jellyfin.androidtv.ui.itemdetail.ItemListFragment
@@ -225,6 +227,10 @@ object Destinations {
 	fun stillWatching(item: UUID) = fragmentDestination<StillWatchingFragment>(
 		NextUpFragment.ARGUMENT_ITEM_ID to item.toString()
 	)
+
+	// Tentacle features
+	val tentacleDiscover = fragmentDestination<TentacleDiscoverFragment>()
+	val tentacleActivity = fragmentDestination<ActivityFragment>()
 
 	// Jellyseerr
 	val jellyseerrDiscover = fragmentDestination<DiscoverFragment>()

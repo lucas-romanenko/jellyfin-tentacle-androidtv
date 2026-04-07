@@ -31,6 +31,7 @@ import org.jellyfin.androidtv.data.repository.MdbListRepository
 import org.jellyfin.androidtv.data.repository.TmdbRepository
 import org.jellyfin.androidtv.data.repository.NotificationsRepository
 import org.jellyfin.androidtv.data.repository.NotificationsRepositoryImpl
+import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.data.repository.UserViewsRepository
 import org.jellyfin.androidtv.data.repository.UserViewsRepositoryImpl
 import org.jellyfin.androidtv.data.service.BackgroundService
@@ -199,6 +200,8 @@ val appModule = module {
 	single<JellyseerrRepository> { JellyseerrRepositoryImpl(androidContext(), get(named("global")), get()) }
 	single { MdbListRepository(get<OkHttpFactory>().createClient(get()), get()) }
 	single { TmdbRepository(get<OkHttpFactory>().createClient(get()), get(), get()) }
+	// Tentacle plugin integration
+	single { TentacleRepository(get(), get(), get<OkHttpFactory>().createClient(get<HttpClientOptions>())) }
 
 	viewModel { StartupViewModel(get(), get(), get(), get()) }
 	viewModel { UserLoginViewModel(get(), get(), get(), get(defaultDeviceInfo)) }
@@ -220,7 +223,7 @@ val appModule = module {
 	viewModel { org.jellyfin.androidtv.ui.browsing.v2.RecordingsBrowseViewModel(get()) }
 	viewModel { org.jellyfin.androidtv.ui.browsing.v2.ScheduleBrowseViewModel(get()) }
 	viewModel { org.jellyfin.androidtv.ui.browsing.v2.SeriesRecordingsBrowseViewModel(get()) }
-	single { MediaBarSlideshowViewModel(get(), get(), get(), get(), androidContext(), get(), get(), get(), get()) }
+	single { MediaBarSlideshowViewModel(get(), get(), get(), get(), androidContext(), get(), get(), get(), get(), get()) }
 
 	// SyncPlay
 	single { SyncPlayManager(androidContext(), get(), get()) }

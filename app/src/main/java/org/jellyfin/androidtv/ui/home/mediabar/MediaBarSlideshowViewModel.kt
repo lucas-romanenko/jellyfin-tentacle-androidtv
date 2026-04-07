@@ -79,6 +79,7 @@ class MediaBarSlideshowViewModel(
 	val trailerState: StateFlow<TrailerPreviewState> = _trailerState.asStateFlow()
 
 	private var items: List<MediaBarSlideItem> = emptyList()
+	private var usingTentacleHero = false
 	private var autoAdvanceJob: Job? = null
 	private var currentUserId: UUID? = null
 	private var trailerJob: Job? = null
@@ -124,7 +125,8 @@ class MediaBarSlideshowViewModel(
 		} else if (loadingJob?.isActive != true) {
 			// When gaining focus, refresh non-visible items for variety
 			// but keep the current and adjacent items to prevent flickering
-			if (items.isNotEmpty()) {
+			// Skip when using Tentacle hero — those items are curated
+			if (items.isNotEmpty() && !usingTentacleHero) {
 				refreshBackgroundItems()
 			}
 			
@@ -357,69 +359,70 @@ class MediaBarSlideshowViewModel(
 		loadingJob = viewModelScope.launch {
 		try {
 			_state.value = MediaBarState.Loading
+			usingTentacleHero = false
 
-			// Tentacle hero: highest priority — if plugin is available and hero is configured
-			try {
-				if (tentacleRepository.checkAvailable()) {
-					val heroItems = tentacleRepository.getHeroItems()
-					if (heroItems.isNotEmpty()) {
-						Timber.d("MediaBar: Using ${heroItems.size} Tentacle hero items")
-						serverApiClients[null] = api
-						items = heroItems.mapNotNull { item ->
-							val backdropUrl = item.backdropImageTags?.firstOrNull()?.let { tag ->
-								api.imageApi.getItemImageUrl(
-									itemId = item.id,
-									imageType = ImageType.BACKDROP,
-									tag = tag,
-									maxWidth = 1920,
-									quality = 90
-								)
-							} ?: return@mapNotNull null
+			// Fetch hero items from Tentacle plugin
+			val heroItems = tentacleRepository.getHeroItems()
+			if (heroItems.isNotEmpty()) {
+				Timber.d("MediaBar: Using ${heroItems.size} Tentacle hero items")
+				usingTentacleHero = true
+				serverApiClients[null] = api
+				items = heroItems.mapNotNull { item ->
+					val backdropUrl = item.backdropImageTags?.firstOrNull()?.let { tag ->
+						api.imageApi.getItemImageUrl(
+							itemId = item.id,
+							imageType = ImageType.BACKDROP,
+							tag = tag,
+							maxWidth = 1920,
+							quality = 90
+						)
+					} ?: return@mapNotNull null
 
-							val logoUrl = item.imageTags?.get(ImageType.LOGO)?.let { tag ->
-								api.imageApi.getItemImageUrl(
-									itemId = item.id,
-									imageType = ImageType.LOGO,
-									tag = tag,
-									maxWidth = 800,
-								)
-							}
-
-							MediaBarSlideItem(
-								itemId = item.id,
-								serverId = null,
-								title = item.name.orEmpty(),
-								overview = item.overview,
-								backdropUrl = backdropUrl,
-								logoUrl = logoUrl,
-								rating = item.officialRating,
-								year = item.productionYear,
-								genres = item.genres.orEmpty().take(3),
-								runtime = item.runTimeTicks?.let { ticks -> (ticks / 10000) },
-								criticRating = item.criticRating?.toInt(),
-								communityRating = item.communityRating,
-								tmdbId = item.providerIds?.get("Tmdb"),
-								imdbId = item.providerIds?.get("Imdb"),
-								itemType = item.type ?: BaseItemKind.MOVIE,
-							)
-						}
-						if (items.isNotEmpty()) {
-							_state.value = MediaBarState.Ready(items)
-							preloadAdjacentImages(0)
-							startAutoPlay()
-							startTrailerResolution(0)
-							preResolveAdjacentTrailers(0)
-							return@launch
-						}
-					} else {
-						Timber.d("MediaBar: Tentacle hero returned empty (hero disabled or no items)")
+					val logoUrl = item.imageTags?.get(ImageType.LOGO)?.let { tag ->
+						api.imageApi.getItemImageUrl(
+							itemId = item.id,
+							imageType = ImageType.LOGO,
+							tag = tag,
+							maxWidth = 800,
+						)
 					}
+
+					MediaBarSlideItem(
+						itemId = item.id,
+						serverId = null,
+						title = item.name.orEmpty(),
+						overview = item.overview,
+						backdropUrl = backdropUrl,
+						logoUrl = logoUrl,
+						rating = item.officialRating,
+						year = item.productionYear,
+						genres = item.genres.orEmpty().take(3),
+						runtime = item.runTimeTicks?.let { ticks -> (ticks / 10000) },
+						criticRating = item.criticRating?.toInt(),
+						communityRating = item.communityRating,
+						tmdbId = item.providerIds?.get("Tmdb"),
+						imdbId = item.providerIds?.get("Imdb"),
+						itemType = item.type ?: BaseItemKind.MOVIE,
+					)
 				}
-			} catch (e: Exception) {
-				Timber.w(e, "MediaBar: Tentacle hero fetch failed, falling back")
+				if (items.isNotEmpty()) {
+					_state.value = MediaBarState.Ready(items)
+					preloadAdjacentImages(0)
+					startAutoPlay()
+					startTrailerResolution(0)
+					preResolveAdjacentTrailers(0)
+					return@launch
+				}
+			} else {
+				Timber.d("MediaBar: Tentacle hero returned empty (hero disabled or no items)")
 			}
 
-			// Moonfin plugin source (fallback if Tentacle unavailable or hero disabled)
+			// Hero is disabled or empty — hide the media bar
+			_state.value = MediaBarState.Disabled
+			return@launch
+
+			// --- Legacy Moonfin code below (unreachable, kept for reference) ---
+
 			val pluginSyncEnabled = userPreferences[UserPreferences.pluginSyncEnabled]
 			val mediaBarSourceType = userSettingPreferences[UserSettingPreferences.mediaBarSourceType]
 

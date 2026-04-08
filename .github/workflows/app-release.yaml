@@ -24,8 +24,8 @@ jobs:
         uses: gradle/actions/setup-gradle@f29f5a9d7b09a7c6b29859002d29d24e1674c884 # v5.0.1
       - name: Set version from tag
         run: echo "MOONFIN_VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
-      - name: Assemble release APKs
-        run: ./gradlew assembleGithubRelease
+      - name: Assemble APKs
+        run: ./gradlew assembleGithubDebug
       - name: Collect APKs
         run: mkdir -p build/release/; find app/build/ -iname "*.apk" -exec mv "{}" build/release/ \;
       - name: Create GitHub Release

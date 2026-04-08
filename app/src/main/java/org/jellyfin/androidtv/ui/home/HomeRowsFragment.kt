@@ -180,14 +180,23 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// Check for coroutine cancellation
 			if (!isActive) return@launch
 
-			// Add media bar row if enabled in Moonfin settings (not part of configurable sections)
-			if (userSettingPreferences[UserSettingPreferences.mediaBarEnabled]) {
-				rows.add(mediaBarRow)
-			}
-
 			// Try to load Tentacle dashboard sections (playlists + built-in Jellyfin sections).
 			// The Tentacle dashboard controls the full row order including built-in sections.
 			val tentacleAvailable = tentacleRepository.checkAvailable()
+
+			// Only add media bar row if Tentacle hero is actually enabled and configured
+			if (userSettingPreferences[UserSettingPreferences.mediaBarEnabled] && tentacleAvailable) {
+				val heroConfig = tentacleRepository.getHeroConfig()
+				Timber.d("Hero config check: config=$heroConfig, enabled=${heroConfig?.enabled}, playlistId=${heroConfig?.playlistId}")
+				if (heroConfig != null && heroConfig.enabled && heroConfig.playlistId.isNotEmpty()) {
+					rows.add(mediaBarRow)
+					Timber.d("MediaBar row added (hero enabled)")
+				} else {
+					Timber.d("MediaBar row skipped (hero disabled or no config)")
+				}
+			} else {
+				Timber.d("MediaBar row skipped (mediaBarEnabled=${userSettingPreferences[UserSettingPreferences.mediaBarEnabled]}, tentacleAvailable=$tentacleAvailable)")
+			}
 			var tentacleSections: List<org.jellyfin.androidtv.data.repository.TentacleSection> = emptyList()
 
 			if (tentacleAvailable) {
@@ -290,6 +299,24 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				notificationsRow.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
 				nowPlaying.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
 				for (row in rows) row.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
+
+				// Populate info area for the initial selected item — the Leanback
+				// selection callback fires before HomeFragment's observers are ready,
+				// so the first item's title/summary doesn't show without this.
+				view?.post {
+					val firstRow = (0 until adapter.size())
+						.map { adapter[it] }
+						.filterIsInstance<ListRow>()
+						.firstOrNull() ?: return@post
+					val firstItem = (firstRow.adapter as? MutableObjectAdapter<*>)
+						?.let { ra -> if (ra.size() > 0) ra[0] else null } as? BaseRowItem
+						?: return@post
+					_selectedItemStateFlow.value = SelectedItemState(
+						title = firstItem.getName(requireContext()) ?: "",
+						summary = firstItem.getSummary(requireContext()) ?: "",
+						baseItem = firstItem.baseItem
+					)
+				}
 			}
 		}
 
@@ -444,12 +471,21 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		}
 
 		if (!justLoaded) {
-			// Re-retrieve rows that have pending change triggers (e.g. Resume, Next Up, Latest)
-			// but don't force-refresh static rows like Views/My Media to avoid resetting selection
-			refreshRows(delayed = true)
-			
-			// Reload media bar with fresh random items when returning to home
-			mediaBarViewModel.loadInitialContent()
+			// Recreate the fragment to pick up any Tentacle config changes
+			// (added/removed rows, hero playlist changes, etc.)
+			// Post to avoid "FragmentManager is already executing transactions" crash
+			// when onResume is called during a parent fragment transaction
+			view?.post {
+				if (isAdded && !parentFragmentManager.isStateSaved) {
+					parentFragmentManager.beginTransaction()
+						.detach(this@HomeRowsFragment)
+						.commitNowAllowingStateLoss()
+					parentFragmentManager.beginTransaction()
+						.attach(this@HomeRowsFragment)
+						.commitNowAllowingStateLoss()
+				}
+			}
+			return
 		} else {
 			justLoaded = false
 			// Load initial content on first load

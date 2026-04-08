@@ -449,7 +449,7 @@ private fun Navbar(
 				}
 
 				ExpandableIconButton(
-					icon = ImageVector.vectorResource(R.drawable.ic_add),
+					icon = ImageVector.vectorResource(R.drawable.ic_compass),
 					label = stringResource(R.string.lbl_add_media),
 					onClick = {
 						navigationRepository.navigate(Destinations.tentacleDiscover)

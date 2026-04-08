@@ -517,7 +517,7 @@ private fun CollapsibleSidebarContent(
 
 
 				SidebarIconItem(
-					icon = ImageVector.vectorResource(R.drawable.ic_add),
+					icon = ImageVector.vectorResource(R.drawable.ic_compass),
 					label = stringResource(R.string.lbl_add_media),
 					showLabel = isExpanded,
 					isExpanded = isExpanded,

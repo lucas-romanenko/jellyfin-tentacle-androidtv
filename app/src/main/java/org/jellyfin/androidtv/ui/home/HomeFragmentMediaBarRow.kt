@@ -27,8 +27,8 @@ class HomeFragmentMediaBarRow(
 		viewModel.state.onEach { state ->
 			val isEmpty = when (state) {
 				is MediaBarState.Ready -> state.items.isEmpty()
-				is MediaBarState.Error -> true
-				else -> false // Keep row visible during Loading
+				is MediaBarState.Loading -> false // Keep row visible during Loading
+				else -> true // Error, Disabled → remove row
 			}
 			update(isEmpty)
 		}.launchIn(lifecycleScope)
@@ -59,8 +59,8 @@ class HomeFragmentMediaBarRow(
 		this.rowsAdapter = rowsAdapter
 		val isEmpty = when (val state = viewModel.state.value) {
 			is MediaBarState.Ready -> state.items.isEmpty()
-			is MediaBarState.Error -> true
-			else -> false // Keep row visible during Loading
+			is MediaBarState.Loading -> false
+			else -> true // Error, Disabled → remove row
 		}
 		update(isEmpty)
 	}

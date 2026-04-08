@@ -222,13 +222,13 @@ class HomeFragment : Fragment() {
 	private fun updateMediaBarBackground() {
 		val state = mediaBarViewModel.state.value
 		val shouldShowMediaBar = shouldShowMediaBar()
-		
+
 		if (state is org.jellyfin.androidtv.ui.home.mediabar.MediaBarState.Ready && shouldShowMediaBar) {
 			val playbackState = mediaBarViewModel.playbackState.value
 			val currentItem = state.items.getOrNull(playbackState.currentIndex)
 			val backdropUrl = currentItem?.backdropUrl
 			val logoUrl = currentItem?.logoUrl
-			
+
 			if (backdropUrl != null) {
 				backgroundImage?.isVisible = true
 				backgroundImage?.load(backdropUrl) {
@@ -246,7 +246,7 @@ class HomeFragment : Fragment() {
 			} else {
 				logoView?.isVisible = false
 			}
-			
+
 			titleView?.isVisible = false
 			infoRowView?.isVisible = false
 			summaryView?.isVisible = false

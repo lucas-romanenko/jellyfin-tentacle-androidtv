@@ -149,6 +149,9 @@ class TentacleRepository(
 
 			val result = json.decodeFromString<BaseItemDtoQueryResult>(body)
 			Timber.d("Tentacle hero: ${result.items.size} items")
+			result.items.forEach { item ->
+				Timber.d("Tentacle hero item: '${item.name}' overview=${if (item.overview != null) "${item.overview?.take(30)}..." else "NULL"}")
+			}
 			result.items
 		} catch (e: Exception) {
 			Timber.e(e, "Failed to fetch Tentacle hero items")

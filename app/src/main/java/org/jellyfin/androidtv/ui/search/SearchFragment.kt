@@ -6,29 +6,42 @@ import android.view.ViewGroup
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import androidx.fragment.app.Fragment
-import androidx.fragment.compose.AndroidFragment
 import androidx.fragment.compose.content
-import androidx.leanback.app.RowsSupportFragment
+import org.jellyfin.androidtv.data.repository.DiscoverItem
+import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
+import org.jellyfin.androidtv.ui.base.Text
+import org.jellyfin.androidtv.ui.discover.DiscoverCard
+import org.jellyfin.androidtv.ui.discover.DiscoverDetailDialog
+import org.jellyfin.androidtv.ui.navigation.Destinations
+import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.preference.constant.NavbarPosition
 import org.jellyfin.androidtv.ui.search.composable.SearchTextInput
 import org.jellyfin.androidtv.ui.search.composable.SearchVoiceInput
@@ -38,7 +51,6 @@ import org.jellyfin.androidtv.ui.shared.toolbar.rememberNavbarPosition
 import org.jellyfin.androidtv.util.speech.rememberSpeechRecognizerAvailability
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
-import org.koin.core.parameter.parametersOf
 
 class SearchFragment : Fragment() {
 	companion object {
@@ -52,26 +64,29 @@ class SearchFragment : Fragment() {
 	) = content {
 		JellyfinTheme {
 			val viewModel = koinViewModel<SearchViewModel>()
-			val searchFragmentDelegate = koinInject<SearchFragmentDelegate> { parametersOf(requireContext()) }
+			val tentacleRepository = koinInject<TentacleRepository>()
+			val navigationRepository = koinInject<NavigationRepository>()
 			var query by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
 			val textInputFocusRequester = remember { FocusRequester() }
-			val resultFocusRequester = remember { FocusRequester() }
+			val resultsFocusRequester = remember { FocusRequester() }
 			val speechRecognizerAvailability = rememberSpeechRecognizerAvailability()
 			val navbarPosition = rememberNavbarPosition()
 			val isSidebar = navbarPosition == NavbarPosition.LEFT
+
+			// TMDB search results
+			val tmdbResults by viewModel.tmdbResultsFlow.collectAsState()
+			val isTmdbSearching by viewModel.isTmdbSearching.collectAsState()
+			var selectedItem by remember { mutableStateOf<DiscoverItem?>(null) }
+			val scope = rememberCoroutineScope()
 
 			LaunchedEffect(Unit) {
 				val extraQuery = arguments?.getString(EXTRA_QUERY)
 				if (!extraQuery.isNullOrBlank()) {
 					query = query.copy(text = extraQuery)
 					viewModel.searchImmediately(extraQuery)
-					resultFocusRequester.requestFocus()
+					resultsFocusRequester.requestFocus()
 				} else {
 					textInputFocusRequester.requestFocus()
-				}
-
-				viewModel.searchResultsFlow.collect { results ->
-					searchFragmentDelegate.showResults(results)
 				}
 			}
 
@@ -91,7 +106,9 @@ class SearchFragment : Fragment() {
 								onQueryChange = { query = query.copy(text = it) },
 								onQuerySubmit = {
 									viewModel.searchImmediately(query.text)
-									resultFocusRequester.requestFocus()
+									try {
+										resultsFocusRequester.requestFocus()
+									} catch (_: Exception) {}
 								}
 							)
 						}
@@ -104,9 +121,9 @@ class SearchFragment : Fragment() {
 							},
 							onQuerySubmit = {
 								viewModel.searchImmediately(query.text)
-								// Note: We MUST change the focus to somewhere else when the keyboard is submitted because some vendors (like Amazon)
-								// will otherwise just keep showing a (fullscreen) keyboard, soft-locking the app.
-								resultFocusRequester.requestFocus()
+								try {
+									resultsFocusRequester.requestFocus()
+								} catch (_: Exception) {}
 							},
 							modifier = Modifier
 								.weight(1f)
@@ -114,36 +131,64 @@ class SearchFragment : Fragment() {
 						)
 					}
 
-				// The leanback code has its own awful focus handling that doesn't work properly with Compose view inteop to workaround this
-				// issue we add custom behavior that only allows focus exit when the current selected row is the first one. Additionally when
-				// we do switch the focus, we reset the leanback state so it won't cause weird behavior when focus is regained
-				var rowsSupportFragment by remember { mutableStateOf<RowsSupportFragment?>(null) }
-
-				AndroidFragment<RowsSupportFragment>(
-					modifier = Modifier
-						.focusGroup()
-						.focusRequester(resultFocusRequester)
-						.focusProperties {
-							onExit = {
-								val isFirstRowSelected = rowsSupportFragment?.selectedPosition?.let { it <= 0 } ?: false
-								if (requestedFocusDirection != FocusDirection.Up || !isFirstRowSelected) {
-									cancelFocusChange()
-								} else {
-									rowsSupportFragment?.selectedPosition = 0
-									rowsSupportFragment?.verticalGridView?.clearFocus()
+					// TMDB search results
+					if (tmdbResults.isNotEmpty() || isTmdbSearching) {
+						Column(
+							modifier = Modifier
+								.focusGroup()
+								.focusRequester(resultsFocusRequester)
+								.padding(top = 8.dp),
+						) {
+							if (isTmdbSearching) {
+								Text(
+									text = "Searching...",
+									fontSize = 14.sp,
+									color = Color.White.copy(alpha = 0.5f),
+									modifier = Modifier.padding(start = 48.dp),
+								)
+							} else {
+								LazyRow(
+									contentPadding = PaddingValues(horizontal = 48.dp),
+									horizontalArrangement = Arrangement.spacedBy(12.dp),
+									modifier = Modifier.fillMaxWidth(),
+								) {
+									items(tmdbResults, key = { it.tmdbId }) { item ->
+										DiscoverCard(
+											item = item,
+											onClick = {
+												if (item.inLibrary) {
+													scope.launch {
+														val itemId = tentacleRepository.findJellyfinItem(
+															item.title, item.year, item.mediaType
+														)
+														if (itemId != null) {
+															navigationRepository.navigate(Destinations.itemDetails(itemId))
+														}
+													}
+												} else {
+													selectedItem = item
+												}
+											},
+										)
+									}
 								}
 							}
 						}
-						.padding(top = 5.dp)
-						.fillMaxSize(),
-					onUpdate = { fragment ->
-						rowsSupportFragment = fragment
-						fragment.adapter = searchFragmentDelegate.rowsAdapter
-						fragment.onItemViewClickedListener = searchFragmentDelegate.onItemViewClickedListener
-						fragment.onItemViewSelectedListener = searchFragmentDelegate.onItemViewSelectedListener
 					}
-				)
+				}
 			}
+
+			// Detail/add modal for TMDB results
+			if (selectedItem != null) {
+				DiscoverDetailDialog(
+					item = selectedItem!!,
+					tentacleRepository = tentacleRepository,
+					onDismiss = { selectedItem = null },
+					onNavigateToItem = { itemId ->
+						selectedItem = null
+						navigationRepository.navigate(Destinations.itemDetails(itemId))
+					},
+				)
 			}
 		}
 	}

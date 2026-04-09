@@ -190,7 +190,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				Timber.d("Hero config check: config=$heroConfig, enabled=${heroConfig?.enabled}, playlistId=${heroConfig?.playlistId}")
 				if (heroConfig != null && heroConfig.enabled && heroConfig.playlistId.isNotEmpty()) {
 					rows.add(mediaBarRow)
-					Timber.d("MediaBar row added (hero enabled)")
+					// Apply trailer audio setting from dashboard config
+					userSettingPreferences[UserSettingPreferences.previewAudioEnabled] = heroConfig.trailerAudio
+					Timber.d("MediaBar row added (hero enabled, trailerAudio=${heroConfig.trailerAudio})")
 				} else {
 					Timber.d("MediaBar row skipped (hero disabled or no config)")
 				}

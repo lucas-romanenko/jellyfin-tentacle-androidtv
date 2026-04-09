@@ -782,6 +782,7 @@ data class TentacleHeroConfig(
 	val enabled: Boolean = false,
 	val playlistId: String = "",
 	val displayName: String = "",
+	val trailerAudio: Boolean = true,
 )
 
 @Serializable

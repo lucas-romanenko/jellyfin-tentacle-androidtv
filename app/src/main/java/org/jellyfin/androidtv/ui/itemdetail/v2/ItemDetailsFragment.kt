@@ -148,6 +148,7 @@ class ItemDetailsFragment : Fragment() {
 	private val trackSelector: PrePlaybackTrackSelector by inject()
 	private val playbackLauncher: PlaybackLauncher by inject()
 	private val dataRefreshService: DataRefreshService by inject()
+	private val tentacleRepository: org.jellyfin.androidtv.data.repository.TentacleRepository by inject()
 	private val themeMusicPlayer: ThemeMusicPlayer by inject()
 	private val settingsViewModel by activityViewModel<SettingsViewModel>()
 
@@ -2239,6 +2240,16 @@ class ItemDetailsFragment : Fragment() {
 				return@launch
 			}
 			dataRefreshService.lastDeletedItemId = item.id
+
+			// Also remove from Tentacle DB so "In Library" badge clears immediately
+			val tmdbId = item.providerIds?.get("Tmdb")?.toIntOrNull()
+			if (tmdbId != null) {
+				val mediaType = if (item.type == org.jellyfin.sdk.model.api.BaseItemKind.MOVIE) "movie" else "series"
+				withContext(Dispatchers.IO) {
+					tentacleRepository.deleteLibraryItem(mediaType, tmdbId)
+				}
+			}
+
 			if (navigationRepository.canGoBack) navigationRepository.goBack()
 			else navigationRepository.navigate(Destinations.home)
 			Toast.makeText(requireContext(), getString(R.string.item_deleted, item.name), Toast.LENGTH_LONG).show()

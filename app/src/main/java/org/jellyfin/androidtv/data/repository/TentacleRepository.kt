@@ -459,6 +459,25 @@ class TentacleRepository(
 	}
 
 	/**
+	 * Notify Tentacle that an item was deleted from Jellyfin, so it can remove the DB record.
+	 */
+	suspend fun deleteLibraryItem(mediaType: String, tmdbId: Int): Boolean = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/LibraryItem/$mediaType/$tmdbId")
+			val request = Request.Builder().url(url).delete().build()
+			val response = httpClient.newCall(request).execute()
+			val success = response.isSuccessful
+			response.close()
+			if (success) Timber.i("Deleted $mediaType $tmdbId from Tentacle DB")
+			else Timber.w("Failed to delete from Tentacle: HTTP ${response.code}")
+			success
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to delete from Tentacle DB")
+			false
+		}
+	}
+
+	/**
 	 * Fetch download activity (active downloads + unreleased items) from Tentacle.
 	 */
 	suspend fun getActivity(): ActivityResponse? = withContext(Dispatchers.IO) {

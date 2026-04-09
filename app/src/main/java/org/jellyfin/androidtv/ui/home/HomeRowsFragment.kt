@@ -465,11 +465,25 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	override fun onResume() {
 		super.onResume()
 
-		//React to deletion
-		if (currentRow != null && currentItem != null && currentItem?.baseItem != null && currentItem!!.baseItem!!.id == dataRefreshService.lastDeletedItemId) {
-			(currentRow!!.adapter as ItemRowAdapter).remove(currentItem)
-			currentItem = null
+		// React to deletion — remove from ALL rows, not just the current one
+		val deletedId = dataRefreshService.lastDeletedItemId
+		if (deletedId != null) {
 			dataRefreshService.lastDeletedItemId = null
+			val rowsAdapter = adapter as? MutableObjectAdapter<Row>
+			if (rowsAdapter != null) {
+				for (i in 0 until rowsAdapter.size()) {
+					val row = rowsAdapter.get(i) as? ListRow ?: continue
+					val itemAdapter = row.adapter as? ItemRowAdapter ?: continue
+					for (j in 0 until itemAdapter.size()) {
+						val wrapper = itemAdapter.get(j) as? BaseRowItem ?: continue
+						if (wrapper.baseItem?.id == deletedId) {
+							itemAdapter.remove(wrapper)
+							if (currentItem == wrapper) currentItem = null
+							break
+						}
+					}
+				}
+			}
 		}
 
 		if (justLoaded) {

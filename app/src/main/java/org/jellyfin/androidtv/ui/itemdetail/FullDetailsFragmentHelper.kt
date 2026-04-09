@@ -65,29 +65,39 @@ fun FullDetailsFragment.deleteItem(
 	item: BaseItemDto,
 	dataRefreshService: DataRefreshService,
 	navigationRepository: NavigationRepository,
-) = lifecycleScope.launch {
+) {
 	Timber.i("Deleting item ${item.name} (id=${item.id})")
 
-	try {
-		withContext(Dispatchers.IO) {
-			api.libraryApi.deleteItem(item.id)
-		}
-	} catch (error: ApiClientException) {
-		Timber.e(error, "Failed to delete item ${item.name} (id=${item.id})")
-		Toast.makeText(
-			context,
-			getString(R.string.item_deletion_failed, item.name),
-			Toast.LENGTH_LONG
-		).show()
-		return@launch
-	}
+	val tmdbId = item.providerIds?.get("Tmdb")?.toIntOrNull()
+	val mediaType = if (item.type == org.jellyfin.sdk.model.api.BaseItemKind.MOVIE) "movie" else "series"
 
+	// Navigate away immediately for snappy UX — delete runs in background
 	dataRefreshService.lastDeletedItemId = item.id
-
 	if (navigationRepository.canGoBack) navigationRepository.goBack()
 	else navigationRepository.navigate(Destinations.home)
-
 	Toast.makeText(context, getString(R.string.item_deleted, item.name), Toast.LENGTH_LONG).show()
+
+	// Fire-and-forget: Tentacle handles full cleanup (Radarr/Sonarr, Jellyfin, DB, playlists)
+	lifecycleScope.launch(Dispatchers.IO) {
+		if (tmdbId != null) {
+			val tentacleRepository: org.jellyfin.androidtv.data.repository.TentacleRepository by inject()
+			val deleted = tentacleRepository.deleteLibraryItem(mediaType, tmdbId, item.id.toString())
+			if (!deleted) {
+				Timber.w("Tentacle delete failed for $mediaType $tmdbId, falling back to Jellyfin direct")
+				try {
+					api.libraryApi.deleteItem(item.id)
+				} catch (e: ApiClientException) {
+					Timber.e(e, "Failed to delete item ${item.name} (id=${item.id})")
+				}
+			}
+		} else {
+			try {
+				api.libraryApi.deleteItem(item.id)
+			} catch (e: ApiClientException) {
+				Timber.e(e, "Failed to delete item ${item.name} (id=${item.id})")
+			}
+		}
+	}
 }
 
 fun FullDetailsFragment.showDetailsMenu(

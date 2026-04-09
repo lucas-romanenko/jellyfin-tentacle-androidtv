@@ -461,9 +461,10 @@ class TentacleRepository(
 	/**
 	 * Notify Tentacle that an item was deleted from Jellyfin, so it can remove the DB record.
 	 */
-	suspend fun deleteLibraryItem(mediaType: String, tmdbId: Int): Boolean = withContext(Dispatchers.IO) {
+	suspend fun deleteLibraryItem(mediaType: String, tmdbId: Int, jellyfinItemId: String? = null): Boolean = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl("/TentacleDiscover/LibraryItem/$mediaType/$tmdbId")
+			var url = buildUrl("/TentacleDiscover/LibraryItem/$mediaType/$tmdbId")
+			if (jellyfinItemId != null) url += "&jellyfinItemId=$jellyfinItemId"
 			val request = Request.Builder().url(url).delete().build()
 			val response = httpClient.newCall(request).execute()
 			val success = response.isSuccessful
@@ -756,6 +757,8 @@ data class DiscoverDetail(
 	val seriesStatus: String? = null,
 	@SerialName("in_library")
 	val inLibrary: Boolean = false,
+	@SerialName("can_delete")
+	val canDelete: Boolean = false,
 )
 
 @Serializable

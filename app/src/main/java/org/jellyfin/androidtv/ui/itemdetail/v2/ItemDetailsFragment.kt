@@ -540,6 +540,19 @@ class ItemDetailsFragment : Fragment() {
 		val isMusicArtist = item.type == BaseItemKind.MUSIC_ARTIST
 		val isPlaylist = item.type == BaseItemKind.PLAYLIST
 
+		// Tentacle-controlled delete permission (only for downloaded content, not VOD)
+		var tentacleCanDelete by remember { mutableStateOf(false) }
+		if (item.type == BaseItemKind.MOVIE || item.type == BaseItemKind.SERIES) {
+			LaunchedEffect(item.id) {
+				val tmdbId = item.providerIds?.get("Tmdb")?.toIntOrNull()
+				if (tmdbId != null) {
+					val mediaType = if (item.type == BaseItemKind.MOVIE) "movie" else "series"
+					val detail = tentacleRepository.getDiscoverDetail(mediaType, tmdbId)
+					tentacleCanDelete = detail?.canDelete == true
+				}
+			}
+		}
+
 		val backdropUrl = getBackdropUrl(item)
 		val posterUrl = getPosterUrl(item)
 		val logoUrl = getLogoUrl(item)
@@ -838,7 +851,7 @@ class ItemDetailsFragment : Fragment() {
 								},
 							horizontalArrangement = Arrangement.Center,
 						) {
-							ActionButtonsRow(item, uiState, playButtonFocusRequester)
+							ActionButtonsRow(item, uiState, playButtonFocusRequester, tentacleCanDelete)
 						}
 					}
 				}
@@ -1149,6 +1162,7 @@ class ItemDetailsFragment : Fragment() {
 		item: BaseItemDto,
 		uiState: ItemDetailsUiState,
 		playButtonFocusRequester: FocusRequester,
+		tentacleCanDelete: Boolean = false,
 	) {
 		val hasPlaybackPosition = item.canResume
 		val mediaSources = item.mediaSources
@@ -1289,7 +1303,7 @@ class ItemDetailsFragment : Fragment() {
 					)
 				}
 
-				if (item.canDelete == true) {
+				if (tentacleCanDelete) {
 					DetailActionButton(
 						label = stringResource(R.string.lbl_delete),
 						icon = ImageVector.vectorResource(R.drawable.ic_delete),
@@ -2229,30 +2243,34 @@ class ItemDetailsFragment : Fragment() {
 	}
 
 	private fun deleteItem(item: BaseItemDto) {
-		lifecycleScope.launch {
-			try {
-				withContext(Dispatchers.IO) {
-					viewModel.effectiveApi.libraryApi.deleteItem(itemId = item.id)
-				}
-			} catch (e: ApiClientException) {
-				Timber.e(e, "Failed to delete item ${item.name} (id=${item.id})")
-				Toast.makeText(requireContext(), getString(R.string.item_deletion_failed, item.name), Toast.LENGTH_LONG).show()
-				return@launch
-			}
-			dataRefreshService.lastDeletedItemId = item.id
+		val tmdbId = item.providerIds?.get("Tmdb")?.toIntOrNull()
+		val mediaType = if (item.type == org.jellyfin.sdk.model.api.BaseItemKind.MOVIE) "movie" else "series"
 
-			// Also remove from Tentacle DB so "In Library" badge clears immediately
-			val tmdbId = item.providerIds?.get("Tmdb")?.toIntOrNull()
+		// Navigate away immediately for snappy UX — delete runs in background
+		dataRefreshService.lastDeletedItemId = item.id
+		if (navigationRepository.canGoBack) navigationRepository.goBack()
+		else navigationRepository.navigate(Destinations.home)
+		Toast.makeText(requireContext(), getString(R.string.item_deleted, item.name), Toast.LENGTH_LONG).show()
+
+		// Fire-and-forget: Tentacle handles full cleanup (Radarr/Sonarr, Jellyfin, DB, playlists)
+		lifecycleScope.launch(Dispatchers.IO) {
 			if (tmdbId != null) {
-				val mediaType = if (item.type == org.jellyfin.sdk.model.api.BaseItemKind.MOVIE) "movie" else "series"
-				withContext(Dispatchers.IO) {
-					tentacleRepository.deleteLibraryItem(mediaType, tmdbId)
+				val deleted = tentacleRepository.deleteLibraryItem(mediaType, tmdbId, item.id.toString())
+				if (!deleted) {
+					Timber.w("Tentacle delete failed for $mediaType $tmdbId, falling back to Jellyfin direct")
+					try {
+						viewModel.effectiveApi.libraryApi.deleteItem(itemId = item.id)
+					} catch (e: ApiClientException) {
+						Timber.e(e, "Failed to delete item ${item.name} (id=${item.id})")
+					}
+				}
+			} else {
+				try {
+					viewModel.effectiveApi.libraryApi.deleteItem(itemId = item.id)
+				} catch (e: ApiClientException) {
+					Timber.e(e, "Failed to delete item ${item.name} (id=${item.id})")
 				}
 			}
-
-			if (navigationRepository.canGoBack) navigationRepository.goBack()
-			else navigationRepository.navigate(Destinations.home)
-			Toast.makeText(requireContext(), getString(R.string.item_deleted, item.name), Toast.LENGTH_LONG).show()
 		}
 	}
 }

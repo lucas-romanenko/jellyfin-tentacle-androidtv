@@ -470,23 +470,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			dataRefreshService.lastDeletedItemId = null
 		}
 
-		if (!justLoaded) {
-			// Recreate the fragment to pick up any Tentacle config changes
-			// (added/removed rows, hero playlist changes, etc.)
-			// Post to avoid "FragmentManager is already executing transactions" crash
-			// when onResume is called during a parent fragment transaction
-			view?.post {
-				if (isAdded && !parentFragmentManager.isStateSaved) {
-					parentFragmentManager.beginTransaction()
-						.detach(this@HomeRowsFragment)
-						.commitNowAllowingStateLoss()
-					parentFragmentManager.beginTransaction()
-						.attach(this@HomeRowsFragment)
-						.commitNowAllowingStateLoss()
-				}
-			}
-			return
-		} else {
+		if (justLoaded) {
 			justLoaded = false
 			// Load initial content on first load
 			mediaBarViewModel.loadInitialContent()
@@ -495,7 +479,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		// Update audio queue
 		Timber.i("Updating audio queue in HomeFragment (onResume)")
 		nowPlaying.update(requireContext(), adapter as MutableObjectAdapter<Row>)
-		
+
 		// Ensure focus is restored to the grid when returning from other screens (like search)
 		// This prevents the issue where users can't control the media bar after backing out
 		view?.postDelayed({

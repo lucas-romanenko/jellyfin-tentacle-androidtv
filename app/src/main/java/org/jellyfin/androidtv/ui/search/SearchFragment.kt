@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -21,6 +22,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -34,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
+import org.jellyfin.androidtv.data.model.DataRefreshService
 import org.jellyfin.androidtv.data.repository.DiscoverItem
 import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
@@ -66,6 +70,7 @@ class SearchFragment : Fragment() {
 			val viewModel = koinViewModel<SearchViewModel>()
 			val tentacleRepository = koinInject<TentacleRepository>()
 			val navigationRepository = koinInject<NavigationRepository>()
+			val dataRefreshService = koinInject<DataRefreshService>()
 			var query by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
 			val textInputFocusRequester = remember { FocusRequester() }
 			val resultsFocusRequester = remember { FocusRequester() }
@@ -78,6 +83,19 @@ class SearchFragment : Fragment() {
 			val isTmdbSearching by viewModel.isTmdbSearching.collectAsState()
 			var selectedItem by remember { mutableStateOf<DiscoverItem?>(null) }
 			val scope = rememberCoroutineScope()
+
+			// Re-search when returning after a deletion so "In Library" badges update
+			val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+			DisposableEffect(lifecycleOwner) {
+				val observer = LifecycleEventObserver { _, event ->
+					if (event == Lifecycle.Event.ON_RESUME && dataRefreshService.lastDeletedItemId != null) {
+						dataRefreshService.lastDeletedItemId = null
+						viewModel.forceRefresh()
+					}
+				}
+				lifecycleOwner.lifecycle.addObserver(observer)
+				onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+			}
 
 			LaunchedEffect(Unit) {
 				val extraQuery = arguments?.getString(EXTRA_QUERY)

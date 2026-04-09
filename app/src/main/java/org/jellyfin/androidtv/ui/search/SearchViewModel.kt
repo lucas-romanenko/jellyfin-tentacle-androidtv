@@ -31,6 +31,13 @@ class SearchViewModel(
 
 	fun searchImmediately(query: String) = searchDebounced(query, 0.milliseconds)
 
+	fun forceRefresh() {
+		val query = previousQuery ?: return
+		if (query.isBlank()) return
+		previousQuery = null
+		searchImmediately(query)
+	}
+
 	fun searchDebounced(query: String, debounce: Duration = debounceDuration): Boolean {
 		val trimmed = query.trim()
 		if (trimmed == previousQuery) return false

@@ -67,8 +67,15 @@ class MainActivity : FragmentActivity() {
 			if (navigationRepository.canGoBack) {
 				navigationRepository.goBack()
 			} else {
-				// User is on home screen, show exit confirmation
-				showExitConfirmation()
+				// User is on home screen — focus navbar first, exit on second press
+				val navbarView = findViewById<View>(R.id.toolbar)?.takeIf { it.isShown }
+					?: findViewById<View>(R.id.sidebar)?.takeIf { it.isShown }
+
+				if (navbarView != null && navbarView.findFocus() !== currentFocus) {
+					navbarView.requestFocus()
+				} else {
+					showExitConfirmation()
+				}
 			}
 		}
 	}

@@ -23,7 +23,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@f29f5a9d7b09a7c6b29859002d29d24e1674c884 # v5.0.1
       - name: Set version from tag
-        run: echo "MOONFIN_VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
+        run: echo "TENTACLE_VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
       - name: Assemble APKs
         run: ./gradlew assembleGithubDebug
       - name: Collect APKs

@@ -85,7 +85,7 @@ fun DreamContentLogo() {
 		}
 		
 		Image(
-			painter = painterResource(R.drawable.app_logo),
+			painter = painterResource(R.drawable.tentacle_logo),
 			contentDescription = stringResource(R.string.app_name),
 			modifier = Modifier
 				.offset { IntOffset(offsetX.value.toInt(), offsetY.value.toInt()) }

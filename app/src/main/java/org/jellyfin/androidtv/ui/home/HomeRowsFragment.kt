@@ -492,9 +492,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			mediaBarViewModel.loadInitialContent()
 		}
 
-		// Update audio queue
+		// Update audio queue — deferred to avoid calling commitNow() during an active fragment transaction
 		Timber.i("Updating audio queue in HomeFragment (onResume)")
-		nowPlaying.update(requireContext(), adapter as MutableObjectAdapter<Row>)
+		view?.post { nowPlaying.update(requireContext(), adapter as MutableObjectAdapter<Row>) }
 
 		// Ensure focus is restored to the grid when returning from other screens (like search)
 		// This prevents the issue where users can't control the media bar after backing out
@@ -526,9 +526,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	override fun onQueueReplaced() = Unit
 
 	private fun refreshRows(force: Boolean = false, delayed: Boolean = true) {
-		lifecycleScope.launch(Dispatchers.IO) {
+		lifecycleScope.launch {
 			if (delayed) delay(1.5.seconds)
 
+			// Must run on Main thread: Retrieve()/ReRetrieveIfNeeded() may call loadStaticItems()
+			// which adds items directly to the Leanback adapter (UI operation)
 			repeat(adapter.size()) { i ->
 				val rowAdapter = (adapter[i] as? ListRow)?.adapter as? ItemRowAdapter
 				if (force) rowAdapter?.Retrieve()

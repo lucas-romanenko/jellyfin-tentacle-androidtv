@@ -492,9 +492,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			mediaBarViewModel.loadInitialContent()
 		}
 
-		// Update audio queue — deferred to avoid calling commitNow() during an active fragment transaction
+		// Update audio queue — deferred to avoid calling commitNow() during an active fragment transaction.
+		// isResumed guard prevents "Can not perform this action after onSaveInstanceState" if the
+		// fragment navigates away before the handler fires.
 		Timber.i("Updating audio queue in HomeFragment (onResume)")
-		view?.post { nowPlaying.update(requireContext(), adapter as MutableObjectAdapter<Row>) }
+		view?.post { if (isResumed) nowPlaying.update(requireContext(), adapter as MutableObjectAdapter<Row>) }
 
 		// Ensure focus is restored to the grid when returning from other screens (like search)
 		// This prevents the issue where users can't control the media bar after backing out

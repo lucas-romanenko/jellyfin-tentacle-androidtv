@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -48,21 +49,27 @@ import androidx.fragment.compose.content
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
 import org.jellyfin.androidtv.data.repository.ActivityDownload
+import org.jellyfin.androidtv.data.repository.ActivityRecentlyDownloaded
 import org.jellyfin.androidtv.data.repository.ActivityResponse
 import org.jellyfin.androidtv.data.repository.ActivityUnreleased
 import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
+import org.jellyfin.androidtv.ui.navigation.Destinations
+import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.shared.toolbar.Navbar
 import org.jellyfin.androidtv.ui.shared.toolbar.NavbarActiveButton
 import org.koin.android.ext.android.inject
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
+import java.util.UUID
+
 
 private const val TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w342"
 
 class ActivityFragment : Fragment() {
 	private val tentacleRepository by inject<TentacleRepository>()
+	private val navigationRepository by inject<NavigationRepository>()
 
 	override fun onCreateView(
 		inflater: LayoutInflater,
@@ -109,9 +116,10 @@ class ActivityFragment : Fragment() {
 					}
 				} else {
 					val downloads = activity?.downloads.orEmpty()
+					val recentlyDownloaded = activity?.recentlyDownloaded.orEmpty()
 					val unreleased = activity?.unreleased.orEmpty()
 
-					if (downloads.isEmpty() && unreleased.isEmpty()) {
+					if (downloads.isEmpty() && recentlyDownloaded.isEmpty() && unreleased.isEmpty()) {
 						Box(
 							modifier = Modifier
 								.fillMaxSize()
@@ -136,6 +144,13 @@ class ActivityFragment : Fragment() {
 							if (downloads.isNotEmpty()) {
 								item(key = "downloads") {
 									DownloadsRow(downloads)
+								}
+							}
+							if (recentlyDownloaded.isNotEmpty()) {
+								item(key = "recently_downloaded") {
+									RecentlyDownloadedRow(recentlyDownloaded) { jellyfinId ->
+										navigationRepository.navigate(Destinations.itemDetails(jellyfinId))
+									}
 								}
 							}
 							if (unreleased.isNotEmpty()) {
@@ -343,6 +358,154 @@ private fun DownloadCard(download: ActivityDownload) {
 			)
 		}
 	}
+}
+
+@Composable
+private fun RecentlyDownloadedRow(
+	items: List<ActivityRecentlyDownloaded>,
+	onNavigate: (UUID) -> Unit,
+) {
+	Column(modifier = Modifier.focusGroup()) {
+		Text(
+			text = "Recently Downloaded",
+			fontSize = 20.sp,
+			fontWeight = FontWeight.Bold,
+			color = Color.White,
+			modifier = Modifier.padding(start = 48.dp, bottom = 12.dp),
+		)
+
+		LazyRow(
+			contentPadding = PaddingValues(horizontal = 48.dp),
+			horizontalArrangement = Arrangement.spacedBy(16.dp),
+		) {
+			items(items, key = { it.tmdbId }) { item ->
+				RecentlyDownloadedCard(item, onNavigate)
+			}
+		}
+	}
+}
+
+@Composable
+private fun RecentlyDownloadedCard(
+	item: ActivityRecentlyDownloaded,
+	onNavigate: (UUID) -> Unit,
+) {
+	var isFocused by remember { mutableStateOf(false) }
+
+	val expiryLabel = when {
+		item.hoursRemaining <= 0 -> "Expiring"
+		item.hoursRemaining == 1 -> "1h left"
+		else -> "${item.hoursRemaining}h left"
+	}
+
+	val jellyfinUuid = remember(item.jellyfinItemId) {
+		item.jellyfinItemId.takeIf { it.isNotBlank() }?.let {
+			runCatching { UUID.fromString(it) }.getOrNull()
+		}
+	}
+
+	Column(
+		modifier = Modifier
+			.width(150.dp)
+			.onFocusChanged { isFocused = it.isFocused }
+			.focusable()
+			.then(
+				if (jellyfinUuid != null) Modifier.clickable { onNavigate(jellyfinUuid) }
+				else Modifier
+			),
+	) {
+		Box(
+			modifier = Modifier
+				.fillMaxWidth()
+				.aspectRatio(2f / 3f)
+				.clip(RoundedCornerShape(8.dp))
+				.background(Color(0xFF1a1a2e))
+				.then(
+					if (isFocused) Modifier.border(3.dp, Color.White, RoundedCornerShape(8.dp))
+					else Modifier
+				),
+		) {
+			if (item.posterPath != null) {
+				AsyncImage(
+					model = "$TMDB_IMAGE_BASE${item.posterPath}",
+					contentDescription = item.title,
+					contentScale = ContentScale.Crop,
+					modifier = Modifier.fillMaxSize(),
+				)
+			} else {
+				Box(
+					modifier = Modifier.fillMaxSize(),
+					contentAlignment = Alignment.Center,
+				) {
+					Text(
+						text = item.title,
+						fontSize = 12.sp,
+						color = Color.White.copy(alpha = 0.5f),
+						maxLines = 2,
+						overflow = TextOverflow.Ellipsis,
+						modifier = Modifier.padding(8.dp),
+					)
+				}
+			}
+
+			// Green "Downloaded" badge (top-left)
+			Box(
+				modifier = Modifier
+					.align(Alignment.TopStart)
+					.padding(6.dp)
+					.background(Color(0xCC4CAF50), RoundedCornerShape(4.dp))
+					.padding(horizontal = 6.dp, vertical = 2.dp),
+			) {
+				Text(text = "Downloaded", fontSize = 10.sp, color = Color.White)
+			}
+
+			// Expiry badge (top-right)
+			Box(
+				modifier = Modifier
+					.align(Alignment.TopEnd)
+					.padding(6.dp)
+					.background(
+						color = if (item.hoursRemaining <= 6) Color(0xCCEF5350) else Color(0xCC756AE8),
+						shape = RoundedCornerShape(4.dp),
+					)
+					.padding(horizontal = 6.dp, vertical = 2.dp),
+			) {
+				Text(text = expiryLabel, fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+			}
+
+			if (isFocused) {
+				Box(
+					modifier = Modifier
+						.fillMaxSize()
+						.background(Color.White.copy(alpha = 0.08f))
+				)
+			}
+		}
+
+		Spacer(modifier = Modifier.height(6.dp))
+
+		Text(
+			text = item.title,
+			fontSize = 13.sp,
+			fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Normal,
+			color = if (isFocused) Color.White else Color.White.copy(alpha = 0.8f),
+			maxLines = 1,
+			overflow = TextOverflow.Ellipsis,
+		)
+
+		// Show episode label for TV shows, year for movies
+		val subtitle = item.episode.takeIf { it.isNotBlank() } ?: item.year
+		if (subtitle.isNotBlank()) {
+			Text(
+				text = subtitle,
+				fontSize = 11.sp,
+				color = Color.White.copy(alpha = 0.5f),
+				maxLines = 1,
+				overflow = TextOverflow.Ellipsis,
+			)
+		}
+	}
+
 }
 
 @Composable

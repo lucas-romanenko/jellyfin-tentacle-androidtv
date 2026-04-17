@@ -2,6 +2,9 @@ package org.jellyfin.androidtv.data.repository
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -46,6 +49,14 @@ class TentacleRepository(
 	 */
 	private var availabilityChecked = false
 	private var isAvailable = false
+
+	// Activity download count for navbar badge
+	private val _activityDownloadCount = MutableStateFlow(0)
+	val activityDownloadCount: StateFlow<Int> = _activityDownloadCount.asStateFlow()
+
+	fun bumpActivityDownloadCount(count: Int) {
+		_activityDownloadCount.value = _activityDownloadCount.value + count
+	}
 
 	suspend fun checkAvailable(): Boolean {
 		if (availabilityChecked) return isAvailable
@@ -495,7 +506,9 @@ class TentacleRepository(
 			val body = response.body?.string() ?: return@withContext null
 			response.close()
 
-			json.decodeFromString<ActivityResponse>(body)
+			val result = json.decodeFromString<ActivityResponse>(body)
+			_activityDownloadCount.value = result.downloads.size
+			result
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch Tentacle activity")
 			null
@@ -811,6 +824,25 @@ data class TentacleHeroConfig(
 data class ActivityResponse(
 	val downloads: List<ActivityDownload> = emptyList(),
 	val unreleased: List<ActivityUnreleased> = emptyList(),
+	@SerialName("recently_downloaded")
+	val recentlyDownloaded: List<ActivityRecentlyDownloaded> = emptyList(),
+)
+
+@Serializable
+data class ActivityRecentlyDownloaded(
+	@SerialName("tmdb_id")
+	val tmdbId: Int = 0,
+	val title: String = "",
+	val year: String = "",
+	@SerialName("poster_path")
+	val posterPath: String? = null,
+	@SerialName("media_type")
+	val mediaType: String = "movie",
+	val episode: String = "",
+	@SerialName("hours_remaining")
+	val hoursRemaining: Int = 24,
+	@SerialName("jellyfin_item_id")
+	val jellyfinItemId: String = "",
 )
 
 @Serializable

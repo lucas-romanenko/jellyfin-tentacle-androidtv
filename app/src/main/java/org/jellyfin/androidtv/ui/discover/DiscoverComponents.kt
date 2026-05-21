@@ -126,16 +126,27 @@ internal fun DiscoverCard(
 				)
 		) {
 			if (item.posterPath != null) {
-				val imageUrl = if (item.posterPath.startsWith("http")) item.posterPath else "$TMDB_IMAGE_BASE${item.posterPath}"
+				val isExternal = item.posterPath.startsWith("http")
+				val imageUrl = if (isExternal) item.posterPath else "$TMDB_IMAGE_BASE${item.posterPath}"
 				var imageState by remember { mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty) }
-				AsyncImage(
-					model = imageUrl,
-					imageLoader = getExternalImageLoader(LocalContext.current),
-					contentDescription = item.title,
-					contentScale = ContentScale.Crop,
-					modifier = Modifier.fillMaxSize(),
-					onState = { imageState = it },
-				)
+				if (isExternal) {
+					AsyncImage(
+						model = imageUrl,
+						imageLoader = getExternalImageLoader(LocalContext.current),
+						contentDescription = item.title,
+						contentScale = ContentScale.Crop,
+						modifier = Modifier.fillMaxSize(),
+						onState = { imageState = it },
+					)
+				} else {
+					AsyncImage(
+						model = imageUrl,
+						contentDescription = item.title,
+						contentScale = ContentScale.Crop,
+						modifier = Modifier.fillMaxSize(),
+						onState = { imageState = it },
+					)
+				}
 				// Show title fallback if image failed to load
 				if (imageState is AsyncImagePainter.State.Error) {
 					Box(
@@ -389,15 +400,25 @@ internal fun DiscoverDetailDialog(
 								.height(280.dp)
 						) {
 							val backdropUrl = d?.backdropPath ?: item.backdropPath
+							val isExternalBackdrop = backdropUrl?.startsWith("http") == true
 							if (backdropUrl != null) {
-								val backdropModel = if (backdropUrl.startsWith("http")) backdropUrl else "$TMDB_BACKDROP_BASE$backdropUrl"
-								AsyncImage(
-									model = backdropModel,
-									imageLoader = getExternalImageLoader(LocalContext.current),
-									contentDescription = null,
-									contentScale = ContentScale.Crop,
-									modifier = Modifier.fillMaxSize(),
-								)
+								val backdropModel = if (isExternalBackdrop) backdropUrl else "$TMDB_BACKDROP_BASE$backdropUrl"
+								if (isExternalBackdrop) {
+									AsyncImage(
+										model = backdropModel,
+										imageLoader = getExternalImageLoader(LocalContext.current),
+										contentDescription = null,
+										contentScale = ContentScale.Crop,
+										modifier = Modifier.fillMaxSize(),
+									)
+								} else {
+									AsyncImage(
+										model = backdropModel,
+										contentDescription = null,
+										contentScale = ContentScale.Crop,
+										modifier = Modifier.fillMaxSize(),
+									)
+								}
 							}
 
 							// Gradient overlay at bottom

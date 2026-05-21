@@ -109,7 +109,7 @@ internal fun DiscoverCard(
 		) {
 			if (item.posterPath != null) {
 				AsyncImage(
-					model = "$TMDB_IMAGE_BASE${item.posterPath}",
+					model = if (item.posterPath?.startsWith("http") == true) item.posterPath else "$TMDB_IMAGE_BASE${item.posterPath}",
 					contentDescription = item.title,
 					contentScale = ContentScale.Crop,
 					modifier = Modifier.fillMaxSize(),
@@ -353,7 +353,7 @@ internal fun DiscoverDetailDialog(
 							val backdropUrl = d?.backdropPath ?: item.backdropPath
 							if (backdropUrl != null) {
 								AsyncImage(
-									model = "$TMDB_BACKDROP_BASE$backdropUrl",
+									model = if (backdropUrl.startsWith("http")) backdropUrl else "$TMDB_BACKDROP_BASE$backdropUrl",
 									contentDescription = null,
 									contentScale = ContentScale.Crop,
 									modifier = Modifier.fillMaxSize(),

@@ -73,7 +73,18 @@ internal const val TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280"
 internal fun getExternalImageLoader(context: Context): ImageLoader {
 	return externalImageLoader ?: ImageLoader.Builder(context)
 		.components {
-			add(OkHttpNetworkFetcherFactory(callFactory = { OkHttpClient() }))
+			add(OkHttpNetworkFetcherFactory(callFactory = {
+				OkHttpClient.Builder()
+					.addInterceptor { chain ->
+						chain.proceed(
+							chain.request().newBuilder()
+								.header("User-Agent", "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36")
+								.header("Accept", "image/webp,image/apng,image/*,*/*;q=0.8")
+								.build()
+						)
+					}
+					.build()
+			}))
 		}
 		.build()
 		.also { externalImageLoader = it }

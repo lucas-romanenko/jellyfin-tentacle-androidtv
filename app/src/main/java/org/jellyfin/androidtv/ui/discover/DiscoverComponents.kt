@@ -48,8 +48,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import coil3.ImageLoader
+import coil3.annotation.ExperimentalCoilApi
 import coil3.compose.AsyncImage
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
 import org.jellyfin.androidtv.data.repository.DiscoverDetail
 import org.jellyfin.androidtv.data.repository.DiscoverItem
 import org.jellyfin.androidtv.data.repository.QualityProfile
@@ -61,6 +65,19 @@ import org.jellyfin.androidtv.ui.base.button.ButtonDefaults
 
 internal const val TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w342"
 internal const val TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280"
+
+// Plain ImageLoader for external URLs (TVDB etc.) — the default Koin ImageLoader uses
+// the Jellyfin SDK's OkHttp client which adds auth headers that external servers reject.
+@OptIn(ExperimentalCoilApi::class)
+internal fun getExternalImageLoader(context: Context): ImageLoader {
+	return externalImageLoader ?: ImageLoader.Builder(context)
+		.components {
+			add(OkHttpNetworkFetcherFactory(callFactory = { OkHttpClient() }))
+		}
+		.build()
+		.also { externalImageLoader = it }
+}
+private var externalImageLoader: ImageLoader? = null
 
 internal data class MonitorOption(val key: String, val label: String)
 
@@ -108,12 +125,24 @@ internal fun DiscoverCard(
 				)
 		) {
 			if (item.posterPath != null) {
-				AsyncImage(
-					model = if (item.posterPath?.startsWith("http") == true) item.posterPath else "$TMDB_IMAGE_BASE${item.posterPath}",
-					contentDescription = item.title,
-					contentScale = ContentScale.Crop,
-					modifier = Modifier.fillMaxSize(),
-				)
+				val isExternal = item.posterPath.startsWith("http")
+				val imageUrl = if (isExternal) item.posterPath else "$TMDB_IMAGE_BASE${item.posterPath}"
+				if (isExternal) {
+					AsyncImage(
+						model = imageUrl,
+						imageLoader = getExternalImageLoader(LocalContext.current),
+						contentDescription = item.title,
+						contentScale = ContentScale.Crop,
+						modifier = Modifier.fillMaxSize(),
+					)
+				} else {
+					AsyncImage(
+						model = imageUrl,
+						contentDescription = item.title,
+						contentScale = ContentScale.Crop,
+						modifier = Modifier.fillMaxSize(),
+					)
+				}
 			} else {
 				Box(
 					modifier = Modifier.fillMaxSize(),
@@ -351,13 +380,25 @@ internal fun DiscoverDetailDialog(
 								.height(280.dp)
 						) {
 							val backdropUrl = d?.backdropPath ?: item.backdropPath
+							val isExternalBackdrop = backdropUrl?.startsWith("http") == true
 							if (backdropUrl != null) {
-								AsyncImage(
-									model = if (backdropUrl.startsWith("http")) backdropUrl else "$TMDB_BACKDROP_BASE$backdropUrl",
-									contentDescription = null,
-									contentScale = ContentScale.Crop,
-									modifier = Modifier.fillMaxSize(),
-								)
+								val backdropModel = if (isExternalBackdrop) backdropUrl else "$TMDB_BACKDROP_BASE$backdropUrl"
+								if (isExternalBackdrop) {
+									AsyncImage(
+										model = backdropModel,
+										imageLoader = getExternalImageLoader(LocalContext.current),
+										contentDescription = null,
+										contentScale = ContentScale.Crop,
+										modifier = Modifier.fillMaxSize(),
+									)
+								} else {
+									AsyncImage(
+										model = backdropModel,
+										contentDescription = null,
+										contentScale = ContentScale.Crop,
+										modifier = Modifier.fillMaxSize(),
+									)
+								}
 							}
 
 							// Gradient overlay at bottom

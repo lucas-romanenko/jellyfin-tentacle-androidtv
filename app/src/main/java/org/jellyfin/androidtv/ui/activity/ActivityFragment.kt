@@ -67,6 +67,12 @@ import java.util.UUID
 
 private const val TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w342"
 
+private fun buildPosterUrl(path: String?): String? {
+	if (path == null) return null
+	if (path.startsWith("http")) return path
+	return "$TMDB_IMAGE_BASE$path"
+}
+
 class ActivityFragment : Fragment() {
 	private val tentacleRepository by inject<TentacleRepository>()
 	private val navigationRepository by inject<NavigationRepository>()
@@ -211,7 +217,7 @@ private fun DownloadCard(download: ActivityDownload) {
 		) {
 			if (download.posterPath != null) {
 				AsyncImage(
-					model = "$TMDB_IMAGE_BASE${download.posterPath}",
+					model = buildPosterUrl(download.posterPath),
 					contentDescription = download.title,
 					contentScale = ContentScale.Crop,
 					modifier = Modifier.fillMaxSize(),
@@ -427,7 +433,7 @@ private fun RecentlyDownloadedCard(
 		) {
 			if (item.posterPath != null) {
 				AsyncImage(
-					model = "$TMDB_IMAGE_BASE${item.posterPath}",
+					model = buildPosterUrl(item.posterPath),
 					contentDescription = item.title,
 					contentScale = ContentScale.Crop,
 					modifier = Modifier.fillMaxSize(),
@@ -523,7 +529,7 @@ private fun UnreleasedRow(unreleased: List<ActivityUnreleased>) {
 			contentPadding = PaddingValues(horizontal = 48.dp),
 			horizontalArrangement = Arrangement.spacedBy(16.dp),
 		) {
-			items(unreleased, key = { it.tmdbId }) { item ->
+			items(unreleased, key = { if (it.tmdbId > 0) "tmdb:${it.tmdbId}" else "unreleased:${it.title}" }) { item ->
 				UnreleasedCard(item)
 			}
 		}
@@ -569,7 +575,7 @@ private fun UnreleasedCard(item: ActivityUnreleased) {
 		) {
 			if (item.posterPath != null) {
 				AsyncImage(
-					model = "$TMDB_IMAGE_BASE${item.posterPath}",
+					model = buildPosterUrl(item.posterPath),
 					contentDescription = item.title,
 					contentScale = ContentScale.Crop,
 					modifier = Modifier.fillMaxSize(),

@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -109,6 +110,9 @@ import org.jellyfin.androidtv.util.BitmapBlur
 import org.jellyfin.androidtv.util.PlaybackHelper
 import org.jellyfin.androidtv.util.TimeUtils
 import org.jellyfin.androidtv.util.Utils
+import androidx.compose.ui.window.Dialog
+import org.jellyfin.androidtv.ui.discover.EpisodePickerContent
+import org.jellyfin.androidtv.ui.discover.EpisodePickerMode
 import org.jellyfin.androidtv.util.apiclient.Response
 import org.jellyfin.androidtv.util.apiclient.getLogoImage
 import org.jellyfin.androidtv.util.apiclient.getUrl
@@ -542,6 +546,8 @@ class ItemDetailsFragment : Fragment() {
 
 		// Tentacle-controlled delete permission (only for downloaded content, not VOD)
 		var tentacleCanDelete by remember { mutableStateOf(false) }
+		var tentacleTmdbId by remember { mutableStateOf<Int?>(null) }
+		var tentacleInSonarr by remember { mutableStateOf(false) }
 		if (item.type == BaseItemKind.MOVIE || item.type == BaseItemKind.SERIES) {
 			LaunchedEffect(item.id) {
 				val tmdbId = item.providerIds?.get("Tmdb")?.toIntOrNull()
@@ -549,6 +555,11 @@ class ItemDetailsFragment : Fragment() {
 					val mediaType = if (item.type == BaseItemKind.MOVIE) "movie" else "series"
 					val detail = tentacleRepository.getDiscoverDetail(mediaType, tmdbId)
 					tentacleCanDelete = detail?.canDelete == true
+					if (item.type == BaseItemKind.SERIES) {
+						tentacleTmdbId = tmdbId
+						val sonarrInfo = tentacleRepository.getSonarrEpisodes(tmdbId)
+						tentacleInSonarr = sonarrInfo?.inSonarr == true
+					}
 				}
 			}
 		}
@@ -851,7 +862,7 @@ class ItemDetailsFragment : Fragment() {
 								},
 							horizontalArrangement = Arrangement.Center,
 						) {
-							ActionButtonsRow(item, uiState, playButtonFocusRequester, tentacleCanDelete)
+							ActionButtonsRow(item, uiState, playButtonFocusRequester, tentacleCanDelete, tentacleTmdbId, tentacleInSonarr)
 						}
 					}
 				}
@@ -1163,6 +1174,8 @@ class ItemDetailsFragment : Fragment() {
 		uiState: ItemDetailsUiState,
 		playButtonFocusRequester: FocusRequester,
 		tentacleCanDelete: Boolean = false,
+		tentacleTmdbId: Int? = null,
+		tentacleInSonarr: Boolean = false,
 	) {
 		val hasPlaybackPosition = item.canResume
 		val mediaSources = item.mediaSources
@@ -1181,6 +1194,7 @@ class ItemDetailsFragment : Fragment() {
 		var showAudioDialog by remember { mutableStateOf(false) }
 		var showSubtitleDialog by remember { mutableStateOf(false) }
 		var showVersionDialog by remember { mutableStateOf(false) }
+		var showEpisodePicker by remember { mutableStateOf(false) }
 
 		Row(
 			modifier = Modifier.fillMaxWidth(),
@@ -1303,11 +1317,42 @@ class ItemDetailsFragment : Fragment() {
 					)
 				}
 
+				if (item.type == BaseItemKind.SERIES && tentacleTmdbId != null) {
+					DetailActionButton(
+						label = if (tentacleInSonarr) "Manage Episodes" else "Add Episodes",
+						icon = ImageVector.vectorResource(R.drawable.ic_add),
+						onClick = { showEpisodePicker = true },
+					)
+				}
+
 				if (tentacleCanDelete) {
 					DetailActionButton(
 						label = stringResource(R.string.lbl_delete),
 						icon = ImageVector.vectorResource(R.drawable.ic_delete),
 						onClick = { confirmDeleteItem(item) },
+					)
+				}
+			}
+		}
+
+		// Episode picker dialog
+		if (showEpisodePicker && tentacleTmdbId != null) {
+			Dialog(onDismissRequest = { showEpisodePicker = false }) {
+				Box(
+					modifier = Modifier
+						.fillMaxWidth()
+						.fillMaxHeight(0.9f)
+						.clip(RoundedCornerShape(16.dp))
+						.background(Color(0xFF1a1a2e))
+				) {
+					EpisodePickerContent(
+						tmdbId = tentacleTmdbId,
+						title = item.name ?: "",
+						mode = if (tentacleInSonarr) EpisodePickerMode.MANAGE else EpisodePickerMode.DOWNLOAD_MORE,
+						qualityProfileId = null,
+						tentacleRepository = tentacleRepository,
+						onDismiss = { showEpisodePicker = false },
+						onComplete = { showEpisodePicker = false },
 					)
 				}
 			}

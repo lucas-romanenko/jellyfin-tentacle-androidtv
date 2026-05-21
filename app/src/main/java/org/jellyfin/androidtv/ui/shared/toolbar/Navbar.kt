@@ -41,6 +41,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.jellyfin.sdk.api.sockets.subscribe
+import org.jellyfin.sdk.model.api.LibraryChangedMessage
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.auth.repository.Session
 import org.jellyfin.androidtv.auth.repository.SessionRepository
@@ -82,6 +84,7 @@ import org.moonfin.server.core.feature.ServerFeature
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.CollectionType
+import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinActivityViewModel
 import org.koin.core.qualifier.named
@@ -117,6 +120,32 @@ fun Navbar(
 	val multiServerRepository = koinInject<org.jellyfin.androidtv.data.repository.MultiServerRepository>()
 	val sessionRepository = koinInject<org.jellyfin.androidtv.auth.repository.SessionRepository>()
 	val serverRepository = koinInject<ServerRepository>()
+	val tentacleRepository = koinInject<TentacleRepository>()
+	val activityDownloadCount by tentacleRepository.activityDownloadCount.collectAsState()
+
+	// Background polling so badge is populated even before visiting the Activity tab.
+	// Polls every 10s while downloads are active (so badge clears promptly), 30s when idle.
+	LaunchedEffect(Unit) {
+		while (true) {
+			try {
+				tentacleRepository.getActivity()
+			} catch (_: Exception) {}
+			val delay = if (tentacleRepository.activityDownloadCount.value > 0) 10_000L else 30_000L
+			kotlinx.coroutines.delay(delay)
+		}
+	}
+
+	// React immediately when Jellyfin library changes (triggered after Radarr/Sonarr imports)
+	LaunchedEffect(api) {
+		try {
+			api.webSocket.subscribe<LibraryChangedMessage>().collect { message ->
+				if (message.data?.itemsAdded?.isNotEmpty() == true) {
+					try { tentacleRepository.getActivity() } catch (_: Exception) {}
+				}
+			}
+		} catch (_: Exception) {}
+	}
+
 	val currentServer by serverRepository.currentServer.collectAsState()
 	val jellyseerrPreferences = koinInject<JellyseerrPreferences>(named("global"))
 	val userPreferences = koinInject<UserPreferences>()
@@ -222,6 +251,7 @@ fun Navbar(
 		shuffleContentType = shuffleContentType,
 		enableFolderView = enableFolderView,
 		clockBehavior = clockBehavior,
+		activityDownloadCount = activityDownloadCount,
 	)
 }
 
@@ -245,6 +275,7 @@ private fun Navbar(
 	shuffleContentType: String = "both",
 	enableFolderView: Boolean = false,
 	clockBehavior: ClockBehavior = ClockBehavior.ALWAYS,
+	activityDownloadCount: Int = 0,
 ) {
 	val focusRequester = remember { FocusRequester() }
 	val userSettingPreferences = koinInject<UserSettingPreferences>()
@@ -464,6 +495,7 @@ private fun Navbar(
 						navigationRepository.navigate(Destinations.tentacleActivity)
 					},
 					colors = toolbarButtonColors,
+					badgeCount = activityDownloadCount,
 				)
 
 				if (enableFolderView) {

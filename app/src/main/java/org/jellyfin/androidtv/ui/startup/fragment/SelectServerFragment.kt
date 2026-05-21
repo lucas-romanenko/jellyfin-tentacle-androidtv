@@ -192,7 +192,7 @@ class SelectServerFragment : Fragment() {
 		}
 
 		@Suppress("SetTextI18n")
-		binding.appVersion.text = "Moonfin version ${BuildConfig.VERSION_NAME} ${BuildConfig.BUILD_TYPE}"
+		binding.appVersion.text = "Tentacle version ${BuildConfig.VERSION_NAME} ${BuildConfig.BUILD_TYPE}"
 
 		binding.enterServerAddress.requestFocus()
 

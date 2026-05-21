@@ -27,22 +27,51 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.data.repository.DiscoverItem
 import org.jellyfin.androidtv.data.repository.DiscoverSection
 import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
+import org.jellyfin.androidtv.ui.home.mediabar.SponsorBlockApi
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.shared.toolbar.Navbar
 import org.jellyfin.androidtv.ui.shared.toolbar.NavbarActiveButton
 import org.koin.android.ext.android.inject
+import timber.log.Timber
 
 class DiscoverFragment : Fragment() {
 	private val tentacleRepository by inject<TentacleRepository>()
 	private val navigationRepository by inject<NavigationRepository>()
+
+	private fun playTrailer(videoId: String) {
+		lifecycleScope.launch {
+			try {
+				val segments = withContext(Dispatchers.IO) {
+					SponsorBlockApi.getSkipSegments(videoId)
+				}
+				val startSeconds = SponsorBlockApi.calculateStartTime(segments)
+				val segmentsJson = segments.joinToString(",", "[", "]") { seg ->
+					"""{"start":${seg.startTime},"end":${seg.endTime},"category":"${seg.category}","action":"${seg.actionType}"}"""
+				}
+				navigationRepository.navigate(Destinations.trailerPlayer(
+					videoId = videoId,
+					startSeconds = startSeconds,
+					segmentsJson = segmentsJson,
+				))
+			} catch (e: Exception) {
+				Timber.w(e, "Failed to play trailer")
+				Toast.makeText(requireContext(), "Unable to play trailer", Toast.LENGTH_SHORT).show()
+			}
+		}
+	}
 
 	override fun onCreateView(
 		inflater: LayoutInflater,
@@ -112,6 +141,10 @@ class DiscoverFragment : Fragment() {
 						selectedItem = null
 						navigationRepository.navigate(Destinations.itemDetails(itemId))
 					},
+					onPlayTrailer = { videoId ->
+						selectedItem = null
+						playTrailer(videoId)
+					},
 				)
 			}
 		}
@@ -138,7 +171,7 @@ private fun DiscoverSectionRow(
 			contentPadding = PaddingValues(horizontal = 48.dp),
 			horizontalArrangement = Arrangement.spacedBy(16.dp),
 		) {
-			items(section.items, key = { it.tmdbId }) { item ->
+			items(section.items, key = { if (it.tmdbId > 0) "tmdb:${it.tmdbId}" else "tvdb:${it.tvdbId}" }) { item ->
 				DiscoverCard(item = item, onClick = { onItemClick(item) })
 			}
 		}

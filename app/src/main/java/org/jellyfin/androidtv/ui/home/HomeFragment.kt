@@ -5,12 +5,12 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
@@ -52,6 +52,8 @@ class HomeFragment : Fragment() {
 	private var backgroundImage: ImageView? = null
 	private var trailerWebView: ComposeView? = null
 	private var rowsFragment: HomeRowsFragment? = null
+	private var muteButton: ImageButton? = null
+	private val _isTrailerMuted = kotlinx.coroutines.flow.MutableStateFlow(false)
 	private var snowfallView: SnowfallView? = null
 	private var petalfallView: PetalfallView? = null
 	private var leaffallView: LeaffallView? = null
@@ -76,6 +78,16 @@ class HomeFragment : Fragment() {
 		leaffallView = view.findViewById(R.id.leaffallView)
 		summerView = view.findViewById(R.id.summerView)
 		halloweenView = view.findViewById(R.id.halloweenView)
+		muteButton = view.findViewById(R.id.muteButton)
+
+		// Initialize mute state from preference
+		_isTrailerMuted.value = !userSettingPreferences[UserSettingPreferences.previewAudioEnabled]
+		updateMuteButtonIcon()
+		muteButton?.setOnClickListener {
+			_isTrailerMuted.value = !_isTrailerMuted.value
+			userSettingPreferences[UserSettingPreferences.previewAudioEnabled] = !_isTrailerMuted.value
+			updateMuteButtonIcon()
+		}
 
 		setupNavbar(view)
 
@@ -171,7 +183,7 @@ class HomeFragment : Fragment() {
 
 		trailerWebView?.setContent {
 			val trailerState by mediaBarViewModel.trailerState.collectAsState()
-			val previewAudioEnabled = remember { userSettingPreferences[UserSettingPreferences.previewAudioEnabled] }
+			val isMuted by _isTrailerMuted.collectAsState()
 			val httpDataSourceFactory = koinInject<HttpDataSource.Factory>()
 
 			val activeInfo = when (val state = trailerState) {
@@ -182,12 +194,12 @@ class HomeFragment : Fragment() {
 			val showTrailer = trailerState is TrailerPreviewState.Playing
 
 			if (activeInfo?.streamInfo != null) {
-				key(activeInfo.previewKey) {
+				key(activeInfo.previewKey, isMuted) {
 					ExoPlayerTrailerView(
 						streamInfo = activeInfo.streamInfo,
 						startSeconds = activeInfo.startSeconds,
 						segments = activeInfo.segments,
-						muted = !previewAudioEnabled,
+						muted = isMuted,
 						isVisible = showTrailer,
 						onVideoEnded = { mediaBarViewModel.onTrailerEnded() },
 						onVideoReady = { mediaBarViewModel.onTrailerReady() },
@@ -203,6 +215,7 @@ class HomeFragment : Fragment() {
 				val hasTrailer = trailerState is TrailerPreviewState.Buffering ||
 					trailerState is TrailerPreviewState.Playing
 				trailerWebView?.isVisible = hasTrailer && shouldShowMediaBar()
+				muteButton?.isVisible = trailerState is TrailerPreviewState.Playing && shouldShowMediaBar()
 			}
 			.launchIn(lifecycleScope)
 
@@ -261,6 +274,15 @@ class HomeFragment : Fragment() {
 			infoRowView?.isVisible = true
 			summaryView?.isVisible = true
 		}
+	}
+
+	private fun updateMuteButtonIcon() {
+		muteButton?.setImageResource(
+			if (_isTrailerMuted.value) R.drawable.ic_volume_off else R.drawable.ic_volume_on
+		)
+		muteButton?.contentDescription = getString(
+			if (_isTrailerMuted.value) R.string.lbl_unmute else R.string.lbl_mute
+		)
 	}
 
 	private fun shouldShowMediaBar(): Boolean {

@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -224,11 +227,16 @@ class TentacleRepository(
 	}
 
 	/**
-	 * Fetch full TMDB detail for a single discover item.
+	 * Fetch full detail for a single discover item.
+	 * Uses TMDB detail for items with tmdbId, or TVDB detail via Sonarr for TVDB-only items.
 	 */
-	suspend fun getDiscoverDetail(mediaType: String, tmdbId: Int): DiscoverDetail? = withContext(Dispatchers.IO) {
+	suspend fun getDiscoverDetail(mediaType: String, tmdbId: Int, tvdbId: Int = 0): DiscoverDetail? = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl("/TentacleDiscover/Detail/$mediaType/$tmdbId")
+			val url = if (tmdbId > 0) {
+				buildUrl("/TentacleDiscover/Detail/$mediaType/$tmdbId")
+			} else {
+				buildUrl("/TentacleDiscover/DetailTvdb/$tvdbId")
+			}
 			val request = Request.Builder().url(url).get().build()
 			val response = httpClient.newCall(request).execute()
 
@@ -242,7 +250,7 @@ class TentacleRepository(
 
 			json.decodeFromString<DiscoverDetail>(body)
 		} catch (e: Exception) {
-			Timber.w(e, "Failed to fetch discover detail for $mediaType/$tmdbId")
+			Timber.w(e, "Failed to fetch discover detail for $mediaType tmdb:$tmdbId tvdb:$tvdbId")
 			null
 		}
 	}
@@ -320,11 +328,15 @@ class TentacleRepository(
 	/**
 	 * Add a series to Sonarr via Tentacle.
 	 */
-	suspend fun addToSonarr(tmdbId: Int, qualityProfileId: Int? = null): AddResult = withContext(Dispatchers.IO) {
+	suspend fun addToSonarr(tmdbId: Int, qualityProfileId: Int? = null, tvdbId: Int = 0): AddResult = withContext(Dispatchers.IO) {
 		try {
 			val url = buildUrl("/TentacleDiscover/AddToSonarr")
 			val jsonBody = buildString {
-				append("""{"tmdb_ids":[$tmdbId]""")
+				if (tmdbId > 0) {
+					append("""{"tmdb_ids":[$tmdbId]""")
+				} else {
+					append("""{"tvdb_ids":[$tvdbId]""")
+				}
 				if (qualityProfileId != null) append(""","quality_profile_id":$qualityProfileId""")
 				append("}")
 			}
@@ -341,7 +353,7 @@ class TentacleRepository(
 
 			json.decodeFromString<AddResult>(body)
 		} catch (e: Exception) {
-			Timber.w(e, "Failed to add tmdb:$tmdbId to Sonarr")
+			Timber.w(e, "Failed to add tmdb:$tmdbId tvdb:$tvdbId to Sonarr")
 			AddResult(error = e.message ?: "Unknown error")
 		}
 	}
@@ -449,6 +461,50 @@ class TentacleRepository(
 	}
 
 	/**
+	 * Clear all plugin-side caches (home config, playlist items, discover, etc.)
+	 * so subsequent fetches return fresh data.
+	 */
+	suspend fun refreshPluginCache() = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/Tentacle/Refresh")
+			val request = Request.Builder().url(url)
+				.post("".toRequestBody(null))
+				.build()
+			val response = httpClient.newCall(request).execute()
+			response.close()
+			Timber.d("Plugin cache refresh: ${response.code}")
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to refresh plugin cache")
+		}
+	}
+
+	/**
+	 * Get the home screen version counter. Used for live-update polling.
+	 * Returns -1 if unavailable.
+	 */
+	suspend fun getHomeVersion(): Int = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleHome/Version")
+			val request = Request.Builder().url(url).get().build()
+			val response = httpClient.newCall(request).execute()
+
+			if (!response.isSuccessful) {
+				response.close()
+				return@withContext -1
+			}
+
+			val body = response.body?.string() ?: return@withContext -1
+			response.close()
+
+			val element = json.parseToJsonElement(body)
+			element.jsonObject["version"]?.jsonPrimitive?.intOrNull ?: -1
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to fetch home version")
+			-1
+		}
+	}
+
+	/**
 	 * Set the hero playlist. Pass empty string to disable hero.
 	 */
 	suspend fun setHeroPlaylist(playlistId: String): Boolean = withContext(Dispatchers.IO) {
@@ -516,11 +572,13 @@ class TentacleRepository(
 	}
 
 	/**
-	 * Fetch TMDB seasons for a series.
+	 * Fetch seasons for a series. Uses TVDB endpoint for TVDB-only items (tmdbId=0).
 	 */
-	suspend fun getSeasons(tmdbId: Int): SeasonsResponse? = withContext(Dispatchers.IO) {
+	suspend fun getSeasons(tmdbId: Int, tvdbId: Int = 0): SeasonsResponse? = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl("/TentacleDiscover/Seasons/$tmdbId")
+			val path = if (tmdbId > 0) "/TentacleDiscover/Seasons/$tmdbId"
+				else "/TentacleDiscover/SeasonsTvdb/$tvdbId"
+			val url = buildUrl(path)
 			val request = Request.Builder().url(url).get().build()
 			val response = httpClient.newCall(request).execute()
 			if (!response.isSuccessful) { response.close(); return@withContext null }
@@ -528,17 +586,19 @@ class TentacleRepository(
 			response.close()
 			json.decodeFromString<SeasonsResponse>(body)
 		} catch (e: Exception) {
-			Timber.w(e, "Failed to fetch seasons for tmdb:$tmdbId")
+			Timber.w(e, "Failed to fetch seasons for tmdb:$tmdbId tvdb:$tvdbId")
 			null
 		}
 	}
 
 	/**
-	 * Fetch TMDB episodes for a specific season.
+	 * Fetch episodes for a specific season. Uses TVDB endpoint for TVDB-only items (tmdbId=0).
 	 */
-	suspend fun getSeasonEpisodes(tmdbId: Int, seasonNumber: Int): List<TmdbEpisode> = withContext(Dispatchers.IO) {
+	suspend fun getSeasonEpisodes(tmdbId: Int, seasonNumber: Int, tvdbId: Int = 0): List<TmdbEpisode> = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl("/TentacleDiscover/Season/$tmdbId/$seasonNumber")
+			val path = if (tmdbId > 0) "/TentacleDiscover/Season/$tmdbId/$seasonNumber"
+				else "/TentacleDiscover/SeasonTvdb/$tvdbId/$seasonNumber"
+			val url = buildUrl(path)
 			val request = Request.Builder().url(url).get().build()
 			val response = httpClient.newCall(request).execute()
 			if (!response.isSuccessful) { response.close(); return@withContext emptyList() }
@@ -546,7 +606,7 @@ class TentacleRepository(
 			response.close()
 			json.decodeFromString<SeasonEpisodesResponse>(body).episodes
 		} catch (e: Exception) {
-			Timber.w(e, "Failed to fetch episodes for tmdb:$tmdbId season $seasonNumber")
+			Timber.w(e, "Failed to fetch episodes for tmdb:$tmdbId tvdb:$tvdbId season $seasonNumber")
 			emptyList()
 		}
 	}
@@ -616,11 +676,16 @@ class TentacleRepository(
 		monitor: String = "all",
 		selectedEpisodes: List<SelectedEpisode>? = null,
 		autoFollow: Boolean = true,
+		tvdbId: Int = 0,
 	): AddResult = withContext(Dispatchers.IO) {
 		try {
 			val url = buildUrl("/TentacleDiscover/AddToSonarr")
 			val jsonBody = buildString {
-				append("""{"tmdb_ids":[$tmdbId]""")
+				if (tmdbId > 0) {
+					append("""{"tmdb_ids":[$tmdbId]""")
+				} else {
+					append("""{"tvdb_ids":[$tvdbId]""")
+				}
 				if (qualityProfileId != null) append(""","quality_profile_id":$qualityProfileId""")
 				append(""","monitor":"$monitor"""")
 				if (selectedEpisodes != null) {
@@ -642,7 +707,7 @@ class TentacleRepository(
 			if (!response.isSuccessful) return@withContext AddResult(error = "HTTP ${response.code}: $body")
 			json.decodeFromString<AddResult>(body)
 		} catch (e: Exception) {
-			Timber.w(e, "Failed to add tmdb:$tmdbId to Sonarr with episodes")
+			Timber.w(e, "Failed to add tmdb:$tmdbId tvdb:$tvdbId to Sonarr with episodes")
 			AddResult(error = e.message ?: "Unknown error")
 		}
 	}
@@ -728,6 +793,8 @@ data class DiscoverSection(
 data class DiscoverItem(
 	@SerialName("tmdb_id")
 	val tmdbId: Int = 0,
+	@SerialName("tvdb_id")
+	val tvdbId: Int = 0,
 	val title: String = "",
 	val year: String = "",
 	val overview: String = "",
@@ -740,12 +807,15 @@ data class DiscoverItem(
 	val mediaType: String = "movie",
 	@SerialName("in_library")
 	val inLibrary: Boolean = false,
+	val source: String? = null,
 )
 
 @Serializable
 data class DiscoverDetail(
 	@SerialName("tmdb_id")
 	val tmdbId: Int = 0,
+	@SerialName("tvdb_id")
+	val tvdbId: Int = 0,
 	val title: String = "",
 	val year: String? = null,
 	val overview: String = "",
@@ -772,6 +842,9 @@ data class DiscoverDetail(
 	val inLibrary: Boolean = false,
 	@SerialName("can_delete")
 	val canDelete: Boolean = false,
+	@SerialName("trailer_url")
+	val trailerUrl: String? = null,
+	val source: String? = null,
 )
 
 @Serializable

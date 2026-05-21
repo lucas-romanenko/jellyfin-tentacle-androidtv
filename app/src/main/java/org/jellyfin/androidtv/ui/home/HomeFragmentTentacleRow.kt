@@ -19,6 +19,7 @@ import timber.log.Timber
  */
 class HomeFragmentTentacleRow(
 	private val rowDataList: List<TentacleRowData>,
+	private val adapterRegistry: MutableMap<String, ItemRowAdapter>? = null,
 ) : HomeFragmentRow {
 
 	override fun addToRowsAdapter(
@@ -46,6 +47,9 @@ class HomeFragmentTentacleRow(
 			rowAdapter.setRow(row)
 			rowAdapter.Retrieve()
 			rowsAdapter.add(row)
+
+			// Register adapter for in-place refresh
+			adapterRegistry?.put(rowData.playlistId, rowAdapter)
 
 			Timber.d("Added Tentacle row '${rowData.title}' with ${rowData.items.size} items")
 		}

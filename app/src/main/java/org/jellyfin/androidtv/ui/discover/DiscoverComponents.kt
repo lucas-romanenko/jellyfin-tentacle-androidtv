@@ -205,6 +205,7 @@ internal fun DiscoverDetailDialog(
 	tentacleRepository: TentacleRepository,
 	onDismiss: () -> Unit,
 	onNavigateToItem: (java.util.UUID) -> Unit = {},
+	onPlayTrailer: (youtubeVideoId: String) -> Unit = {},
 ) {
 	var detail by remember { mutableStateOf<DiscoverDetail?>(null) }
 	var isLoadingDetail by remember { mutableStateOf(true) }
@@ -233,8 +234,8 @@ internal fun DiscoverDetailDialog(
 	var sonarrState by remember { mutableStateOf<SonarrEpisodesResponse?>(null) }
 
 	// Load detail + quality profiles
-	LaunchedEffect(item.tmdbId) {
-		detail = tentacleRepository.getDiscoverDetail(item.mediaType, item.tmdbId)
+	LaunchedEffect(item.tmdbId, item.tvdbId) {
+		detail = tentacleRepository.getDiscoverDetail(item.mediaType, item.tmdbId, item.tvdbId)
 		isLoadingDetail = false
 
 		// Set following state from detail enrichment
@@ -321,6 +322,7 @@ internal fun DiscoverDetailDialog(
 						title = detail?.title ?: item.title,
 						mode = episodePickerMode,
 						qualityProfileId = selectedProfileId,
+						tvdbId = item.tvdbId,
 						tentacleRepository = tentacleRepository,
 						onDismiss = { showEpisodePicker = false },
 						onComplete = { message ->
@@ -675,6 +677,7 @@ internal fun DiscoverDetailDialog(
 																tmdbId = item.tmdbId,
 																qualityProfileId = selectedProfileId,
 																monitor = option.key,
+																tvdbId = item.tvdbId,
 															)
 															isAdding = false
 															addStatus = when {
@@ -701,6 +704,25 @@ internal fun DiscoverDetailDialog(
 										}
 									}
 								}
+
+								// Trailer button (both in-library and non-library)
+								if (d?.trailerUrl != null) {
+									val videoId = extractYouTubeVideoId(d.trailerUrl)
+									if (videoId != null) {
+										Button(
+											onClick = {
+												onDismiss()
+												onPlayTrailer(videoId)
+											},
+											colors = ButtonDefaults.colors(
+												containerColor = Color(0xFF374151),
+												contentColor = Color.White,
+											),
+										) {
+											Text(text = "Trailer", fontSize = 14.sp)
+										}
+									}
+								}
 							}
 
 							// Status message
@@ -723,4 +745,12 @@ internal fun DiscoverDetailDialog(
 			}
 		}
 	}
+}
+
+/**
+ * Extracts YouTube video ID from a URL like "https://www.youtube.com/watch?v=VIDEO_ID"
+ */
+internal fun extractYouTubeVideoId(url: String): String? {
+	val regex = Regex("""(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+)""")
+	return regex.find(url)?.groupValues?.getOrNull(1)
 }

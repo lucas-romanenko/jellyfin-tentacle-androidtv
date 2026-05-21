@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -42,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jellyfin.androidtv.data.repository.SelectedEpisode
 import org.jellyfin.androidtv.data.repository.SonarrEpisode
@@ -73,12 +75,15 @@ fun EpisodePickerContent(
 	mode: EpisodePickerMode,
 	qualityProfileId: Int?,
 	autoFollow: Boolean = true,
+	tvdbId: Int = 0,
 	tentacleRepository: TentacleRepository,
 	onDismiss: () -> Unit,
 	onComplete: (message: String) -> Unit,
 ) {
 	var isLoading by remember { mutableStateOf(true) }
 	var isSubmitting by remember { mutableStateOf(false) }
+	var submitSuccess by remember { mutableStateOf(false) }
+	var submitMessage by remember { mutableStateOf("") }
 	var seasons by remember { mutableStateOf<List<TmdbSeason>>(emptyList()) }
 	var seasonEpisodes by remember { mutableStateOf<Map<Int, List<TmdbEpisode>>>(emptyMap()) }
 	var sonarrData by remember { mutableStateOf(SonarrEpisodesResponse()) }
@@ -90,14 +95,13 @@ fun EpisodePickerContent(
 
 	// Load all data in parallel
 	LaunchedEffect(tmdbId) {
-		val seasonsResult = tentacleRepository.getSeasons(tmdbId)
+		val seasonsResult = tentacleRepository.getSeasons(tmdbId, tvdbId)
 		seasons = seasonsResult?.seasons?.filter { (it.seasonNumber ?: 0) > 0 } ?: emptyList()
 
 		if (seasons.isNotEmpty()) {
-			// Fetch episodes for all seasons + VOD/Sonarr data in parallel
 			val episodeJobs = seasons.map { season ->
 				scope.async {
-					val eps = tentacleRepository.getSeasonEpisodes(tmdbId, season.seasonNumber ?: 0)
+					val eps = tentacleRepository.getSeasonEpisodes(tmdbId, season.seasonNumber ?: 0, tvdbId)
 					(season.seasonNumber ?: 0) to eps
 				}
 			}
@@ -109,9 +113,9 @@ fun EpisodePickerContent(
 			sonarrData = sonarrJob.await()
 			vodData = vodJob.await()
 
-			// Pre-select monitored episodes in manage mode
+			// Pre-select episodes that are on disk (hasFile), not just monitored
 			if (mode == EpisodePickerMode.MANAGE && sonarrData.inSonarr) {
-				sonarrData.episodes.filter { it.monitored }.forEach { ep ->
+				sonarrData.episodes.filter { it.hasFile }.forEach { ep ->
 					selectedEpisodes["${ep.seasonNumber}:${ep.episodeNumber}"] = true
 				}
 			}
@@ -129,199 +133,209 @@ fun EpisodePickerContent(
 
 	val today = remember { LocalDate.now() }
 
+	// Show success overlay instead of dialog content after submit
+	if (submitSuccess) {
+		Box(
+			modifier = Modifier.fillMaxSize(),
+			contentAlignment = Alignment.Center,
+		) {
+			Column(
+				horizontalAlignment = Alignment.CenterHorizontally,
+				verticalArrangement = Arrangement.spacedBy(16.dp),
+			) {
+				Box(
+					modifier = Modifier
+						.size(72.dp)
+						.background(Color(0xFF4CAF50), androidx.compose.foundation.shape.CircleShape),
+					contentAlignment = Alignment.Center,
+				) {
+					Text("✓", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.White)
+				}
+				Text(
+					text = submitMessage,
+					fontSize = 16.sp,
+					color = Color.White,
+				)
+			}
+		}
+		return
+	}
+
+	val selectedCount = selectedEpisodes.count { it.value }
+
 	Column(modifier = Modifier.fillMaxSize()) {
-					// Header
-					Row(
-						modifier = Modifier
-							.fillMaxWidth()
-							.background(Color(0xFF252547))
-							.padding(horizontal = 24.dp, vertical = 16.dp),
-						verticalAlignment = Alignment.CenterVertically,
-						horizontalArrangement = Arrangement.SpaceBetween,
-					) {
-						Column(modifier = Modifier.weight(1f)) {
-							Text(
-								text = when (mode) {
-									EpisodePickerMode.ADD_NEW -> "Pick Episodes"
-									EpisodePickerMode.DOWNLOAD_MORE -> "Download More Episodes"
-									EpisodePickerMode.MANAGE -> "Manage Episodes"
-								},
-								fontSize = 20.sp,
-								fontWeight = FontWeight.Bold,
-								color = Color.White,
-							)
-							Text(
-								text = title,
-								fontSize = 14.sp,
-								color = Color.White.copy(alpha = 0.6f),
-							)
-						}
+		// Header
+		Row(
+			modifier = Modifier
+				.fillMaxWidth()
+				.background(Color(0xFF252547))
+				.padding(horizontal = 24.dp, vertical = 16.dp),
+			verticalAlignment = Alignment.CenterVertically,
+			horizontalArrangement = Arrangement.SpaceBetween,
+		) {
+			Column(modifier = Modifier.weight(1f)) {
+				Text(
+					text = when (mode) {
+						EpisodePickerMode.ADD_NEW -> "Pick Episodes"
+						EpisodePickerMode.DOWNLOAD_MORE -> "Download More Episodes"
+						EpisodePickerMode.MANAGE -> "Manage Episodes"
+					},
+					fontSize = 20.sp,
+					fontWeight = FontWeight.Bold,
+					color = Color.White,
+				)
+				Text(
+					text = title,
+					fontSize = 14.sp,
+					color = Color.White.copy(alpha = 0.6f),
+				)
+			}
+			Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+				Button(
+					onClick = { onDismiss() },
+					colors = ButtonDefaults.colors(
+						containerColor = Color(0xFF374151),
+						contentColor = Color.White,
+					),
+				) { Text("Cancel", fontSize = 14.sp) }
 
-						val selectedCount = selectedEpisodes.count { it.value }
-						Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-							Button(
-								onClick = { onDismiss() },
-								colors = ButtonDefaults.colors(
-									containerColor = Color(0xFF374151),
-									contentColor = Color.White,
-								),
-							) { Text("Cancel", fontSize = 14.sp) }
+				Button(
+					onClick = {
+						if (!isSubmitting && selectedCount > 0) {
+							isSubmitting = true
+							scope.launch {
+								val selected = selectedEpisodes
+									.filter { it.value }
+									.map { entry ->
+										val parts = entry.key.split(":")
+										SelectedEpisode(parts[0].toInt(), parts[1].toInt())
+									}
 
-							Button(
-								onClick = {
-									if (!isSubmitting && selectedCount > 0) {
-										isSubmitting = true
-										scope.launch {
-											val selected = selectedEpisodes
-												.filter { it.value }
-												.map { entry ->
-													val parts = entry.key.split(":")
-													SelectedEpisode(parts[0].toInt(), parts[1].toInt())
-												}
-
-											val message = when (mode) {
-												EpisodePickerMode.ADD_NEW, EpisodePickerMode.DOWNLOAD_MORE -> {
-													val result = tentacleRepository.addToSonarrWithEpisodes(
-														tmdbId = tmdbId,
-														qualityProfileId = qualityProfileId,
-														monitor = "none",
-														selectedEpisodes = selected,
-														autoFollow = autoFollow,
-													)
-													when {
-														result.error != null -> "Error: ${result.error}"
-														result.added > 0 -> "Added $selectedCount episodes to Sonarr"
-														result.alreadyExists > 0 -> "Already in Sonarr"
-														else -> "Failed to add"
-													}
-												}
-												EpisodePickerMode.MANAGE -> {
-													val result = tentacleRepository.manageEpisodes(tmdbId, selected)
-													if (result.success) {
-														"Monitoring ${result.monitored} episodes" +
-															if (result.searching > 0) ", searching ${result.searching}" else ""
-													} else "Failed to update"
-												}
-											}
-											onComplete(message)
+								val message = when (mode) {
+									EpisodePickerMode.ADD_NEW, EpisodePickerMode.DOWNLOAD_MORE -> {
+										val result = tentacleRepository.addToSonarrWithEpisodes(
+											tmdbId = tmdbId,
+											qualityProfileId = qualityProfileId,
+											monitor = "none",
+											selectedEpisodes = selected,
+											autoFollow = autoFollow,
+											tvdbId = tvdbId,
+										)
+										if (result.error != null) "Error: ${result.error}"
+										else {
+											tentacleRepository.bumpActivityDownloadCount(selectedCount)
+											"Added $selectedCount episodes to Sonarr"
 										}
 									}
-								},
-								colors = ButtonDefaults.colors(
-									containerColor = if (selectedCount > 0) Color(0xFF7C6AE8) else Color(0xFF374151),
-									contentColor = Color.White,
-								),
-							) {
-								Text(
-									text = if (isSubmitting) "Saving..."
-									else if (selectedCount > 0) "Confirm ($selectedCount)"
-									else "Select episodes",
-									fontSize = 14.sp,
-								)
-							}
-						}
-					}
-
-					if (isLoading) {
-						Box(
-							modifier = Modifier.fillMaxSize(),
-							contentAlignment = Alignment.Center,
-						) {
-							Text("Loading episodes...", fontSize = 16.sp, color = Color.White.copy(alpha = 0.7f))
-						}
-					} else if (seasons.isEmpty()) {
-						Box(
-							modifier = Modifier.fillMaxSize(),
-							contentAlignment = Alignment.Center,
-						) {
-							Text("No seasons found", fontSize = 16.sp, color = Color.White.copy(alpha = 0.5f))
-						}
-					} else {
-						// Build flat list of season headers + episodes
-						val listItems = remember(seasons, seasonEpisodes, expandedSeasons.toMap()) {
-							buildList {
-								for (season in seasons) {
-									val sNum = season.seasonNumber ?: continue
-									add(PickerListItem.SeasonHeader(season, sNum))
-									if (expandedSeasons[sNum] == true) {
-										val eps = seasonEpisodes[sNum] ?: emptyList()
-										eps.forEach { ep ->
-											add(PickerListItem.EpisodeRow(ep, sNum))
-										}
+									EpisodePickerMode.MANAGE -> {
+										val result = tentacleRepository.manageEpisodes(tmdbId, selected)
+										if (result.success) {
+											"Monitoring ${result.monitored} episodes" +
+												if (result.searching > 0) ", searching ${result.searching}" else ""
+										} else "Failed to update"
 									}
 								}
+								submitMessage = message
+								submitSuccess = true
+								delay(1500)
+								onComplete(message)
 							}
 						}
+					},
+					colors = ButtonDefaults.colors(
+						containerColor = if (selectedCount > 0) Color(0xFF7C6AE8) else Color(0xFF374151),
+						contentColor = Color.White,
+					),
+				) {
+					Text(
+						text = if (isSubmitting) "Saving..." else if (selectedCount > 0) "Confirm ($selectedCount)" else "Select episodes",
+						fontSize = 14.sp,
+					)
+				}
+			}
+		}
 
-						LazyColumn(
-							modifier = Modifier
-								.fillMaxSize()
-								.focusRequester(listFocusRequester),
-							contentPadding = PaddingValues(vertical = 8.dp),
-						) {
-							items(listItems, key = { it.key }) { listItem ->
-								when (listItem) {
-									is PickerListItem.SeasonHeader -> {
-										SeasonHeaderRow(
-											season = listItem.season,
-											seasonNumber = listItem.seasonNumber,
-											isExpanded = expandedSeasons[listItem.seasonNumber] == true,
-											seasonEpisodes = seasonEpisodes[listItem.seasonNumber] ?: emptyList(),
-											sonarrEpisodes = sonarrData.episodes.filter { it.seasonNumber == listItem.seasonNumber },
-											vodEpisodes = vodData.episodes[listItem.seasonNumber.toString()] ?: emptyList(),
-											selectedEpisodes = selectedEpisodes,
-											today = today,
-											onToggleExpand = {
-												expandedSeasons[listItem.seasonNumber] =
-													expandedSeasons[listItem.seasonNumber] != true
-											},
-											onSelectAll = { select ->
-												val eps = seasonEpisodes[listItem.seasonNumber] ?: emptyList()
-												val sonarrEps = sonarrData.episodes.filter { it.seasonNumber == listItem.seasonNumber }
-												val vodEps = vodData.episodes[listItem.seasonNumber.toString()] ?: emptyList()
-												for (ep in eps) {
-													val key = "${listItem.seasonNumber}:${ep.episodeNumber}"
-													val isVod = ep.episodeNumber in vodEps
-													val isDl = sonarrEps.any { it.episodeNumber == ep.episodeNumber && it.hasFile }
-													val isUnaired = isEpisodeUnaired(ep.airDate, today)
-													if (!isVod && !isDl && !isUnaired) {
-														selectedEpisodes[key] = select
-													}
-												}
-											},
-										)
-									}
-									is PickerListItem.EpisodeRow -> {
-										val key = "${listItem.seasonNumber}:${listItem.episode.episodeNumber}"
-										val sonarrEp = sonarrData.episodes.find {
-											it.seasonNumber == listItem.seasonNumber && it.episodeNumber == listItem.episode.episodeNumber
-										}
-										val isVod = (vodData.episodes[listItem.seasonNumber.toString()] ?: emptyList())
-											.contains(listItem.episode.episodeNumber)
-										val isDl = sonarrEp?.hasFile == true
-										val isUnaired = isEpisodeUnaired(listItem.episode.airDate, today)
-										val isDisabled = isVod || isDl || isUnaired
-
-										EpisodeItemRow(
-											episode = listItem.episode,
-											isSelected = selectedEpisodes[key] == true || isVod || isDl,
-											isVod = isVod,
-											isDownloaded = isDl,
-											isUnaired = isUnaired,
-											isDisabled = isDisabled,
-											onToggle = {
-												if (!isDisabled) {
-													selectedEpisodes[key] = selectedEpisodes[key] != true
-												}
-											},
-										)
-									}
-								}
-							}
+		if (isLoading) {
+			Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+				Text("Loading episodes...", fontSize = 16.sp, color = Color.White.copy(alpha = 0.7f))
+			}
+		} else if (seasons.isEmpty()) {
+			Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+				Text("No seasons found", fontSize = 16.sp, color = Color.White.copy(alpha = 0.5f))
+			}
+		} else {
+			val listItems = remember(seasons, seasonEpisodes, expandedSeasons.toMap()) {
+				buildList {
+					for (season in seasons) {
+						val sNum = season.seasonNumber ?: continue
+						add(PickerListItem.SeasonHeader(season, sNum))
+						if (expandedSeasons[sNum] == true) {
+							val eps = seasonEpisodes[sNum] ?: emptyList()
+							eps.forEach { ep -> add(PickerListItem.EpisodeRow(ep, sNum)) }
 						}
 					}
+				}
+			}
+			LazyColumn(
+				modifier = Modifier.fillMaxSize().focusRequester(listFocusRequester),
+				contentPadding = PaddingValues(vertical = 8.dp),
+			) {
+				items(listItems, key = { it.key }) { listItem ->
+					when (listItem) {
+						is PickerListItem.SeasonHeader -> {
+							SeasonHeaderRow(
+								season = listItem.season,
+								seasonNumber = listItem.seasonNumber,
+								isExpanded = expandedSeasons[listItem.seasonNumber] == true,
+								seasonEpisodes = seasonEpisodes[listItem.seasonNumber] ?: emptyList(),
+								sonarrEpisodes = sonarrData.episodes.filter { it.seasonNumber == listItem.seasonNumber },
+								vodEpisodes = vodData.episodes[listItem.seasonNumber.toString()] ?: emptyList(),
+								selectedEpisodes = selectedEpisodes,
+								today = today,
+								onToggleExpand = {
+									expandedSeasons[listItem.seasonNumber] = expandedSeasons[listItem.seasonNumber] != true
+								},
+								onSelectAll = { select ->
+									val eps = seasonEpisodes[listItem.seasonNumber] ?: emptyList()
+									val sonarrEps = sonarrData.episodes.filter { it.seasonNumber == listItem.seasonNumber }
+									val vodEps = vodData.episodes[listItem.seasonNumber.toString()] ?: emptyList()
+									for (ep in eps) {
+										val key = "${listItem.seasonNumber}:${ep.episodeNumber}"
+										val isVod = ep.episodeNumber in vodEps
+										val isDl = sonarrEps.any { it.episodeNumber == ep.episodeNumber && it.hasFile }
+										val isUnaired = isEpisodeUnaired(ep.airDate, today)
+										if (!isVod && !isDl && !isUnaired) selectedEpisodes[key] = select
+									}
+								},
+							)
+						}
+						is PickerListItem.EpisodeRow -> {
+							val key = "${listItem.seasonNumber}:${listItem.episode.episodeNumber}"
+							val sonarrEp = sonarrData.episodes.find {
+								it.seasonNumber == listItem.seasonNumber && it.episodeNumber == listItem.episode.episodeNumber
+							}
+							val isVod = (vodData.episodes[listItem.seasonNumber.toString()] ?: emptyList())
+								.contains(listItem.episode.episodeNumber)
+							val isDl = sonarrEp?.hasFile == true
+							val isUnaired = isEpisodeUnaired(listItem.episode.airDate, today)
+							val isDisabled = isVod || isDl || isUnaired
+							EpisodeItemRow(
+								episode = listItem.episode,
+								isSelected = selectedEpisodes[key] == true || isVod || isDl,
+								isVod = isVod,
+								isDownloaded = isDl,
+								isUnaired = isUnaired,
+								isDisabled = isDisabled,
+								onToggle = { if (!isDisabled) selectedEpisodes[key] = selectedEpisodes[key] != true },
+							)
+						}
+					}
+				}
+			}
+		}
 	}
 }
+
 
 private sealed class PickerListItem(val key: String) {
 	class SeasonHeader(val season: TmdbSeason, val seasonNumber: Int) : PickerListItem("season_$seasonNumber")
@@ -409,13 +423,7 @@ private fun SeasonHeaderRow(
 				color = coverageColor,
 			)
 
-			if (selectedInSeason > 0) {
-				Text(
-					text = "(+$selectedInSeason selected)",
-					fontSize = 12.sp,
-					color = Color(0xFF7C6AE8),
-				)
-			}
+
 		}
 
 		// Select all toggle for expanded season

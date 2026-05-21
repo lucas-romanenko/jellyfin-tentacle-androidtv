@@ -27,10 +27,11 @@
                 android:orientation="horizontal">
 
                 <ImageView
-                    android:layout_width="40dp"
+                    android:layout_width="80dp"
                     android:layout_height="40dp"
+                    android:scaleType="fitCenter"
                     android:contentDescription="@string/app_name"
-                    android:src="@drawable/ic_moonfin" />
+                    android:src="@drawable/tentacle_logo" />
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -86,6 +87,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:gravity="center"
+                    android:textAlignment="center"
                     android:text="@string/welcome_title"
                     android:textSize="28sp" />
 
@@ -127,6 +129,8 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
+                        android:gravity="center"
+                        android:textAlignment="center"
                         android:text="@string/discovered_servers_title"
                         android:textSize="18sp" />
 

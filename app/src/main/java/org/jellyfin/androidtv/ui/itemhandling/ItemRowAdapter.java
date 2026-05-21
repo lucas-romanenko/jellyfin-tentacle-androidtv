@@ -772,6 +772,18 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
         notifyRetrieveFinished();
     }
 
+    /**
+     * Replace the static items in this adapter with new items.
+     * Used for in-place refresh of Tentacle home screen rows.
+     */
+    public void replaceStaticItems(List<BaseItemDto> newItems) {
+        clear();
+        mItems = newItems;
+        itemsLoaded = 0;
+        fullyLoaded = false;
+        loadStaticItems();
+    }
+
     private void loadStaticItems() {
         if (mItems != null) {
             for (org.jellyfin.sdk.model.api.BaseItemDto item : mItems) {

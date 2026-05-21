@@ -16,6 +16,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import org.jellyfin.androidtv.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -119,6 +120,15 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	// Store rows for refreshing
 	private var currentRows = mutableListOf<HomeFragmentRow>()
 	private var playlistsRow: HomeFragmentPlaylistsRow? = null
+
+	// Track Tentacle playlist rows for in-place refresh (playlistId → ItemRowAdapter)
+	private val tentacleRowAdapters = mutableMapOf<String, ItemRowAdapter>()
+
+	// Track current Tentacle section structure for detecting structural changes
+	private var currentTentacleSectionKeys = listOf<String>()
+
+	// Index in the adapter where content rows start (after notifications + nowPlaying)
+	private var contentRowStartIndex = 0
 
 	// Debouncer for selection updates - only update UI after user stops navigating
 	private val selectionDebouncer by lazy { Debouncer(150.milliseconds, lifecycleScope) }
@@ -230,13 +240,22 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 							"row" -> {
 								val playlistId = section.playlistId ?: continue
 								tentacleMap[playlistId]?.let { data ->
-									rows.add(HomeFragmentTentacleRow(listOf(data)))
+									rows.add(HomeFragmentTentacleRow(listOf(data), tentacleRowAdapters))
 								}
 							}
 							"builtin" -> {
 								val sectionId = section.sectionId ?: continue
 								addBuiltInSection(rows, sectionId, includeLiveTvRows, cachedViews)
 							}
+						}
+					}
+
+					// Store section keys for detecting structural changes later
+					currentTentacleSectionKeys = tentacleSections.map { section ->
+						when (section.type) {
+							"row" -> "playlist:${section.playlistId}"
+							"builtin" -> "builtin:${section.sectionId}"
+							else -> "unknown:${section.id}"
 						}
 					}
 				}
@@ -300,6 +319,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				// Add rows in order
 				notificationsRow.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
 				nowPlaying.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
+				contentRowStartIndex = adapter.size() // Mark where content rows begin
 				for (row in rows) row.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
 
 				// Populate info area for the initial selected item — the Leanback
@@ -352,14 +372,35 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					if (currentMergeState != lastMergeState || currentFocusExpansion != lastFocusExpansion) {
 						lastMergeState = currentMergeState
 						lastFocusExpansion = currentFocusExpansion
-						// Recreate the fragment to rebuild rows with new structure
+						// Replace with new instance so onCreate re-runs with fresh data
 						parentFragmentManager.beginTransaction()
-							.detach(this@HomeRowsFragment)
-							.commitNow()
-						parentFragmentManager.beginTransaction()
-							.attach(this@HomeRowsFragment)
+							.replace(R.id.rowsFragment, HomeRowsFragment())
 							.commitNow()
 					}
+				}
+			}
+		}
+
+		// Poll Tentacle home version for live updates (10s interval)
+		lifecycleScope.launch {
+			lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+				var lastVersion = -1
+				Timber.d("Tentacle version polling started")
+				while (isActive) {
+					delay(10.seconds)
+					val available = tentacleRepository.checkAvailable()
+					if (!available) {
+						Timber.d("Tentacle version poll: not available, skipping")
+						continue
+					}
+					val version = tentacleRepository.getHomeVersion()
+					Timber.d("Tentacle version poll: version=$version, lastVersion=$lastVersion")
+					if (version < 0) continue
+					if (lastVersion >= 0 && version != lastVersion) {
+						Timber.i("Tentacle home version changed ($lastVersion -> $version), refreshing rows in-place")
+						refreshTentacleRowsInPlace()
+					}
+					lastVersion = version
 				}
 			}
 		}
@@ -380,14 +421,12 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		lifecycleScope.launch {
 			sessionRepository.currentSession
 				.onEach { session ->
-					// When session changes (user switch), recreate fragment to load new user's data
+					// When session changes (user switch), clear caches and recreate fragment
 					if (session != null && adapter.size() > 0) {
+						tentacleRepository.resetAvailabilityCache()
 						Timber.i("Session changed to user ${session.userId}, recreating home fragment")
 						parentFragmentManager.beginTransaction()
-							.detach(this@HomeRowsFragment)
-							.commitNow()
-						parentFragmentManager.beginTransaction()
-							.attach(this@HomeRowsFragment)
+							.replace(R.id.rowsFragment, HomeRowsFragment())
 							.commitNow()
 					}
 				}
@@ -541,6 +580,148 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			// Refresh playlists row
 			playlistsRow?.refresh()
+		}
+	}
+
+	/**
+	 * Refresh Tentacle home screen when version changes — always in-place.
+	 *
+	 * 1. Refreshes hero/media bar items
+	 * 2. Re-fetches sections list to detect structural changes
+	 * 3. If structure unchanged: updates playlist items in-place (preserves scroll + selection)
+	 * 4. If structure changed: removes old content rows, adds new ones to the adapter in-place
+	 */
+	private suspend fun refreshTentacleRowsInPlace() {
+		// Refresh hero/media bar
+		mediaBarViewModel.loadInitialContent()
+
+		// Re-fetch sections to check for structural changes
+		val sectionsResponse = withContext(Dispatchers.IO) { tentacleRepository.getSections() }
+			?: return // Plugin unavailable, skip
+
+		val newSections = sectionsResponse.sections.filter { it.type == "row" || it.type == "builtin" }
+		val newKeys = newSections.map { section ->
+			when (section.type) {
+				"row" -> "playlist:${section.playlistId}"
+				"builtin" -> "builtin:${section.sectionId}"
+				else -> "unknown:${section.id}"
+			}
+		}
+
+		val structureChanged = newKeys != currentTentacleSectionKeys
+
+		if (!structureChanged && tentacleRowAdapters.isNotEmpty()) {
+			// Structure unchanged — just update playlist items in-place
+			val updates = kotlinx.coroutines.coroutineScope {
+				tentacleRowAdapters.keys.map { playlistId ->
+					async(Dispatchers.IO) {
+						playlistId to tentacleRepository.getSectionItems(playlistId)
+					}
+				}.awaitAll()
+			}
+
+			withContext(Dispatchers.Main) {
+				for ((playlistId, newItems) in updates) {
+					val rowAdapter = tentacleRowAdapters[playlistId] ?: continue
+					rowAdapter.replaceStaticItems(newItems)
+					Timber.d("Refreshed Tentacle row $playlistId with ${newItems.size} items")
+				}
+				resyncSelectedItem()
+			}
+			Timber.i("Tentacle rows refreshed in-place (${updates.size} rows)")
+			return
+		}
+
+		// Structure changed — rebuild content rows in-place
+		Timber.i("Tentacle section structure changed, rebuilding rows in-place")
+
+		// Pre-fetch items for all playlist rows in parallel
+		val tentacleRowData = kotlinx.coroutines.coroutineScope {
+			newSections
+				.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }
+				.map { section ->
+					async(Dispatchers.IO) {
+						TentacleRowData(
+							title = section.displayText,
+							playlistId = section.playlistId!!,
+							items = tentacleRepository.getSectionItems(section.playlistId),
+						)
+					}
+				}.awaitAll()
+				.filter { it.items.isNotEmpty() }
+		}
+		val tentacleMap = tentacleRowData.associateBy { it.playlistId }
+
+		// Build new rows list
+		val newRows = mutableListOf<HomeFragmentRow>()
+		val homesections = userSettingPreferences.activeHomesections
+		val includeLiveTvRows = false // Simplified — live TV state doesn't change mid-session
+		val cachedViews = try { userViewsRepository.views.first() } catch (_: Exception) { null }
+
+		for (section in newSections) {
+			when (section.type) {
+				"row" -> {
+					val playlistId = section.playlistId ?: continue
+					tentacleMap[playlistId]?.let { data ->
+						newRows.add(HomeFragmentTentacleRow(listOf(data), tentacleRowAdapters))
+					}
+				}
+				"builtin" -> {
+					val sectionId = section.sectionId ?: continue
+					addBuiltInSection(newRows, sectionId, includeLiveTvRows, cachedViews)
+				}
+			}
+		}
+
+		// Apply to adapter on main thread: remove old content rows, add new ones
+		withContext(Dispatchers.Main) {
+			val rowsAdapter = adapter as MutableObjectAdapter<Row>
+			val cardPresenter = CardPresenter()
+
+			// Remove all existing content rows (everything from contentRowStartIndex onward)
+			val contentRowCount = rowsAdapter.size() - contentRowStartIndex
+			if (contentRowCount > 0) {
+				rowsAdapter.removeAt(contentRowStartIndex, contentRowCount)
+			}
+
+			// Clear old tracking
+			tentacleRowAdapters.clear()
+
+			// Add new content rows
+			for (row in newRows) {
+				row.addToRowsAdapter(requireContext(), cardPresenter, rowsAdapter)
+			}
+
+			currentRows = newRows
+			resyncSelectedItem()
+		}
+
+		// Update tracked section keys
+		currentTentacleSectionKeys = newKeys
+
+		Timber.i("Tentacle rows rebuilt in-place (${newRows.size} content rows)")
+	}
+
+	/**
+	 * After an in-place refresh, Leanback doesn't re-fire the selection callback,
+	 * so the background image and summary text remain stale.
+	 *
+	 * setSelectedPosition is a no-op when the position hasn't changed, so we
+	 * bounce to a neighbor row first to force Leanback to re-fire onItemSelected
+	 * when we jump back.
+	 */
+	private fun resyncSelectedItem() {
+		view?.post {
+			if (!isAdded || adapter.size() < 2) return@post
+			val pos = selectedPosition
+			if (pos < 0 || pos >= adapter.size()) return@post
+			// Jump to a neighbor so the return trip triggers onItemSelected
+			val bounce = if (pos > 0) pos - 1 else pos + 1
+			setSelectedPosition(bounce, false)
+			view?.post {
+				if (!isAdded) return@post
+				setSelectedPosition(pos, false)
+			}
 		}
 	}
 

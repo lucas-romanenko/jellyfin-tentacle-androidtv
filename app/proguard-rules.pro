@@ -109,6 +109,7 @@
 -keep class org.jellyfin.androidtv.data.repository.ActivityResponse { *; }
 -keep class org.jellyfin.androidtv.data.repository.ActivityDownload { *; }
 -keep class org.jellyfin.androidtv.data.repository.ActivityUnreleased { *; }
+-keep class org.jellyfin.androidtv.data.repository.ActivityRecentlyDownloaded { *; }
 -keep class org.jellyfin.androidtv.data.repository.SeasonsResponse { *; }
 -keep class org.jellyfin.androidtv.data.repository.TmdbSeason { *; }
 -keep class org.jellyfin.androidtv.data.repository.SeasonEpisodesResponse { *; }

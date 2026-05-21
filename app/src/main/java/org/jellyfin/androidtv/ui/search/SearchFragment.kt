@@ -170,7 +170,7 @@ class SearchFragment : Fragment() {
 									horizontalArrangement = Arrangement.spacedBy(12.dp),
 									modifier = Modifier.fillMaxWidth(),
 								) {
-									items(tmdbResults, key = { it.tmdbId }) { item ->
+									items(tmdbResults, key = { if (it.tmdbId > 0) "tmdb:${it.tmdbId}" else "tvdb:${it.tvdbId}" }) { item ->
 										DiscoverCard(
 											item = item,
 											onClick = {

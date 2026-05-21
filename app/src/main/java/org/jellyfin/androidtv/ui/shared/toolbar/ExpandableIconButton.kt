@@ -1,20 +1,24 @@
 package org.jellyfin.androidtv.ui.shared.toolbar
 
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredWidthIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -23,9 +27,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import org.jellyfin.androidtv.ui.base.Icon
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
@@ -47,19 +53,19 @@ fun ExpandableIconButton(
 	onLongClick: (() -> Unit)? = null,
 	colors: ButtonColors,
 	contentDescription: String? = label,
+	badgeCount: Int = 0,
 ) {
 	val interactionSource = remember { MutableInteractionSource() }
 	val isFocused by interactionSource.collectIsFocusedAsState()
 	val bringIntoViewRequester = remember { BringIntoViewRequester() }
 	val scope = rememberCoroutineScope()
-	
+
 	val scale by animateFloatAsState(
 		targetValue = if (isFocused) 1.05f else 1f,
 		animationSpec = tween(durationMillis = 200),
 		label = "ButtonScale"
 	)
-	
-	
+
 	// Bring button into view when focused
 	LaunchedEffect(isFocused) {
 		if (isFocused) {
@@ -75,37 +81,57 @@ fun ExpandableIconButton(
 		PaddingValues(horizontal = 5.dp, vertical = 10.dp)
 	}
 
-	Button(
-		onClick = onClick,
-		onLongClick = onLongClick,
-		colors = colors,
-		contentPadding = contentPadding,
-		modifier = modifier
-			.then(if (!isFocused) Modifier.requiredWidthIn(max = 36.dp) else Modifier)
-			.bringIntoViewRequester(bringIntoViewRequester)
-			.scale(scale),
-		interactionSource = interactionSource,
-	) {
-		Row(
-			horizontalArrangement = Arrangement.Center,
-			verticalAlignment = Alignment.CenterVertically,
+	Box {
+		Button(
+			onClick = onClick,
+			onLongClick = onLongClick,
+			colors = colors,
+			contentPadding = contentPadding,
+			modifier = modifier
+				.then(if (!isFocused) Modifier.requiredWidthIn(max = 36.dp) else Modifier)
+				.bringIntoViewRequester(bringIntoViewRequester)
+				.scale(scale),
+			interactionSource = interactionSource,
 		) {
-			Icon(
-				imageVector = icon,
-				contentDescription = contentDescription,
-			)
-			
-			// Text label that appears when focused
-			if (isFocused) {
-				Spacer(modifier = Modifier.width(8.dp))
-				ProvideTextStyle(
-					JellyfinTheme.typography.default.copy(fontWeight = FontWeight.Bold)
-				) {
-					Text(
-						text = label,
-						modifier = Modifier.padding(end = 4.dp)
-					)
+			Row(
+				horizontalArrangement = Arrangement.Center,
+				verticalAlignment = Alignment.CenterVertically,
+			) {
+				Icon(
+					imageVector = icon,
+					contentDescription = contentDescription,
+				)
+
+				// Text label that appears when focused
+				if (isFocused) {
+					Spacer(modifier = Modifier.width(8.dp))
+					ProvideTextStyle(
+						JellyfinTheme.typography.default.copy(fontWeight = FontWeight.Bold)
+					) {
+						Text(
+							text = label,
+							modifier = Modifier.padding(end = 4.dp)
+						)
+					}
 				}
+			}
+		}
+
+		if (badgeCount > 0) {
+			Box(
+				modifier = Modifier
+					.align(Alignment.TopEnd)
+					.offset(x = 6.dp, y = (-6).dp)
+					.size(18.dp)
+					.background(Color(0xFF7C6AE8), CircleShape),
+				contentAlignment = Alignment.Center,
+			) {
+				Text(
+					text = if (badgeCount > 99) "99+" else badgeCount.toString(),
+					fontSize = 9.sp,
+					fontWeight = FontWeight.Bold,
+					color = Color.White,
+				)
 			}
 		}
 	}

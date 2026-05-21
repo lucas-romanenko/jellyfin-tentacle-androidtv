@@ -130,7 +130,6 @@ fun ToolbarButtons(
 				),
 				shape = pillShape
 			)
-			.clip(pillShape)
 			.padding(horizontal = 0.dp, vertical = 0.dp)
 			.horizontalScroll(scrollState)
 			.focusRestorer()

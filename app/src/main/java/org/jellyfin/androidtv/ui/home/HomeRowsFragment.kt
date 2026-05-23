@@ -677,41 +677,49 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			}
 		}
 
-		// Apply to adapter on main thread: remove old content rows, add new ones
+		// Apply to adapter on main thread using DiffUtil to preserve scroll position.
+		// Instead of remove-all + re-add (which resets Leanback scroll), we build
+		// the full new row list and use replaceAll() which dispatches moves/changes.
 		withContext(Dispatchers.Main) {
 			val rowsAdapter = adapter as MutableObjectAdapter<Row>
 			val cardPresenter = CardPresenter()
-
-			// Save the user's current scroll position before modifying the adapter
-			val savedPosition = selectedPosition
 
 			// Suppress selection callbacks during rebuild
 			suppressSelectionClearing = true
 			selectionDebouncer.cancel()
 			backgroundDebouncer.cancel()
 
-			// Remove all existing content rows (everything from contentRowStartIndex onward)
-			val contentRowCount = rowsAdapter.size() - contentRowStartIndex
-			if (contentRowCount > 0) {
-				rowsAdapter.removeAt(contentRowStartIndex, contentRowCount)
-			}
-
 			// Clear old tracking
 			tentacleRowAdapters.clear()
 			// Media bar row is not re-added during rebuild — only playlist/builtin rows
 			hasMediaBarAtPosition0 = false
 
-			// Add new content rows
+			// Build new content Row objects into a temporary adapter
+			val tempAdapter = MutableObjectAdapter<Row>(rowsAdapter.presenterSelector!!)
 			for (row in newRows) {
-				row.addToRowsAdapter(requireContext(), cardPresenter, rowsAdapter)
+				row.addToRowsAdapter(requireContext(), cardPresenter, tempAdapter)
 			}
+			val newContentRows = (0 until tempAdapter.size()).mapNotNull { tempAdapter[it] }
+
+			// Build the full list: prefix rows (notifications, nowPlaying) + new content
+			val prefixRows = (0 until contentRowStartIndex).mapNotNull { rowsAdapter[it] }
+			val fullList = prefixRows + newContentRows
+
+			// Use replaceAll with DiffUtil — matches rows by header name so reorders
+			// dispatch notifyItemMoved instead of remove+insert, preserving scroll.
+			rowsAdapter.replaceAll(
+				fullList,
+				areItemsTheSame = { old, new ->
+					val oldName = (old as? ListRow)?.headerItem?.name
+					val newName = (new as? ListRow)?.headerItem?.name
+					if (oldName != null && newName != null) oldName == newName
+					else old === new // prefix rows matched by reference
+				},
+				areContentsTheSame = { _, _ -> false }, // Always refresh row content
+			)
 
 			currentRows = newRows
-
-			// Restore the user's scroll position after Leanback finishes layout
-			val maxPos = (rowsAdapter.size() - 1).coerceAtLeast(0)
-			val targetPos = savedPosition.coerceIn(0, maxPos)
-			resyncSelectedItem(targetPos)
+			resyncSelectedItem()
 		}
 
 		// Update tracked section keys
@@ -721,11 +729,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	}
 
 	/**
-	 * After an in-place row rebuild, restore the user's scroll position and
-	 * update state flows. Must run after a delay so Leanback has finished
-	 * laying out the new rows — setSelectedPosition is a no-op during layout.
+	 * After an in-place row rebuild, update state flows for the item at the
+	 * user's current position. DiffUtil preserves scroll position natively,
+	 * so we only need to refresh the info area (title, summary, backdrop).
 	 */
-	private fun resyncSelectedItem(targetPos: Int = selectedPosition) {
+	private fun resyncSelectedItem() {
 		view?.postDelayed({
 			// ALWAYS release suppression no matter what — if it stays on, all navigation breaks.
 			if (!isAdded || adapter.size() == 0) {
@@ -733,15 +741,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				return@postDelayed
 			}
 
-			// Physically scroll Leanback back to the saved position
-			val clampedPos = targetPos.coerceIn(0, (adapter.size() - 1).coerceAtLeast(0))
-			setSelectedPosition(clampedPos, false)
-
-			// Find the item at that position and update state flows
+			val pos = selectedPosition
 			var itemAtPosition: BaseRowItem? = null
 
-			if (clampedPos in contentRowStartIndex until adapter.size()) {
-				val row = adapter.get(clampedPos) as? ListRow
+			if (pos in contentRowStartIndex until adapter.size()) {
+				val row = adapter.get(pos) as? ListRow
 				val ra = row?.adapter as? MutableObjectAdapter<*>
 				if (ra != null && ra.size() > 0) {
 					itemAtPosition = ra[0] as? BaseRowItem
@@ -753,7 +757,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			}
 
 			if (itemAtPosition != null) {
-				_selectedPositionFlow.value = clampedPos
+				_selectedPositionFlow.value = pos
 				_selectedItemStateFlow.value = SelectedItemState(
 					title = itemAtPosition.getName(requireContext()) ?: "",
 					summary = itemAtPosition.getSummary(requireContext()) ?: "",

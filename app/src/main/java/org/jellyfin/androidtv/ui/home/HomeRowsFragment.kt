@@ -706,22 +706,32 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	 * After an in-place refresh, Leanback doesn't re-fire the selection callback,
 	 * so the background image and summary text remain stale.
 	 *
-	 * setSelectedPosition is a no-op when the position hasn't changed, so we
-	 * bounce to a neighbor row first to force Leanback to re-fire onItemSelected
-	 * when we jump back. Uses postDelayed to let new rows fully lay out first.
+	 * Instead of relying on Leanback's callback, directly read the first item
+	 * from the selected row and update the state flows + background manually.
 	 */
 	private fun resyncSelectedItem() {
-		view?.postDelayed({
-			if (!isAdded || adapter.size() < 2) return@postDelayed
+		view?.post {
+			if (!isAdded || adapter.size() == 0) return@post
 			val pos = selectedPosition.coerceIn(0, adapter.size() - 1)
-			// Jump to a neighbor so the return trip triggers onItemSelected
-			val bounce = if (pos > 0) pos - 1 else pos + 1
-			setSelectedPosition(bounce, false)
-			view?.postDelayed({
-				if (!isAdded) return@postDelayed
-				setSelectedPosition(pos, true)
-			}, 100)
-		}, 200)
+			val row = adapter.get(pos) as? ListRow ?: return@post
+			val rowAdapter = row.adapter as? MutableObjectAdapter<*> ?: return@post
+			val firstItem = (if (rowAdapter.size() > 0) rowAdapter[0] else null) as? BaseRowItem
+				?: return@post
+
+			// Directly update state flows — bypasses Leanback's selection callback
+			currentItem = firstItem
+			currentRow = row
+			_selectedPositionFlow.value = pos
+			_selectedItemStateFlow.value = SelectedItemState(
+				title = firstItem.getName(requireContext()) ?: "",
+				summary = firstItem.getSummary(requireContext()) ?: "",
+				baseItem = firstItem.baseItem
+			)
+
+			// Update background
+			val baseItem = firstItem.baseItem
+			backgroundService.setBackground(baseItem, BlurContext.BROWSING)
+		}
 	}
 
 	private suspend fun addBuiltInSection(

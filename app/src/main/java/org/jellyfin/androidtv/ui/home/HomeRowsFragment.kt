@@ -708,21 +708,20 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	 *
 	 * setSelectedPosition is a no-op when the position hasn't changed, so we
 	 * bounce to a neighbor row first to force Leanback to re-fire onItemSelected
-	 * when we jump back.
+	 * when we jump back. Uses postDelayed to let new rows fully lay out first.
 	 */
 	private fun resyncSelectedItem() {
-		view?.post {
-			if (!isAdded || adapter.size() < 2) return@post
-			val pos = selectedPosition
-			if (pos < 0 || pos >= adapter.size()) return@post
+		view?.postDelayed({
+			if (!isAdded || adapter.size() < 2) return@postDelayed
+			val pos = selectedPosition.coerceIn(0, adapter.size() - 1)
 			// Jump to a neighbor so the return trip triggers onItemSelected
 			val bounce = if (pos > 0) pos - 1 else pos + 1
 			setSelectedPosition(bounce, false)
-			view?.post {
-				if (!isAdded) return@post
-				setSelectedPosition(pos, false)
-			}
-		}
+			view?.postDelayed({
+				if (!isAdded) return@postDelayed
+				setSelectedPosition(pos, true)
+			}, 100)
+		}, 200)
 	}
 
 	private suspend fun addBuiltInSection(

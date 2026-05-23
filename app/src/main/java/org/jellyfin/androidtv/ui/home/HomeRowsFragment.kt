@@ -705,51 +705,62 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 	/**
 	 * After an in-place row rebuild, Leanback fires onItemSelected callbacks
-	 * for every row being added/removed — both with null items AND valid items
-	 * from each new row (the last row wins via the debouncer, causing wrong background).
-	 *
-	 * We suppress ALL onItemSelected during rebuild, cancel stale debouncers,
+	 * for every row being added/removed. We suppress ALL callbacks during rebuild,
 	 * then directly update state from the adapter after layout settles.
 	 */
 	private fun resyncSelectedItem() {
 		suppressSelectionClearing = true
-		// Cancel any pending debounced updates from before the rebuild
 		selectionDebouncer.cancel()
 		backgroundDebouncer.cancel()
 
-		// Wait for Leanback to finish layout with the new rows, then update state directly
-		view?.postDelayed({
-			if (!isAdded || adapter.size() == 0) {
-				suppressSelectionClearing = false
-				return@postDelayed
-			}
+		// Use OnGlobalLayoutListener to wait until views are actually laid out,
+		// then update state directly from the adapter.
+		view?.viewTreeObserver?.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+			override fun onGlobalLayout() {
+				view?.viewTreeObserver?.removeOnGlobalLayoutListener(this)
 
-			// Move focus to first content row — forces Leanback to bind ViewHolders
-			val targetPos = contentRowStartIndex.coerceIn(0, adapter.size() - 1)
-			setSelectedPosition(targetPos, false)
+				if (!isAdded || adapter.size() == 0) {
+					suppressSelectionClearing = false
+					return
+				}
 
-			// Now read the actual item and set state directly (don't rely on callback)
-			view?.post {
-				suppressSelectionClearing = false
-				if (!isAdded || adapter.size() == 0) return@post
+				val targetPos = contentRowStartIndex.coerceIn(0, adapter.size() - 1)
 
-				val pos = selectedPosition.coerceIn(0, adapter.size() - 1)
-				val row = adapter.get(pos) as? ListRow ?: return@post
-				val rowAdapter = row.adapter as? MutableObjectAdapter<*> ?: return@post
-				if (rowAdapter.size() == 0) return@post
-				val firstItem = rowAdapter[0] as? BaseRowItem ?: return@post
+				// Find the first content row with items
+				var row: ListRow? = null
+				var firstItem: BaseRowItem? = null
+				for (i in targetPos until adapter.size()) {
+					val candidate = adapter.get(i) as? ListRow ?: continue
+					val ra = candidate.adapter as? MutableObjectAdapter<*> ?: continue
+					if (ra.size() > 0) {
+						val item = ra[0] as? BaseRowItem
+						if (item != null) {
+							row = candidate
+							firstItem = item
+							break
+						}
+					}
+				}
+
+				if (row == null || firstItem == null) {
+					suppressSelectionClearing = false
+					return
+				}
 
 				currentItem = firstItem
 				currentRow = row
-				_selectedPositionFlow.value = pos
+				_selectedPositionFlow.value = targetPos
 				_selectedItemStateFlow.value = SelectedItemState(
 					title = firstItem.getName(requireContext()) ?: "",
 					summary = firstItem.getSummary(requireContext()) ?: "",
 					baseItem = firstItem.baseItem
 				)
 				backgroundService.setBackground(firstItem.baseItem, BlurContext.BROWSING)
+
+				// Keep suppression on a bit longer to eat any trailing Leanback callbacks
+				view?.postDelayed({ suppressSelectionClearing = false }, 500)
 			}
-		}, 300)
+		})
 	}
 
 	private suspend fun addBuiltInSection(

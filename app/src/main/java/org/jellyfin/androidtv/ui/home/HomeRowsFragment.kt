@@ -677,9 +677,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			}
 		}
 
-		// Apply to adapter on main thread using DiffUtil to preserve scroll position.
-		// Instead of remove-all + re-add (which resets Leanback scroll), we build
-		// the full new row list and use replaceAll() which dispatches moves/changes.
+		// Apply to adapter on main thread. Reuse existing ListRow objects where possible
+		// to preserve horizontal scroll position within rows. Only create new Row objects
+		// for genuinely new sections.
 		withContext(Dispatchers.Main) {
 			val rowsAdapter = adapter as MutableObjectAdapter<Row>
 			val cardPresenter = CardPresenter()
@@ -689,33 +689,67 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			selectionDebouncer.cancel()
 			backgroundDebouncer.cancel()
 
-			// Clear old tracking
-			tentacleRowAdapters.clear()
-			// Media bar row is not re-added during rebuild — only playlist/builtin rows
+			// Index existing content rows by header name for reuse
+			val existingRowsByName = mutableMapOf<String, ListRow>()
+			for (i in contentRowStartIndex until rowsAdapter.size()) {
+				val row = rowsAdapter[i] as? ListRow ?: continue
+				val name = row.headerItem?.name ?: continue
+				existingRowsByName[name] = row
+			}
+
+			// Build new content rows, reusing existing ListRow objects where possible.
+			// For reused rows, update items silently via replaceStaticItems to preserve
+			// the row's horizontal scroll position.
 			hasMediaBarAtPosition0 = false
 
-			// Build new content Row objects into a temporary adapter
+			// Build a name→playlistId map from sections for re-registering adapters
+			val nameToPlaylistId = newSections
+				.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }
+				.associate { it.displayText to it.playlistId!! }
+
+			// Build fresh rows into a temp adapter (also populates tentacleRowAdapters)
+			tentacleRowAdapters.clear()
 			val tempAdapter = MutableObjectAdapter<Row>(rowsAdapter.presenterSelector!!)
 			for (row in newRows) {
 				row.addToRowsAdapter(requireContext(), cardPresenter, tempAdapter)
 			}
-			val newContentRows = (0 until tempAdapter.size()).mapNotNull { tempAdapter[it] }
 
-			// Build the full list: prefix rows (notifications, nowPlaying) + new content
+			val newContentRows = mutableListOf<Row>()
+			for (i in 0 until tempAdapter.size()) {
+				val freshRow = tempAdapter[i] as? ListRow
+				val name = freshRow?.headerItem?.name
+				val existingRow = if (name != null) existingRowsByName[name] else null
+
+				if (existingRow != null && freshRow != null) {
+					// Reuse existing row — update items silently to preserve horizontal scroll
+					val existingAdapter = existingRow.adapter as? ItemRowAdapter
+					val freshAdapter = freshRow.adapter as? ItemRowAdapter
+					if (existingAdapter != null && freshAdapter != null) {
+						val freshItems = (0 until freshAdapter.size())
+							.mapNotNull { freshAdapter[it] as? org.jellyfin.sdk.model.api.BaseItemDto }
+						existingAdapter.replaceStaticItems(freshItems)
+					}
+					// Re-register existing adapter in tentacleRowAdapters under correct playlistId
+					val playlistId = nameToPlaylistId[name]
+					if (playlistId != null && existingAdapter != null) {
+						tentacleRowAdapters[playlistId] = existingAdapter
+					}
+					newContentRows.add(existingRow)
+				} else {
+					// Genuinely new row — use as-is (already registered in tentacleRowAdapters)
+					newContentRows.add(freshRow ?: continue)
+				}
+			}
+
+			// Build full list and use replaceAll — existing rows matched by reference
+			// dispatch notifyItemMoved, preserving both vertical and horizontal scroll.
 			val prefixRows = (0 until contentRowStartIndex).mapNotNull { rowsAdapter[it] }
 			val fullList = prefixRows + newContentRows
 
-			// Use replaceAll with DiffUtil — matches rows by header name so reorders
-			// dispatch notifyItemMoved instead of remove+insert, preserving scroll.
 			rowsAdapter.replaceAll(
 				fullList,
-				areItemsTheSame = { old, new ->
-					val oldName = (old as? ListRow)?.headerItem?.name
-					val newName = (new as? ListRow)?.headerItem?.name
-					if (oldName != null && newName != null) oldName == newName
-					else old === new // prefix rows matched by reference
-				},
-				areContentsTheSame = { _, _ -> false }, // Always refresh row content
+				areItemsTheSame = { old, new -> old === new },
+				areContentsTheSame = { old, new -> old === new },
 			)
 
 			currentRows = newRows

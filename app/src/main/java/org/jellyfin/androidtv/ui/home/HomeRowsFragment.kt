@@ -708,12 +708,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			currentRows = newRows
 
-			// Restore the user's scroll position, clamped to valid range
+			// Restore the user's scroll position after Leanback finishes layout
 			val maxPos = (rowsAdapter.size() - 1).coerceAtLeast(0)
 			val targetPos = savedPosition.coerceIn(0, maxPos)
-			setSelectedPosition(targetPos, false)
-
-			// After Leanback settles, update state flows for the item at restored position
 			resyncSelectedItem(targetPos)
 		}
 
@@ -724,9 +721,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	}
 
 	/**
-	 * After an in-place row rebuild, update state flows for the item at the
-	 * user's restored position. Called after setSelectedPosition() to keep
-	 * title, summary, and backdrop in sync without disrupting the user's scroll.
+	 * After an in-place row rebuild, restore the user's scroll position and
+	 * update state flows. Must run after a delay so Leanback has finished
+	 * laying out the new rows — setSelectedPosition is a no-op during layout.
 	 */
 	private fun resyncSelectedItem(targetPos: Int = selectedPosition) {
 		view?.postDelayed({
@@ -736,12 +733,15 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				return@postDelayed
 			}
 
-			// Find the item at the restored position and update state flows
-			val pos = selectedPosition // Use actual position after Leanback settles
+			// Physically scroll Leanback back to the saved position
+			val clampedPos = targetPos.coerceIn(0, (adapter.size() - 1).coerceAtLeast(0))
+			setSelectedPosition(clampedPos, false)
+
+			// Find the item at that position and update state flows
 			var itemAtPosition: BaseRowItem? = null
 
-			if (pos in contentRowStartIndex until adapter.size()) {
-				val row = adapter.get(pos) as? ListRow
+			if (clampedPos in contentRowStartIndex until adapter.size()) {
+				val row = adapter.get(clampedPos) as? ListRow
 				val ra = row?.adapter as? MutableObjectAdapter<*>
 				if (ra != null && ra.size() > 0) {
 					itemAtPosition = ra[0] as? BaseRowItem
@@ -753,7 +753,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			}
 
 			if (itemAtPosition != null) {
-				_selectedPositionFlow.value = pos
+				_selectedPositionFlow.value = clampedPos
 				_selectedItemStateFlow.value = SelectedItemState(
 					title = itemAtPosition.getName(requireContext()) ?: "",
 					summary = itemAtPosition.getSummary(requireContext()) ?: "",

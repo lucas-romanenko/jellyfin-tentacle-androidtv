@@ -758,9 +758,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	}
 
 	/**
-	 * After an in-place row rebuild, update state flows for the item at the
-	 * user's current position. DiffUtil preserves scroll position natively,
-	 * so we only need to refresh the info area (title, summary, backdrop).
+	 * After an in-place row rebuild, re-emit state flows for the user's
+	 * current item. DiffUtil + row reuse preserves both vertical and horizontal
+	 * scroll, so currentItem is still valid — just re-emit it.
 	 */
 	private fun resyncSelectedItem() {
 		view?.postDelayed({
@@ -770,29 +770,17 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				return@postDelayed
 			}
 
-			val pos = selectedPosition
-			var itemAtPosition: BaseRowItem? = null
-
-			if (pos in contentRowStartIndex until adapter.size()) {
-				val row = adapter.get(pos) as? ListRow
-				val ra = row?.adapter as? MutableObjectAdapter<*>
-				if (ra != null && ra.size() > 0) {
-					itemAtPosition = ra[0] as? BaseRowItem
-					if (itemAtPosition != null) {
-						currentItem = itemAtPosition
-						currentRow = row
-					}
-				}
-			}
-
-			if (itemAtPosition != null) {
-				_selectedPositionFlow.value = pos
+			// currentItem is still the focused item — scroll wasn't disrupted.
+			// Just re-emit the state flows so the info area stays in sync.
+			val item = currentItem
+			if (item != null) {
+				_selectedPositionFlow.value = selectedPosition
 				_selectedItemStateFlow.value = SelectedItemState(
-					title = itemAtPosition.getName(requireContext()) ?: "",
-					summary = itemAtPosition.getSummary(requireContext()) ?: "",
-					baseItem = itemAtPosition.baseItem
+					title = item.getName(requireContext()) ?: "",
+					summary = item.getSummary(requireContext()) ?: "",
+					baseItem = item.baseItem
 				)
-				backgroundService.setBackground(itemAtPosition.baseItem, BlurContext.BROWSING)
+				backgroundService.setBackground(item.baseItem, BlurContext.BROWSING)
 			}
 
 			suppressSelectionClearing = false

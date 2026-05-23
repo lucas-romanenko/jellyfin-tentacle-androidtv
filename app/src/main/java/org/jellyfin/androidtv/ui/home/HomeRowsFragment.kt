@@ -110,6 +110,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private var currentItem: BaseRowItem? = null
 	private var currentRow: ListRow? = null
 	private var suppressSelectionClearing = false
+	var hasMediaBarAtPosition0 = false
+		private set
 	private var justLoaded = true
 
 	// Special rows
@@ -321,6 +323,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				notificationsRow.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
 				nowPlaying.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
 				contentRowStartIndex = adapter.size() // Mark where content rows begin
+				hasMediaBarAtPosition0 = rows.firstOrNull() is HomeFragmentMediaBarRow
 				for (row in rows) row.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
 
 				// Populate info area for the initial selected item — the Leanback
@@ -687,6 +690,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			// Clear old tracking
 			tentacleRowAdapters.clear()
+			// Media bar row is not re-added during rebuild — only playlist/builtin rows
+			hasMediaBarAtPosition0 = false
 
 			// Add new content rows
 			for (row in newRows) {
@@ -706,61 +711,52 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	/**
 	 * After an in-place row rebuild, Leanback fires onItemSelected callbacks
 	 * for every row being added/removed. We suppress ALL callbacks during rebuild,
-	 * then directly update state from the adapter after layout settles.
+	 * then directly update state from the adapter after a delay.
 	 */
 	private fun resyncSelectedItem() {
 		suppressSelectionClearing = true
 		selectionDebouncer.cancel()
 		backgroundDebouncer.cancel()
 
-		// Use OnGlobalLayoutListener to wait until views are actually laid out,
-		// then update state directly from the adapter.
-		view?.viewTreeObserver?.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
-			override fun onGlobalLayout() {
-				view?.viewTreeObserver?.removeOnGlobalLayoutListener(this)
+		view?.postDelayed({
+			// ALWAYS release suppression no matter what — if it stays on, all navigation breaks.
+			if (!isAdded || adapter.size() == 0) {
+				suppressSelectionClearing = false
+				return@postDelayed
+			}
 
-				if (!isAdded || adapter.size() == 0) {
-					suppressSelectionClearing = false
-					return
-				}
-
-				val targetPos = contentRowStartIndex.coerceIn(0, adapter.size() - 1)
-
-				// Find the first content row with items
-				var row: ListRow? = null
-				var firstItem: BaseRowItem? = null
-				for (i in targetPos until adapter.size()) {
-					val candidate = adapter.get(i) as? ListRow ?: continue
-					val ra = candidate.adapter as? MutableObjectAdapter<*> ?: continue
-					if (ra.size() > 0) {
-						val item = ra[0] as? BaseRowItem
-						if (item != null) {
-							row = candidate
-							firstItem = item
-							break
-						}
+			// Find the first ListRow with actual BaseRowItems (skip MediaBarRow etc.)
+			var firstItem: BaseRowItem? = null
+			for (i in contentRowStartIndex until adapter.size()) {
+				val candidate = adapter.get(i) as? ListRow ?: continue
+				val ra = candidate.adapter as? MutableObjectAdapter<*> ?: continue
+				if (ra.size() > 0) {
+					firstItem = ra[0] as? BaseRowItem
+					if (firstItem != null) {
+						currentItem = firstItem
+						currentRow = candidate
+						break
 					}
 				}
+			}
 
-				if (row == null || firstItem == null) {
-					suppressSelectionClearing = false
-					return
-				}
-
-				currentItem = firstItem
-				currentRow = row
-				_selectedPositionFlow.value = targetPos
+			if (firstItem != null) {
+				// Update item state directly — do NOT update selectedPositionFlow
+				// because that triggers updateMediaBarBackground() in HomeFragment
+				// which can hide titleView/summaryView when position == 0.
 				_selectedItemStateFlow.value = SelectedItemState(
 					title = firstItem.getName(requireContext()) ?: "",
 					summary = firstItem.getSummary(requireContext()) ?: "",
 					baseItem = firstItem.baseItem
 				)
 				backgroundService.setBackground(firstItem.baseItem, BlurContext.BROWSING)
-
-				// Keep suppression on a bit longer to eat any trailing Leanback callbacks
-				view?.postDelayed({ suppressSelectionClearing = false }, 500)
+				Timber.d("resyncSelectedItem: updated state — title='${firstItem.getName(requireContext())}', hasBaseItem=${firstItem.baseItem != null}")
+			} else {
+				Timber.d("resyncSelectedItem: no valid item found in adapter")
 			}
-		})
+
+			suppressSelectionClearing = false
+		}, 500)
 	}
 
 	private suspend fun addBuiltInSection(

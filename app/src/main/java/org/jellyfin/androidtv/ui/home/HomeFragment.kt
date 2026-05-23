@@ -288,8 +288,9 @@ class HomeFragment : Fragment() {
 	private fun shouldShowMediaBar(): Boolean {
 		val isFocused = mediaBarViewModel.isFocused.value
 		val selectedPosition = rowsFragment?.selectedPositionFlow?.value ?: -1
+		val hasMediaBar = rowsFragment?.hasMediaBarAtPosition0 == true
 		val isMediaBarEnabled = userSettingPreferences[UserSettingPreferences.mediaBarEnabled]
-		return isMediaBarEnabled && (isFocused || selectedPosition == 0)
+		return isMediaBarEnabled && (isFocused || (selectedPosition == 0 && hasMediaBar))
 	}
 
 	/**

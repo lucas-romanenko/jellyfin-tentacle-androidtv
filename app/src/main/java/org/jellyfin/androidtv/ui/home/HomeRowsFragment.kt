@@ -800,13 +800,15 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			rowViewHolder: RowPresenter.ViewHolder?,
 			row: Row?,
 		) {
+			// During row rebuild, Leanback fires selection callbacks for every row
+			// being added/removed. Suppress ALL of them — both null items and valid
+			// BaseRowItems — until resyncSelectedItem forces a proper re-selection.
+			if (suppressSelectionClearing) return
+
 			// Update selected position flow immediately (for focus tracking)
 			_selectedPositionFlow.value = selectedPosition
-			
+
 			if (item !is BaseRowItem) {
-				// During row rebuild, Leanback fires selection callbacks with null items.
-				// Skip clearing until resyncSelectedItem forces a proper re-selection.
-				if (suppressSelectionClearing) return
 
 				currentItem = null
 				// Clear selected item state immediately

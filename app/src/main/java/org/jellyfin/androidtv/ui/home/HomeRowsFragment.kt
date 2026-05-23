@@ -109,6 +109,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	// Data
 	private var currentItem: BaseRowItem? = null
 	private var currentRow: ListRow? = null
+	private var suppressSelectionClearing = false
 	private var justLoaded = true
 
 	// Special rows
@@ -710,13 +711,28 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	 * from the selected row and update the state flows + background manually.
 	 */
 	private fun resyncSelectedItem() {
-		view?.post {
-			if (!isAdded || adapter.size() == 0) return@post
+		// Suppress the clearing path in onItemSelected during rebuild —
+		// Leanback fires selection callbacks with null items as rows are removed/added,
+		// which would overwrite our state.
+		suppressSelectionClearing = true
+
+		view?.postDelayed({
+			if (!isAdded || adapter.size() == 0) {
+				suppressSelectionClearing = false
+				return@postDelayed
+			}
 			val pos = selectedPosition.coerceIn(0, adapter.size() - 1)
-			val row = adapter.get(pos) as? ListRow ?: return@post
-			val rowAdapter = row.adapter as? MutableObjectAdapter<*> ?: return@post
-			val firstItem = (if (rowAdapter.size() > 0) rowAdapter[0] else null) as? BaseRowItem
-				?: return@post
+			val row = adapter.get(pos) as? ListRow
+			if (row == null) {
+				suppressSelectionClearing = false
+				return@postDelayed
+			}
+			val rowAdapter = row.adapter as? MutableObjectAdapter<*>
+			val firstItem = (if (rowAdapter != null && rowAdapter.size() > 0) rowAdapter[0] else null) as? BaseRowItem
+			if (firstItem == null) {
+				suppressSelectionClearing = false
+				return@postDelayed
+			}
 
 			// Directly update state flows — bypasses Leanback's selection callback
 			currentItem = firstItem
@@ -729,9 +745,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			)
 
 			// Update background
-			val baseItem = firstItem.baseItem
-			backgroundService.setBackground(baseItem, BlurContext.BROWSING)
-		}
+			backgroundService.setBackground(firstItem.baseItem, BlurContext.BROWSING)
+
+			// Release suppression after another frame to catch any trailing callbacks
+			view?.postDelayed({ suppressSelectionClearing = false }, 100)
+		}, 300)
 	}
 
 	private suspend fun addBuiltInSection(
@@ -811,14 +829,18 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			_selectedPositionFlow.value = selectedPosition
 			
 			if (item !is BaseRowItem) {
+				// During row rebuild, Leanback fires selection callbacks with null items.
+				// Skip clearing to preserve the state set by resyncSelectedItem().
+				if (suppressSelectionClearing) return
+
 				currentItem = null
 				// Clear selected item state immediately
 				selectionDebouncer.cancel()
 				_selectedItemStateFlow.value = SelectedItemState.EMPTY
-				
+
 				// Cancel any pending theme music playback
 				themeMusicPlayer.cancelDelayedPlay()
-				
+
 				// Don't clear background if we're on the media bar row - it has its own backdrop
 				if (row !is MediaBarRow) {
 					backgroundService.clearBackgrounds()

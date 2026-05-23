@@ -711,7 +711,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	/**
 	 * After an in-place row rebuild, Leanback fires onItemSelected callbacks
 	 * for every row being added/removed. We suppress ALL callbacks during rebuild,
-	 * then directly update state from the adapter after a delay.
+	 * then re-emit state for whatever the user was already looking at.
+	 *
+	 * Leanback preserves scroll position naturally — we just need to update
+	 * the state flows so the info area (title, summary, backdrop) matches.
 	 */
 	private fun resyncSelectedItem() {
 		suppressSelectionClearing = true
@@ -725,34 +728,30 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				return@postDelayed
 			}
 
-			// Find the first ListRow with actual BaseRowItems (skip MediaBarRow etc.)
-			var firstItem: BaseRowItem? = null
-			for (i in contentRowStartIndex until adapter.size()) {
-				val candidate = adapter.get(i) as? ListRow ?: continue
-				val ra = candidate.adapter as? MutableObjectAdapter<*> ?: continue
-				if (ra.size() > 0) {
-					firstItem = ra[0] as? BaseRowItem
-					if (firstItem != null) {
-						currentItem = firstItem
-						currentRow = candidate
-						break
+			// Leanback keeps the user's scroll position after adapter changes.
+			// Find the item at that position and update state flows to match.
+			val pos = selectedPosition
+			var itemAtPosition: BaseRowItem? = null
+
+			if (pos in contentRowStartIndex until adapter.size()) {
+				val row = adapter.get(pos) as? ListRow
+				val ra = row?.adapter as? MutableObjectAdapter<*>
+				if (ra != null && ra.size() > 0) {
+					itemAtPosition = ra[0] as? BaseRowItem
+					if (itemAtPosition != null) {
+						currentItem = itemAtPosition
+						currentRow = row
 					}
 				}
 			}
 
-			if (firstItem != null) {
-				// Update item state directly — do NOT update selectedPositionFlow
-				// because that triggers updateMediaBarBackground() in HomeFragment
-				// which can hide titleView/summaryView when position == 0.
+			if (itemAtPosition != null) {
 				_selectedItemStateFlow.value = SelectedItemState(
-					title = firstItem.getName(requireContext()) ?: "",
-					summary = firstItem.getSummary(requireContext()) ?: "",
-					baseItem = firstItem.baseItem
+					title = itemAtPosition.getName(requireContext()) ?: "",
+					summary = itemAtPosition.getSummary(requireContext()) ?: "",
+					baseItem = itemAtPosition.baseItem
 				)
-				backgroundService.setBackground(firstItem.baseItem, BlurContext.BROWSING)
-				Timber.d("resyncSelectedItem: updated state — title='${firstItem.getName(requireContext())}', hasBaseItem=${firstItem.baseItem != null}")
-			} else {
-				Timber.d("resyncSelectedItem: no valid item found in adapter")
+				backgroundService.setBackground(itemAtPosition.baseItem, BlurContext.BROWSING)
 			}
 
 			suppressSelectionClearing = false

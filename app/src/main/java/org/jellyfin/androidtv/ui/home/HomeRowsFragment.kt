@@ -682,6 +682,14 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			val rowsAdapter = adapter as MutableObjectAdapter<Row>
 			val cardPresenter = CardPresenter()
 
+			// Save the user's current scroll position before modifying the adapter
+			val savedPosition = selectedPosition
+
+			// Suppress selection callbacks during rebuild
+			suppressSelectionClearing = true
+			selectionDebouncer.cancel()
+			backgroundDebouncer.cancel()
+
 			// Remove all existing content rows (everything from contentRowStartIndex onward)
 			val contentRowCount = rowsAdapter.size() - contentRowStartIndex
 			if (contentRowCount > 0) {
@@ -699,7 +707,14 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			}
 
 			currentRows = newRows
-			resyncSelectedItem()
+
+			// Restore the user's scroll position, clamped to valid range
+			val maxPos = (rowsAdapter.size() - 1).coerceAtLeast(0)
+			val targetPos = savedPosition.coerceIn(0, maxPos)
+			setSelectedPosition(targetPos, false)
+
+			// After Leanback settles, update state flows for the item at restored position
+			resyncSelectedItem(targetPos)
 		}
 
 		// Update tracked section keys
@@ -709,18 +724,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	}
 
 	/**
-	 * After an in-place row rebuild, Leanback fires onItemSelected callbacks
-	 * for every row being added/removed. We suppress ALL callbacks during rebuild,
-	 * then re-emit state for whatever the user was already looking at.
-	 *
-	 * Leanback preserves scroll position naturally — we just need to update
-	 * the state flows so the info area (title, summary, backdrop) matches.
+	 * After an in-place row rebuild, update state flows for the item at the
+	 * user's restored position. Called after setSelectedPosition() to keep
+	 * title, summary, and backdrop in sync without disrupting the user's scroll.
 	 */
-	private fun resyncSelectedItem() {
-		suppressSelectionClearing = true
-		selectionDebouncer.cancel()
-		backgroundDebouncer.cancel()
-
+	private fun resyncSelectedItem(targetPos: Int) {
 		view?.postDelayed({
 			// ALWAYS release suppression no matter what — if it stays on, all navigation breaks.
 			if (!isAdded || adapter.size() == 0) {
@@ -728,9 +736,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				return@postDelayed
 			}
 
-			// Leanback keeps the user's scroll position after adapter changes.
-			// Find the item at that position and update state flows to match.
-			val pos = selectedPosition
+			// Find the item at the restored position and update state flows
+			val pos = selectedPosition // Use actual position after Leanback settles
 			var itemAtPosition: BaseRowItem? = null
 
 			if (pos in contentRowStartIndex until adapter.size()) {
@@ -746,6 +753,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			}
 
 			if (itemAtPosition != null) {
+				_selectedPositionFlow.value = pos
 				_selectedItemStateFlow.value = SelectedItemState(
 					title = itemAtPosition.getName(requireContext()) ?: "",
 					summary = itemAtPosition.getSummary(requireContext()) ?: "",

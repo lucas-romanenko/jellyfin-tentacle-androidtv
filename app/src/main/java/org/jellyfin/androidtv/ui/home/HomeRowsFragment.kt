@@ -721,19 +721,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				val existingRow = if (name != null) existingRowsByName[name] else null
 
 				if (existingRow != null && freshRow != null) {
-					// Reuse existing row to preserve horizontal scroll position.
-					// Extract BaseItemDto from the fresh adapter's BaseRowItems and
-					// update the existing adapter silently.
+					// Reuse existing row as-is — preserves horizontal scroll position.
+					// Don't touch the ItemRowAdapter's items here. Item content updates
+					// are handled by the content-only refresh path (structureChanged=false).
 					val existingAdapter = existingRow.adapter as? ItemRowAdapter
-					val freshAdapter = freshRow.adapter as? ItemRowAdapter
-					if (existingAdapter != null && freshAdapter != null) {
-						val freshItems = (0 until freshAdapter.size())
-							.mapNotNull { (freshAdapter[it] as? org.jellyfin.androidtv.ui.itemhandling.BaseRowItem)?.baseItem }
-						if (freshItems.isNotEmpty()) {
-							existingAdapter.replaceStaticItems(freshItems)
-						}
-					}
-					// Re-register existing adapter in tentacleRowAdapters under correct playlistId
 					val playlistId = nameToPlaylistId[name]
 					if (playlistId != null && existingAdapter != null) {
 						tentacleRowAdapters[playlistId] = existingAdapter

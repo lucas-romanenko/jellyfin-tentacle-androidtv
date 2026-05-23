@@ -712,55 +712,19 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	 */
 	private fun resyncSelectedItem() {
 		// Suppress the clearing path in onItemSelected during rebuild —
-		// Leanback fires selection callbacks with null items as rows are removed/added,
-		// which would overwrite our state.
+		// Leanback fires selection callbacks with null items as rows are removed/added.
 		suppressSelectionClearing = true
-		Timber.d("resyncSelectedItem: suppression ON, scheduling resync in 300ms")
 
+		// After a short delay (let Leanback finish internal adapter updates),
+		// force re-selection at the first content row. This triggers the normal
+		// onItemSelected callback with the correct item, updating title/summary/background.
 		view?.postDelayed({
-			if (!isAdded || adapter.size() == 0) {
-				Timber.d("resyncSelectedItem: bailing — not added or empty adapter")
-				suppressSelectionClearing = false
-				return@postDelayed
-			}
-			val pos = selectedPosition.coerceIn(0, adapter.size() - 1)
-			val row = adapter.get(pos) as? ListRow
-			if (row == null) {
-				Timber.d("resyncSelectedItem: bailing — row at pos=$pos is null or not ListRow (type=${adapter.get(pos)?.javaClass?.simpleName})")
-				suppressSelectionClearing = false
-				return@postDelayed
-			}
-			val rowAdapter = row.adapter as? MutableObjectAdapter<*>
-			val firstItem = (if (rowAdapter != null && rowAdapter.size() > 0) rowAdapter[0] else null) as? BaseRowItem
-			if (firstItem == null) {
-				Timber.d("resyncSelectedItem: bailing — no BaseRowItem in row (adapterSize=${rowAdapter?.size()}, firstType=${if (rowAdapter != null && rowAdapter.size() > 0) rowAdapter[0]?.javaClass?.simpleName else "empty"})")
-				suppressSelectionClearing = false
-				return@postDelayed
-			}
-
-			val title = firstItem.getName(requireContext()) ?: ""
-			val summary = firstItem.getSummary(requireContext()) ?: ""
-			Timber.d("resyncSelectedItem: setting state — pos=$pos, title='$title', hasBaseItem=${firstItem.baseItem != null}")
-
-			// Directly update state flows — bypasses Leanback's selection callback
-			currentItem = firstItem
-			currentRow = row
-			_selectedPositionFlow.value = pos
-			_selectedItemStateFlow.value = SelectedItemState(
-				title = title,
-				summary = summary,
-				baseItem = firstItem.baseItem
-			)
-
-			// Update background
-			backgroundService.setBackground(firstItem.baseItem, BlurContext.BROWSING)
-
-			// Release suppression after another frame to catch any trailing callbacks
-			view?.postDelayed({
-				Timber.d("resyncSelectedItem: suppression OFF")
-				suppressSelectionClearing = false
-			}, 100)
-		}, 300)
+			suppressSelectionClearing = false
+			if (!isAdded || adapter.size() == 0) return@postDelayed
+			val targetPos = contentRowStartIndex.coerceIn(0, adapter.size() - 1)
+			Timber.d("resyncSelectedItem: forcing setSelectedPosition($targetPos)")
+			setSelectedPosition(targetPos, true)
+		}, 200)
 	}
 
 	private suspend fun addBuiltInSection(
@@ -840,9 +804,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			_selectedPositionFlow.value = selectedPosition
 			
 			if (item !is BaseRowItem) {
-				Timber.d("onItemSelected: non-BaseRowItem — item=${item?.javaClass?.simpleName}, row=${row?.javaClass?.simpleName}, suppress=$suppressSelectionClearing")
 				// During row rebuild, Leanback fires selection callbacks with null items.
-				// Skip clearing to preserve the state set by resyncSelectedItem().
+				// Skip clearing until resyncSelectedItem forces a proper re-selection.
 				if (suppressSelectionClearing) return
 
 				currentItem = null

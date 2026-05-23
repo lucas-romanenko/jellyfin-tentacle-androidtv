@@ -728,7 +728,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	 * user's restored position. Called after setSelectedPosition() to keep
 	 * title, summary, and backdrop in sync without disrupting the user's scroll.
 	 */
-	private fun resyncSelectedItem(targetPos: Int) {
+	private fun resyncSelectedItem(targetPos: Int = selectedPosition) {
 		view?.postDelayed({
 			// ALWAYS release suppression no matter what — if it stays on, all navigation breaks.
 			if (!isAdded || adapter.size() == 0) {

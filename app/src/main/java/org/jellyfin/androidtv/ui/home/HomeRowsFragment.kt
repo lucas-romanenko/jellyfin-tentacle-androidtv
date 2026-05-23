@@ -704,27 +704,52 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	}
 
 	/**
-	 * After an in-place refresh, Leanback doesn't re-fire the selection callback,
-	 * so the background image and summary text remain stale.
+	 * After an in-place row rebuild, Leanback fires onItemSelected callbacks
+	 * for every row being added/removed — both with null items AND valid items
+	 * from each new row (the last row wins via the debouncer, causing wrong background).
 	 *
-	 * Instead of relying on Leanback's callback, directly read the first item
-	 * from the selected row and update the state flows + background manually.
+	 * We suppress ALL onItemSelected during rebuild, cancel stale debouncers,
+	 * then directly update state from the adapter after layout settles.
 	 */
 	private fun resyncSelectedItem() {
-		// Suppress the clearing path in onItemSelected during rebuild —
-		// Leanback fires selection callbacks with null items as rows are removed/added.
 		suppressSelectionClearing = true
+		// Cancel any pending debounced updates from before the rebuild
+		selectionDebouncer.cancel()
+		backgroundDebouncer.cancel()
 
-		// After a short delay (let Leanback finish internal adapter updates),
-		// force re-selection at the first content row. This triggers the normal
-		// onItemSelected callback with the correct item, updating title/summary/background.
+		// Wait for Leanback to finish layout with the new rows, then update state directly
 		view?.postDelayed({
-			suppressSelectionClearing = false
-			if (!isAdded || adapter.size() == 0) return@postDelayed
+			if (!isAdded || adapter.size() == 0) {
+				suppressSelectionClearing = false
+				return@postDelayed
+			}
+
+			// Move focus to first content row — forces Leanback to bind ViewHolders
 			val targetPos = contentRowStartIndex.coerceIn(0, adapter.size() - 1)
-			Timber.d("resyncSelectedItem: forcing setSelectedPosition($targetPos)")
-			setSelectedPosition(targetPos, true)
-		}, 200)
+			setSelectedPosition(targetPos, false)
+
+			// Now read the actual item and set state directly (don't rely on callback)
+			view?.post {
+				suppressSelectionClearing = false
+				if (!isAdded || adapter.size() == 0) return@post
+
+				val pos = selectedPosition.coerceIn(0, adapter.size() - 1)
+				val row = adapter.get(pos) as? ListRow ?: return@post
+				val rowAdapter = row.adapter as? MutableObjectAdapter<*> ?: return@post
+				if (rowAdapter.size() == 0) return@post
+				val firstItem = rowAdapter[0] as? BaseRowItem ?: return@post
+
+				currentItem = firstItem
+				currentRow = row
+				_selectedPositionFlow.value = pos
+				_selectedItemStateFlow.value = SelectedItemState(
+					title = firstItem.getName(requireContext()) ?: "",
+					summary = firstItem.getSummary(requireContext()) ?: "",
+					baseItem = firstItem.baseItem
+				)
+				backgroundService.setBackground(firstItem.baseItem, BlurContext.BROWSING)
+			}
+		}, 300)
 	}
 
 	private suspend fun addBuiltInSection(

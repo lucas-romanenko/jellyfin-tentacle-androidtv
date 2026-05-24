@@ -37,6 +37,43 @@ import org.koin.compose.koinInject
 import org.koin.androidx.viewmodel.ext.android.activityViewModel
 import androidx.media3.datasource.HttpDataSource
 import org.jellyfin.androidtv.ui.settings.compat.SettingsViewModel
+import org.jellyfin.androidtv.data.repository.TentacleRepository
+import org.jellyfin.androidtv.data.repository.TentacleNotification
+import org.jellyfin.androidtv.ui.navigation.Destinations
+import org.jellyfin.androidtv.ui.navigation.NavigationRepository
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.Text
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil3.compose.AsyncImage
 
 class HomeFragment : Fragment() {
 	private val mediaBarViewModel by inject<MediaBarSlideshowViewModel>()
@@ -44,6 +81,8 @@ class HomeFragment : Fragment() {
 	private val userSettingPreferences by inject<UserSettingPreferences>()
 	private val userPreferences by inject<UserPreferences>()
 	private val settingsViewModel by activityViewModel<SettingsViewModel>()
+	private val tentacleRepository by inject<TentacleRepository>()
+	private val navigationRepository by inject<NavigationRepository>()
 
 	private var titleView: TextView? = null
 	private var logoView: ImageView? = null
@@ -133,6 +172,8 @@ class HomeFragment : Fragment() {
 		super.onViewCreated(view, savedInstanceState)
 
 		setupSeasonalSurprise()
+		setupNotificationToast(view)
+		startNotificationPolling()
 
 		settingsViewModel.settingsClosedCounter
 			.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
@@ -293,6 +334,71 @@ class HomeFragment : Fragment() {
 		return isMediaBarEnabled && (isFocused || (selectedPosition == 0 && hasMediaBar))
 	}
 
+	private fun startNotificationPolling() {
+		lifecycleScope.launch {
+			while (true) {
+				delay(15_000) // Poll every 15 seconds
+				try {
+					tentacleRepository.pollNotifications()
+				} catch (_: Exception) {}
+			}
+		}
+	}
+
+	private fun setupNotificationToast(view: View) {
+		val toastView = view.findViewById<ComposeView>(R.id.notificationToast)
+		toastView.setContent {
+			val notifications by tentacleRepository.pendingNotifications.collectAsState()
+			val currentNotif = notifications.firstOrNull()
+
+			var visible by remember { mutableStateOf(false) }
+
+			LaunchedEffect(currentNotif?.id) {
+				if (currentNotif != null) {
+					visible = true
+					delay(8000)
+					visible = false
+					delay(400) // Wait for exit animation
+					tentacleRepository.dismissNotification(currentNotif.id)
+					tentacleRepository.consumeNotification(currentNotif.id)
+				}
+			}
+
+			Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
+				AnimatedVisibility(
+					visible = visible && currentNotif != null,
+					enter = slideInHorizontally { it },
+					exit = slideOutHorizontally { it },
+				) {
+					if (currentNotif != null) {
+						NotificationToast(
+							notification = currentNotif,
+							onDismiss = {
+								visible = false
+								lifecycleScope.launch {
+									delay(400)
+									tentacleRepository.dismissNotification(currentNotif.id)
+									tentacleRepository.consumeNotification(currentNotif.id)
+								}
+							},
+							onClick = {
+								visible = false
+								lifecycleScope.launch {
+									delay(400)
+									tentacleRepository.dismissNotification(currentNotif.id)
+									tentacleRepository.consumeNotification(currentNotif.id)
+									if (!currentNotif.jellyfinItemId.isNullOrEmpty()) {
+										navigationRepository.navigate(Destinations.itemDetails(currentNotif.jellyfinItemId))
+									}
+								}
+							},
+						)
+					}
+				}
+			}
+		}
+	}
+
 	/**
 	 * Setup the seasonal surprise effects based on user selection.
 	 * Options: none, winter (❄️), spring (🌸🌼), summer (☀️🏐), fall (🍁🍂)
@@ -365,5 +471,68 @@ class HomeFragment : Fragment() {
 		leaffallView = null
 		summerView = null
 		halloweenView = null
+	}
+}
+
+@androidx.compose.runtime.Composable
+private fun NotificationToast(
+	notification: TentacleNotification,
+	onDismiss: () -> Unit,
+	onClick: () -> Unit,
+) {
+	Row(
+		modifier = Modifier
+			.padding(24.dp)
+			.widthIn(max = 380.dp)
+			.clip(RoundedCornerShape(12.dp))
+			.background(
+				Brush.horizontalGradient(
+					colors = listOf(Color(0xFF1a1a2e), Color(0xFF16213e))
+				)
+			)
+			.clickable(onClick = onClick)
+			.padding(12.dp),
+		horizontalArrangement = Arrangement.spacedBy(12.dp),
+		verticalAlignment = Alignment.CenterVertically,
+	) {
+		if (!notification.posterPath.isNullOrEmpty()) {
+			AsyncImage(
+				model = "https://image.tmdb.org/t/p/w185${notification.posterPath}",
+				contentDescription = null,
+				modifier = Modifier
+					.size(width = 50.dp, height = 75.dp)
+					.clip(RoundedCornerShape(6.dp)),
+				contentScale = ContentScale.Crop,
+			)
+		}
+
+		Column(
+			modifier = Modifier.weight(1f),
+			verticalArrangement = Arrangement.spacedBy(4.dp),
+		) {
+			Text(
+				text = "Ready to Watch",
+				color = Color(0xFF8b5cf6),
+				fontSize = 11.sp,
+				fontWeight = FontWeight.Bold,
+				letterSpacing = 0.5.sp,
+			)
+			Text(
+				text = notification.message,
+				color = Color.White,
+				fontSize = 14.sp,
+				maxLines = 2,
+				overflow = TextOverflow.Ellipsis,
+			)
+		}
+
+		Text(
+			text = "\u2715",
+			color = Color.White.copy(alpha = 0.6f),
+			fontSize = 16.sp,
+			modifier = Modifier
+				.clickable(onClick = onDismiss)
+				.padding(4.dp),
+		)
 	}
 }

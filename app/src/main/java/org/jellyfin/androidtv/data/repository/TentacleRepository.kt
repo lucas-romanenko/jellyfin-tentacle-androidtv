@@ -57,6 +57,11 @@ class TentacleRepository(
 	private val _activityDownloadCount = MutableStateFlow(0)
 	val activityDownloadCount: StateFlow<Int> = _activityDownloadCount.asStateFlow()
 
+	// Notification flow — emits new notifications for toast display
+	private val _pendingNotifications = MutableStateFlow<List<TentacleNotification>>(emptyList())
+	val pendingNotifications: StateFlow<List<TentacleNotification>> = _pendingNotifications.asStateFlow()
+	private val knownNotificationIds = mutableSetOf<Int>()
+
 	fun bumpActivityDownloadCount(count: Int) {
 		_activityDownloadCount.value = _activityDownloadCount.value + count
 	}
@@ -572,6 +577,54 @@ class TentacleRepository(
 	}
 
 	/**
+	 * Poll for new download notifications. Returns new unseen notifications
+	 * and updates the pendingNotifications flow for UI consumption.
+	 */
+	suspend fun pollNotifications(): NotificationsResponse? = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/Notifications")
+			val request = Request.Builder().url(url).get().build()
+			val response = httpClient.newCall(request).execute()
+			if (!response.isSuccessful) { response.close(); return@withContext null }
+			val body = response.body?.string() ?: return@withContext null
+			response.close()
+			val result = json.decodeFromString<NotificationsResponse>(body)
+
+			if (result.notificationsEnabled) {
+				val newNotifs = result.notifications.filter { it.id !in knownNotificationIds }
+				if (newNotifs.isNotEmpty()) {
+					knownNotificationIds.addAll(newNotifs.map { it.id })
+					_pendingNotifications.value = _pendingNotifications.value + newNotifs
+				}
+			}
+			result
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to poll Tentacle notifications")
+			null
+		}
+	}
+
+	/**
+	 * Dismiss a notification after it's been shown as a toast.
+	 */
+	suspend fun dismissNotification(notificationId: Int) = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/Notifications/$notificationId/Dismiss")
+			val request = Request.Builder().url(url).post("".toRequestBody()).build()
+			httpClient.newCall(request).execute().close()
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to dismiss notification $notificationId")
+		}
+	}
+
+	/**
+	 * Remove a notification from the pending queue (after toast is shown).
+	 */
+	fun consumeNotification(notificationId: Int) {
+		_pendingNotifications.value = _pendingNotifications.value.filter { it.id != notificationId }
+	}
+
+	/**
 	 * Fetch seasons for a series. Uses TVDB endpoint for TVDB-only items (tmdbId=0).
 	 */
 	suspend fun getSeasons(tmdbId: Int, tvdbId: Int = 0): SeasonsResponse? = withContext(Dispatchers.IO) {
@@ -1036,4 +1089,28 @@ data class ManageEpisodesResult(
 data class SelectedEpisode(
 	val season: Int,
 	val episode: Int,
+)
+
+@Serializable
+data class NotificationsResponse(
+	val notifications: List<TentacleNotification> = emptyList(),
+	@SerialName("notifications_enabled")
+	val notificationsEnabled: Boolean = true,
+)
+
+@Serializable
+data class TentacleNotification(
+	val id: Int = 0,
+	@SerialName("tmdb_id")
+	val tmdbId: Int = 0,
+	@SerialName("media_type")
+	val mediaType: String = "movie",
+	val title: String = "",
+	val message: String = "",
+	@SerialName("poster_path")
+	val posterPath: String? = null,
+	@SerialName("jellyfin_item_id")
+	val jellyfinItemId: String? = null,
+	@SerialName("created_at")
+	val createdAt: String? = null,
 )

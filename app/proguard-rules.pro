@@ -120,5 +120,7 @@
 -keep class org.jellyfin.androidtv.data.repository.FollowResult { *; }
 -keep class org.jellyfin.androidtv.data.repository.ManageEpisodesResult { *; }
 -keep class org.jellyfin.androidtv.data.repository.QueryResultResponse { *; }
+-keep class org.jellyfin.androidtv.data.repository.NotificationsResponse { *; }
+-keep class org.jellyfin.androidtv.data.repository.TentacleNotification { *; }
 -keep class org.jellyfin.androidtv.ui.activity.* { *; }
 -keep class org.jellyfin.androidtv.ui.discover.* { *; }

@@ -388,10 +388,11 @@ class HomeFragment : Fragment() {
 									tentacleRepository.dismissNotification(currentNotif.id)
 									tentacleRepository.consumeNotification(currentNotif.id)
 									if (!currentNotif.jellyfinItemId.isNullOrEmpty()) {
-									try {
-										val itemUuid = java.util.UUID.fromString(currentNotif.jellyfinItemId)
-										navigationRepository.navigate(Destinations.itemDetails(itemUuid))
-									} catch (_: IllegalArgumentException) {}
+										try {
+											val itemUuid = java.util.UUID.fromString(currentNotif.jellyfinItemId)
+											navigationRepository.navigate(Destinations.itemDetails(itemUuid))
+										} catch (_: IllegalArgumentException) {}
+									}
 								}
 							},
 						)

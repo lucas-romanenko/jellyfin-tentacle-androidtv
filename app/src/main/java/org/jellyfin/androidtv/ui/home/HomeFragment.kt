@@ -57,7 +57,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.Text
+import org.jellyfin.androidtv.ui.base.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -388,8 +388,10 @@ class HomeFragment : Fragment() {
 									tentacleRepository.dismissNotification(currentNotif.id)
 									tentacleRepository.consumeNotification(currentNotif.id)
 									if (!currentNotif.jellyfinItemId.isNullOrEmpty()) {
-										navigationRepository.navigate(Destinations.itemDetails(currentNotif.jellyfinItemId))
-									}
+									try {
+										val itemUuid = java.util.UUID.fromString(currentNotif.jellyfinItemId)
+										navigationRepository.navigate(Destinations.itemDetails(itemUuid))
+									} catch (_: IllegalArgumentException) {}
 								}
 							},
 						)

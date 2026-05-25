@@ -41,7 +41,7 @@ android {
 	productFlavors {
 		create("github") {
 			dimension = "distribution"
-			buildConfigField("boolean", "ENABLE_OTA_UPDATES", "true")
+			buildConfigField("boolean", "ENABLE_OTA_UPDATES", "false")
 		}
 
 		create("playstore") {

@@ -48,13 +48,6 @@ import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinMediaBar
 import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinMediaBarSourceTypeScreen
 import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinNavbarPositionScreen
 import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinParentalControlsScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsPluginScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsPluginAppearanceScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsPluginHomeScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsPluginMediaBarScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsPluginRatingsScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsPluginThemeMusicScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsPluginToolbarScreen
 import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinSeasonalSurpriseScreen
 import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinShuffleContentTypeScreen
 import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinSyncPlayScreen
@@ -133,13 +126,6 @@ object Routes {
 	const val PLAYBACK_AUDIO_BEHAVIOR = "/playback/audio-behavior"
 	const val JELLYSEERR = "/jellyseerr"
 	const val JELLYSEERR_ROWS = "/jellyseerr/rows"
-	const val PLUGIN = "/plugin"
-	const val PLUGIN_TOOLBAR = "/plugin/toolbar"
-	const val PLUGIN_HOME = "/plugin/home"
-	const val PLUGIN_MEDIA_BAR = "/plugin/media-bar"
-	const val PLUGIN_THEME_MUSIC = "/plugin/theme-music"
-	const val PLUGIN_APPEARANCE = "/plugin/appearance"
-	const val PLUGIN_RATINGS = "/plugin/ratings"
 	const val MOONFIN_NAVBAR_POSITION = "/moonfin/navbar-position"
 	const val MOONFIN_SHUFFLE_CONTENT_TYPE = "/moonfin/shuffle-content-type"
 	const val MOONFIN_MEDIA_BAR_SOURCE_TYPE = "/moonfin/media-bar-source-type"
@@ -383,27 +369,6 @@ val routes = mapOf<String, RouteComposable>(
 	},
 	Routes.JELLYSEERR_ROWS to {
 		SettingsJellyseerrRowsScreen()
-	},
-	Routes.PLUGIN to {
-		SettingsPluginScreen()
-	},
-	Routes.PLUGIN_TOOLBAR to {
-		SettingsPluginToolbarScreen()
-	},
-	Routes.PLUGIN_HOME to {
-		SettingsPluginHomeScreen()
-	},
-	Routes.PLUGIN_MEDIA_BAR to {
-		SettingsPluginMediaBarScreen()
-	},
-	Routes.PLUGIN_THEME_MUSIC to {
-		SettingsPluginThemeMusicScreen()
-	},
-	Routes.PLUGIN_APPEARANCE to {
-		SettingsPluginAppearanceScreen()
-	},
-	Routes.PLUGIN_RATINGS to {
-		SettingsPluginRatingsScreen()
 	},
 	Routes.MOONFIN_NAVBAR_POSITION to {
 		SettingsMoonfinNavbarPositionScreen()

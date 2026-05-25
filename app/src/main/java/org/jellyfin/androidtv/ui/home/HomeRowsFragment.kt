@@ -396,12 +396,18 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 				api.webSocket.subscribe<LibraryChangedMessage>()
 					.onEach {
-						Timber.i("LibraryChangedMessage received, refreshing rows + Tentacle home")
-						refreshRows(force = true, delayed = false)
-						if (tentacleRepository.checkAvailable()) {
-							// Small delay to let Jellyfin finish indexing playlist changes
-							delay(2.seconds)
-							refreshTentacleRowsInPlace()
+						try {
+							if (!isAdded) return@onEach
+							Timber.i("LibraryChangedMessage received, refreshing rows + Tentacle home")
+							refreshRows(force = true, delayed = false)
+							if (tentacleRepository.checkAvailable()) {
+								// Small delay to let Jellyfin finish indexing playlist changes
+								delay(2.seconds)
+								if (!isAdded) return@onEach
+								refreshTentacleRowsInPlace()
+							}
+						} catch (e: Exception) {
+							Timber.w(e, "Error handling LibraryChangedMessage refresh")
 						}
 					}
 					.launchIn(this)
@@ -583,6 +589,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	 * 4. If structure changed: removes old content rows, adds new ones to the adapter in-place
 	 */
 	private suspend fun refreshTentacleRowsInPlace() {
+		if (!isAdded) return
+
 		// Refresh hero/media bar
 		mediaBarViewModel.loadInitialContent()
 
@@ -667,8 +675,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		// Apply to adapter on main thread. Reuse existing ListRow objects where possible
 		// to preserve horizontal scroll position within rows. Only create new Row objects
 		// for genuinely new sections.
+		if (!isAdded) return
 		withContext(Dispatchers.Main) {
-			val rowsAdapter = adapter as MutableObjectAdapter<Row>
+			if (!isAdded) return@withContext
+			val rowsAdapter = (adapter as? MutableObjectAdapter<Row>) ?: return@withContext
 			val cardPresenter = CardPresenter()
 
 			// Suppress selection callbacks during rebuild
@@ -696,9 +706,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			// Build fresh rows into a temp adapter (also populates tentacleRowAdapters)
 			tentacleRowAdapters.clear()
-			val tempAdapter = MutableObjectAdapter<Row>(rowsAdapter.presenterSelector!!)
+			val presenterSelector = rowsAdapter.presenterSelector ?: return@withContext
+			val ctx = context ?: return@withContext
+			val tempAdapter = MutableObjectAdapter<Row>(presenterSelector)
 			for (row in newRows) {
-				row.addToRowsAdapter(requireContext(), cardPresenter, tempAdapter)
+				row.addToRowsAdapter(ctx, cardPresenter, tempAdapter)
 			}
 
 			val newContentRows = mutableListOf<Row>()

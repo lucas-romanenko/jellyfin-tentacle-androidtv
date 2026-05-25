@@ -640,7 +640,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		Timber.i("Tentacle section structure changed, rebuilding rows in-place")
 
 		// Pre-fetch items for all playlist rows in parallel
-		val tentacleRowData = kotlinx.coroutines.coroutineScope {
+		val allRowData = kotlinx.coroutines.coroutineScope {
 			newSections
 				.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }
 				.map { section ->
@@ -652,8 +652,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						)
 					}
 				}.awaitAll()
-				.filter { it.items.isNotEmpty() }
 		}
+		val tentacleRowData = allRowData.filter { it.items.isNotEmpty() }
+		val hasEmptyRows = allRowData.size != tentacleRowData.size
 		val tentacleMap = tentacleRowData.associateBy { it.playlistId }
 
 		// Build new rows list
@@ -755,6 +756,14 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		currentTentacleSectionKeys = newKeys
 
 		Timber.i("Tentacle rows rebuilt in-place (${newRows.size} content rows)")
+
+		// If some rows had empty items (playlist just created, items still populating),
+		// retry after a short delay so they appear without waiting for the next version bump
+		if (hasEmptyRows) {
+			Timber.i("Some Tentacle rows had empty items, scheduling retry in 5s")
+			delay(5.seconds)
+			refreshTentacleRowsInPlace()
+		}
 	}
 
 	/**

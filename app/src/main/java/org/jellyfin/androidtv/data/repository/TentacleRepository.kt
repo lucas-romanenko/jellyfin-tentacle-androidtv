@@ -465,6 +465,27 @@ class TentacleRepository(
 		}
 	}
 
+	suspend fun getToolbarConfig(): List<ToolbarButton> = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleHome/Toolbar")
+			val request = Request.Builder().url(url).get().build()
+			val response = httpClient.newCall(request).execute()
+
+			if (!response.isSuccessful) {
+				response.close()
+				return@withContext emptyList()
+			}
+
+			val body = response.body?.string() ?: return@withContext emptyList()
+			response.close()
+
+			json.decodeFromString<ToolbarResponse>(body).buttons
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to fetch toolbar config")
+			emptyList()
+		}
+	}
+
 	/**
 	 * Clear all plugin-side caches (home config, playlist items, discover, etc.)
 	 * so subsequent fetches return fresh data.
@@ -945,6 +966,17 @@ data class TentacleHeroConfig(
 	val displayName: String = "",
 	val trailerAudio: Boolean = true,
 	val itemCount: Int = 10,
+)
+
+@Serializable
+data class ToolbarButton(
+	val id: String = "",
+	val enabled: Boolean = true,
+)
+
+@Serializable
+data class ToolbarResponse(
+	val buttons: List<ToolbarButton> = emptyList(),
 )
 
 @Serializable

@@ -106,6 +106,8 @@
 -keep class org.jellyfin.androidtv.data.repository.TentaclePlaylistsResponse { *; }
 -keep class org.jellyfin.androidtv.data.repository.TentaclePlaylist { *; }
 -keep class org.jellyfin.androidtv.data.repository.TentacleHeroConfig { *; }
+-keep class org.jellyfin.androidtv.data.repository.ToolbarButton { *; }
+-keep class org.jellyfin.androidtv.data.repository.ToolbarResponse { *; }
 -keep class org.jellyfin.androidtv.data.repository.ActivityResponse { *; }
 -keep class org.jellyfin.androidtv.data.repository.ActivityDownload { *; }
 -keep class org.jellyfin.androidtv.data.repository.ActivityUnreleased { *; }

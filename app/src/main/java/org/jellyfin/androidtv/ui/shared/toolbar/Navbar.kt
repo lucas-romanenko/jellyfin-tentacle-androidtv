@@ -85,6 +85,7 @@ import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.CollectionType
 import org.jellyfin.androidtv.data.repository.TentacleRepository
+import org.jellyfin.androidtv.data.repository.ToolbarButton
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinActivityViewModel
 import org.koin.core.qualifier.named
@@ -122,6 +123,12 @@ fun Navbar(
 	val serverRepository = koinInject<ServerRepository>()
 	val tentacleRepository = koinInject<TentacleRepository>()
 	val activityDownloadCount by tentacleRepository.activityDownloadCount.collectAsState()
+
+	// Fetch toolbar config from Tentacle plugin
+	var toolbarButtons by remember { mutableStateOf<List<ToolbarButton>>(emptyList()) }
+	LaunchedEffect(Unit) {
+		toolbarButtons = tentacleRepository.getToolbarConfig()
+	}
 
 	// Background polling so badge is populated even before visiting the Activity tab.
 	// Polls every 10s while downloads are active (so badge clears promptly), 30s when idle.
@@ -252,6 +259,7 @@ fun Navbar(
 		enableFolderView = enableFolderView,
 		clockBehavior = clockBehavior,
 		activityDownloadCount = activityDownloadCount,
+		toolbarButtons = toolbarButtons,
 	)
 }
 
@@ -276,6 +284,7 @@ private fun Navbar(
 	enableFolderView: Boolean = false,
 	clockBehavior: ClockBehavior = ClockBehavior.ALWAYS,
 	activityDownloadCount: Int = 0,
+	toolbarButtons: List<ToolbarButton> = emptyList(),
 ) {
 	val focusRequester = remember { FocusRequester() }
 	val userSettingPreferences = koinInject<UserSettingPreferences>()
@@ -403,12 +412,21 @@ private fun Navbar(
 			}
 		},
 		center = {
+			// Determine button order: use toolbar config order for the 5 configurable buttons,
+			// interleaved with local-only buttons in fixed positions
+			val configuredIds = if (toolbarButtons.isNotEmpty()) {
+				toolbarButtons.filter { it.enabled }.map { it.id }
+			} else {
+				listOf("search", "discover", "activity", "favorites", "libraries")
+			}
+
 			ToolbarButtons(
 				modifier = Modifier
 					.focusRequester(focusRequester),
 				backgroundColor = overlayColor,
 				alpha = overlayOpacity
 			) {
+				// Home is always first
 				ExpandableIconButton(
 					icon = ImageVector.vectorResource(R.drawable.ic_house),
 					label = stringResource(R.string.lbl_home),
@@ -418,15 +436,57 @@ private fun Navbar(
 					colors = toolbarButtonColors,
 				)
 
-				ExpandableIconButton(
-					icon = ImageVector.vectorResource(R.drawable.ic_search),
-					label = stringResource(R.string.lbl_search),
-					onClick = {
-						navigationRepository.navigate(Destinations.search())
-					},
-					colors = toolbarButtonColors,
-				)
+				// Render configurable buttons in toolbar config order
+				for (btnId in configuredIds) {
+					when (btnId) {
+						"search" -> ExpandableIconButton(
+							icon = ImageVector.vectorResource(R.drawable.ic_search),
+							label = stringResource(R.string.lbl_search),
+							onClick = {
+								navigationRepository.navigate(Destinations.search())
+							},
+							colors = toolbarButtonColors,
+						)
+						"discover" -> ExpandableIconButton(
+							icon = ImageVector.vectorResource(R.drawable.ic_compass),
+							label = stringResource(R.string.lbl_add_media),
+							onClick = {
+								navigationRepository.navigate(Destinations.tentacleDiscover)
+							},
+							colors = toolbarButtonColors,
+						)
+						"activity" -> ExpandableIconButton(
+							icon = ImageVector.vectorResource(R.drawable.ic_down),
+							label = stringResource(R.string.lbl_downloads),
+							onClick = {
+								navigationRepository.navigate(Destinations.tentacleActivity)
+							},
+							colors = toolbarButtonColors,
+							badgeCount = activityDownloadCount,
+						)
+						"favorites" -> ExpandableIconButton(
+							icon = ImageVector.vectorResource(R.drawable.ic_heart),
+							label = stringResource(R.string.lbl_favorites),
+							onClick = {
+								navigationRepository.navigate(Destinations.allFavorites)
+							},
+							colors = toolbarButtonColors,
+						)
+						"libraries" -> ExpandableLibrariesButton(
+							activeLibraryId = activeLibraryId,
+							userViews = userViews,
+							aggregatedLibraries = aggregatedLibraries,
+							enableMultiServer = enableMultiServer,
+							currentSession = currentSession,
+							colors = toolbarButtonColors,
+							activeColors = activeButtonColors,
+							navigationRepository = navigationRepository,
+							itemLauncher = itemLauncher,
+						)
+					}
+				}
 
+				// Local-only buttons (not controlled by Tentacle toolbar config)
 				if (showShuffleButton) {
 					ExpandableIconButton(
 						icon = ImageVector.vectorResource(R.drawable.ic_shuffle),
@@ -443,24 +503,12 @@ private fun Navbar(
 					)
 				}
 
-				// Genres button (conditional)
 				if (showGenresButton) {
 					ExpandableIconButton(
 						icon = ImageVector.vectorResource(R.drawable.ic_masks),
 						label = stringResource(R.string.lbl_genres),
 						onClick = {
 							navigationRepository.navigate(Destinations.allGenres)
-						},
-						colors = toolbarButtonColors,
-					)
-			}
-
-			if (showFavoritesButton) {
-					ExpandableIconButton(
-						icon = ImageVector.vectorResource(R.drawable.ic_heart),
-						label = stringResource(R.string.lbl_favorites),
-						onClick = {
-							navigationRepository.navigate(Destinations.allFavorites)
 						},
 						colors = toolbarButtonColors,
 					)
@@ -478,25 +526,6 @@ private fun Navbar(
 						colors = toolbarButtonColors,
 					)
 				}
-
-				ExpandableIconButton(
-					icon = ImageVector.vectorResource(R.drawable.ic_compass),
-					label = stringResource(R.string.lbl_add_media),
-					onClick = {
-						navigationRepository.navigate(Destinations.tentacleDiscover)
-					},
-					colors = toolbarButtonColors,
-				)
-
-				ExpandableIconButton(
-					icon = ImageVector.vectorResource(R.drawable.ic_down),
-					label = stringResource(R.string.lbl_downloads),
-					onClick = {
-						navigationRepository.navigate(Destinations.tentacleActivity)
-					},
-					colors = toolbarButtonColors,
-					badgeCount = activityDownloadCount,
-				)
 
 				if (enableFolderView) {
 					ExpandableIconButton(
@@ -517,20 +546,6 @@ private fun Navbar(
 							syncPlayViewModel.show()
 						},
 						colors = toolbarButtonColors,
-					)
-				}
-
-				if (showLibrariesInToolbar) {
-					ExpandableLibrariesButton(
-						activeLibraryId = activeLibraryId,
-						userViews = userViews,
-						aggregatedLibraries = aggregatedLibraries,
-						enableMultiServer = enableMultiServer,
-						currentSession = currentSession,
-						colors = toolbarButtonColors,
-						activeColors = activeButtonColors,
-						navigationRepository = navigationRepository,
-						itemLauncher = itemLauncher,
 					)
 				}
 

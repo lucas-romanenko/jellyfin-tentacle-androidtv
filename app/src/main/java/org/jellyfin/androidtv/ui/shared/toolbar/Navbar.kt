@@ -451,14 +451,6 @@ private fun Navbar(
 							},
 							colors = toolbarButtonColors,
 						)
-						"folders" -> ExpandableIconButton(
-							icon = ImageVector.vectorResource(R.drawable.ic_folder),
-							label = stringResource(R.string.lbl_folders),
-							onClick = {
-								navigationRepository.navigate(Destinations.folderView)
-							},
-							colors = toolbarButtonColors,
-						)
 					}
 				}
 

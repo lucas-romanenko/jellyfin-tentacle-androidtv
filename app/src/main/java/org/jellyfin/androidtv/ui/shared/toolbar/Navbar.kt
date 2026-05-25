@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -116,9 +117,10 @@ fun Navbar(
 	val tentacleRepository = koinInject<TentacleRepository>()
 	val activityDownloadCount by tentacleRepository.activityDownloadCount.collectAsState()
 
-	// Fetch toolbar config from Tentacle plugin
+	// Fetch toolbar config from Tentacle plugin (re-fetches when toolbarRefreshKey changes)
 	var toolbarButtons by remember { mutableStateOf<List<ToolbarButton>>(emptyList()) }
-	LaunchedEffect(Unit) {
+	var toolbarRefreshKey by remember { mutableIntStateOf(0) }
+	LaunchedEffect(toolbarRefreshKey) {
 		toolbarButtons = tentacleRepository.getToolbarConfig()
 	}
 
@@ -134,13 +136,15 @@ fun Navbar(
 		}
 	}
 
-	// React immediately when Jellyfin library changes (triggered after Radarr/Sonarr imports)
+	// React immediately when Jellyfin library changes — refresh activity badge + toolbar config
 	LaunchedEffect(api) {
 		try {
 			api.webSocket.subscribe<LibraryChangedMessage>().collect { message ->
 				if (message.data?.itemsAdded?.isNotEmpty() == true) {
 					try { tentacleRepository.getActivity() } catch (_: Exception) {}
 				}
+				// Re-fetch toolbar config in case it changed
+				toolbarRefreshKey++
 			}
 		} catch (_: Exception) {}
 	}

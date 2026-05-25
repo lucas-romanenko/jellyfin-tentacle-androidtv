@@ -403,7 +403,7 @@ private fun Navbar(
 							colors = toolbarButtonColors,
 						)
 						"activity" -> ExpandableIconButton(
-							icon = ImageVector.vectorResource(R.drawable.ic_down),
+							icon = ImageVector.vectorResource(R.drawable.ic_info_circle),
 							label = stringResource(R.string.lbl_downloads),
 							onClick = {
 								navigationRepository.navigate(Destinations.tentacleActivity)

@@ -757,9 +757,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	}
 
 	/**
-	 * After an in-place row rebuild, re-emit state flows for the user's
-	 * current item. DiffUtil + row reuse preserves both vertical and horizontal
-	 * scroll, so currentItem is still valid — just re-emit it.
+	 * After an in-place row rebuild, re-emit state flows for the item at the
+	 * current selection position. The old currentItem reference may be stale
+	 * (e.g. row was replaced), so we read the actual item from the adapter.
 	 */
 	private fun resyncSelectedItem() {
 		view?.postDelayed({
@@ -769,11 +769,18 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				return@postDelayed
 			}
 
-			// currentItem is still the focused item — scroll wasn't disrupted.
-			// Just re-emit the state flows so the info area stays in sync.
-			val item = currentItem
+			// Read the actual item at the current position from the adapter,
+			// since currentItem may be stale after a structural rebuild.
+			val pos = selectedPosition
+			val row = if (pos in 0 until adapter.size()) adapter[pos] as? ListRow else null
+			val rowAdapter = row?.adapter as? MutableObjectAdapter<*>
+			val item = if (rowAdapter != null && rowAdapter.size() > 0) {
+				rowAdapter[0] as? BaseRowItem
+			} else null
+
 			if (item != null) {
-				_selectedPositionFlow.value = selectedPosition
+				currentItem = item
+				_selectedPositionFlow.value = pos
 				_selectedItemStateFlow.value = SelectedItemState(
 					title = item.getName(requireContext()) ?: "",
 					summary = item.getSummary(requireContext()) ?: "",

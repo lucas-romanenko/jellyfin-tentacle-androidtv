@@ -64,7 +64,6 @@ import org.jellyfin.androidtv.ui.base.focusBorderColor
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.navigation.ActivityDestinations
 import org.jellyfin.androidtv.ui.navigation.Destinations
-import org.jellyfin.androidtv.preference.JellyseerrPreferences
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.playback.MediaManager
 import org.jellyfin.androidtv.preference.UserSettingPreferences
@@ -73,14 +72,9 @@ import org.jellyfin.androidtv.preference.constant.ClockBehavior
 import org.jellyfin.androidtv.ui.settings.compat.SettingsViewModel
 import org.jellyfin.androidtv.ui.shuffle.ShuffleManager
 import org.jellyfin.androidtv.ui.shuffle.ShuffleOptionsDialog
-import org.jellyfin.androidtv.ui.syncplay.SyncPlayDialog
-import org.jellyfin.androidtv.ui.syncplay.SyncPlayViewModel
 import org.jellyfin.androidtv.data.service.pluginsync.PluginSyncService
 import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.primaryImage
-import org.jellyfin.androidtv.util.supportsFeature
-import org.jellyfin.androidtv.auth.repository.ServerRepository
-import org.moonfin.server.core.feature.ServerFeature
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.CollectionType
@@ -88,7 +82,6 @@ import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.data.repository.ToolbarButton
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinActivityViewModel
-import org.koin.core.qualifier.named
 import timber.log.Timber
 import java.util.UUID
 
@@ -120,7 +113,6 @@ fun Navbar(
 	val userViewsRepository = koinInject<UserViewsRepository>()
 	val multiServerRepository = koinInject<org.jellyfin.androidtv.data.repository.MultiServerRepository>()
 	val sessionRepository = koinInject<org.jellyfin.androidtv.auth.repository.SessionRepository>()
-	val serverRepository = koinInject<ServerRepository>()
 	val tentacleRepository = koinInject<TentacleRepository>()
 	val activityDownloadCount by tentacleRepository.activityDownloadCount.collectAsState()
 
@@ -153,11 +145,8 @@ fun Navbar(
 		} catch (_: Exception) {}
 	}
 
-	val currentServer by serverRepository.currentServer.collectAsState()
-	val jellyseerrPreferences = koinInject<JellyseerrPreferences>(named("global"))
 	val userPreferences = koinInject<UserPreferences>()
 	val imageLoader = koinInject<coil3.ImageLoader>()
-	val scope = rememberCoroutineScope()
 
 	// Prevent user image to disappear when signing out by skipping null values
 	val currentUser by remember { userRepository.currentUser.filterNotNull() }.collectAsState(null)
@@ -177,40 +166,13 @@ fun Navbar(
 		}
 	}
 
-	var jellyseerrEnabled by remember { mutableStateOf(false) }
-	var jellyseerrVariant by remember { mutableStateOf("jellyseerr") }
-	var jellyseerrDisplayName by remember { mutableStateOf("Jellyseerr") }
-	LaunchedEffect(currentUser) {
-		if (currentUser != null) {
-			val userJellyseerrPrefs = JellyseerrPreferences.migrateToUserPreferences(context, currentUser!!.id.toString())
-			jellyseerrEnabled = userJellyseerrPrefs[JellyseerrPreferences.enabled]
-			jellyseerrVariant = userJellyseerrPrefs[JellyseerrPreferences.moonfinVariant]
-			val dn = userJellyseerrPrefs[JellyseerrPreferences.moonfinDisplayName]
-			jellyseerrDisplayName = if (dn.isNotBlank()) dn else if (jellyseerrVariant == "seerr") "Seerr" else "Jellyseerr"
-		} else {
-			jellyseerrEnabled = false
-		}
-	}
-
-	// Load toolbar customization preferences
-	var showShuffleButton by remember { mutableStateOf(true) }
-	var showGenresButton by remember { mutableStateOf(true) }
-	var showFavoritesButton by remember { mutableStateOf(true) }
-	var showLibrariesInToolbar by remember { mutableStateOf(true) }
-	var syncPlayEnabled by remember { mutableStateOf(false) }
+	// Load preferences that are still local (not controlled by Tentacle toolbar config)
 	var enableMultiServer by remember { mutableStateOf(false) }
 	var shuffleContentType by remember { mutableStateOf("both") }
-	var enableFolderView by remember { mutableStateOf(false) }
 	var clockBehavior by remember { mutableStateOf(ClockBehavior.ALWAYS) }
 	LaunchedEffect(settingsClosedCounter, syncCompletedCounter) {
-		showShuffleButton = userPreferences[UserPreferences.showShuffleButton] ?: true
-		showGenresButton = userPreferences[UserPreferences.showGenresButton] ?: true
-		showFavoritesButton = userPreferences[UserPreferences.showFavoritesButton] ?: true
-		showLibrariesInToolbar = userPreferences[UserPreferences.showLibrariesInToolbar] ?: true
-		syncPlayEnabled = userPreferences[UserPreferences.syncPlayEnabled] ?: false
 		enableMultiServer = userPreferences[UserPreferences.enableMultiServerLibraries] ?: false
 		shuffleContentType = userPreferences[UserPreferences.shuffleContentType] ?: "both"
-		enableFolderView = userPreferences[UserPreferences.enableFolderView]
 		clockBehavior = userPreferences[UserPreferences.clockBehavior]
 	}
 
@@ -247,16 +209,7 @@ fun Navbar(
 		aggregatedLibraries = aggregatedLibraries,
 		enableMultiServer = enableMultiServer,
 		currentSession = currentSession,
-		jellyseerrEnabled = jellyseerrEnabled,
-		jellyseerrVariant = jellyseerrVariant,
-		jellyseerrDisplayName = jellyseerrDisplayName,
-		showShuffleButton = showShuffleButton,
-		showGenresButton = showGenresButton,
-		showFavoritesButton = showFavoritesButton,
-		showLibrariesInToolbar = showLibrariesInToolbar,
-		syncPlayEnabled = syncPlayEnabled && currentServer.supportsFeature(ServerFeature.SYNC_PLAY),
 		shuffleContentType = shuffleContentType,
-		enableFolderView = enableFolderView,
 		clockBehavior = clockBehavior,
 		activityDownloadCount = activityDownloadCount,
 		toolbarButtons = toolbarButtons,
@@ -272,16 +225,7 @@ private fun Navbar(
 	aggregatedLibraries: List<org.jellyfin.androidtv.data.model.AggregatedLibrary> = emptyList(),
 	enableMultiServer: Boolean = false,
 	currentSession: Session? = null,
-	jellyseerrEnabled: Boolean = false,
-	jellyseerrVariant: String = "jellyseerr",
-	jellyseerrDisplayName: String = "Jellyseerr",
-	showShuffleButton: Boolean = true,
-	showGenresButton: Boolean = true,
-	showFavoritesButton: Boolean = true,
-	showLibrariesInToolbar: Boolean = true,
-	syncPlayEnabled: Boolean = false,
 	shuffleContentType: String = "both",
-	enableFolderView: Boolean = false,
 	clockBehavior: ClockBehavior = ClockBehavior.ALWAYS,
 	activityDownloadCount: Int = 0,
 	toolbarButtons: List<ToolbarButton> = emptyList(),
@@ -296,7 +240,6 @@ private fun Navbar(
 	val apiClientFactory = koinInject<ApiClientFactory>()
 	val shuffleManager = koinInject<ShuffleManager>()
 	val settingsViewModel = koinActivityViewModel<SettingsViewModel>()
-	val syncPlayViewModel = koinActivityViewModel<SyncPlayViewModel>()
 	val activity = LocalActivity.current
 	val context = LocalContext.current
 	val scope = rememberCoroutineScope()
@@ -436,7 +379,7 @@ private fun Navbar(
 					colors = toolbarButtonColors,
 				)
 
-				// Render configurable buttons in toolbar config order
+				// Render all buttons from Tentacle toolbar config order
 				for (btnId in configuredIds) {
 					when (btnId) {
 						"search" -> ExpandableIconButton(
@@ -483,72 +426,39 @@ private fun Navbar(
 							navigationRepository = navigationRepository,
 							itemLauncher = itemLauncher,
 						)
+						"shuffle" -> ExpandableIconButton(
+							icon = ImageVector.vectorResource(R.drawable.ic_shuffle),
+							label = if (isShuffling) "..." else stringResource(R.string.lbl_shuffle),
+							onClick = {
+								if (!isShuffling) {
+									kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+										shuffleManager.quickShuffle(context)
+									}
+								}
+							},
+							onLongClick = { showShuffleDialog = true },
+							colors = toolbarButtonColors,
+						)
+						"genres" -> ExpandableIconButton(
+							icon = ImageVector.vectorResource(R.drawable.ic_masks),
+							label = stringResource(R.string.lbl_genres),
+							onClick = {
+								navigationRepository.navigate(Destinations.allGenres)
+							},
+							colors = toolbarButtonColors,
+						)
+						"folders" -> ExpandableIconButton(
+							icon = ImageVector.vectorResource(R.drawable.ic_folder),
+							label = stringResource(R.string.lbl_folders),
+							onClick = {
+								navigationRepository.navigate(Destinations.folderView)
+							},
+							colors = toolbarButtonColors,
+						)
 					}
 				}
 
-				// Local-only buttons (not controlled by Tentacle toolbar config)
-				if (showShuffleButton) {
-					ExpandableIconButton(
-						icon = ImageVector.vectorResource(R.drawable.ic_shuffle),
-						label = if (isShuffling) "..." else stringResource(R.string.lbl_shuffle),
-						onClick = {
-							if (!isShuffling) {
-								kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
-									shuffleManager.quickShuffle(context)
-								}
-							}
-						},
-						onLongClick = { showShuffleDialog = true },
-						colors = toolbarButtonColors,
-					)
-				}
-
-				if (showGenresButton) {
-					ExpandableIconButton(
-						icon = ImageVector.vectorResource(R.drawable.ic_masks),
-						label = stringResource(R.string.lbl_genres),
-						onClick = {
-							navigationRepository.navigate(Destinations.allGenres)
-						},
-						colors = toolbarButtonColors,
-					)
-				}
-
-				if (jellyseerrEnabled) {
-					ExpandableIconButton(
-						icon = ImageVector.vectorResource(
-							if (jellyseerrVariant == "seerr") R.drawable.ic_seer else R.drawable.ic_jellyseerr_jellyfish
-						),
-						label = jellyseerrDisplayName,
-						onClick = {
-							navigationRepository.navigate(Destinations.jellyseerrDiscover)
-						},
-						colors = toolbarButtonColors,
-					)
-				}
-
-				if (enableFolderView) {
-					ExpandableIconButton(
-						icon = ImageVector.vectorResource(R.drawable.ic_folder),
-						label = stringResource(R.string.lbl_folders),
-						onClick = {
-							navigationRepository.navigate(Destinations.folderView)
-						},
-						colors = toolbarButtonColors,
-					)
-				}
-
-				if (syncPlayEnabled) {
-					ExpandableIconButton(
-						icon = ImageVector.vectorResource(R.drawable.ic_syncplay),
-						label = stringResource(R.string.syncplay),
-						onClick = {
-							syncPlayViewModel.show()
-						},
-						colors = toolbarButtonColors,
-					)
-				}
-
+				// Settings is always last
 				ExpandableIconButton(
 					icon = ImageVector.vectorResource(R.drawable.ic_settings),
 					label = stringResource(R.string.settings),
@@ -588,15 +498,6 @@ private fun Navbar(
 					)
 				}
 			}
-		)
-	}
-
-	// SyncPlay dialog - hosted here instead of a separate activity-level ComposeView overlay
-	val syncPlayVisible by syncPlayViewModel.visible.collectAsState()
-	if (syncPlayVisible) {
-		SyncPlayDialog(
-			visible = true,
-			onDismissRequest = { syncPlayViewModel.hide() }
 		)
 	}
 }

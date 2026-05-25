@@ -51,14 +51,6 @@ fun SettingsCustomizationScreen() {
 		}
 
 		item {
-			ListButton(
-				leadingContent = { Icon(painterResource(R.drawable.ic_house), contentDescription = null) },
-				headingContent = { Text(stringResource(R.string.home_prefs)) },
-				onClick = { router.push(Routes.HOME) }
-			)
-		}
-
-		item {
 			var focusColor by rememberPreference(userSettingPreferences, UserSettingPreferences.focusColor)
 
 			ListButton(

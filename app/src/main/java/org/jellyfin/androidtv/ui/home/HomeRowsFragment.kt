@@ -385,30 +385,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			}
 		}
 
-		// Poll Tentacle home version for live updates (10s interval)
-		lifecycleScope.launch {
-			lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-				var lastVersion = -1
-				Timber.d("Tentacle version polling started")
-				while (isActive) {
-					delay(10.seconds)
-					val available = tentacleRepository.checkAvailable()
-					if (!available) {
-						Timber.d("Tentacle version poll: not available, skipping")
-						continue
-					}
-					val version = tentacleRepository.getHomeVersion()
-					Timber.d("Tentacle version poll: version=$version, lastVersion=$lastVersion")
-					if (version < 0) continue
-					if (lastVersion >= 0 && version != lastVersion) {
-						Timber.i("Tentacle home version changed ($lastVersion -> $version), refreshing rows in-place")
-						refreshTentacleRowsInPlace()
-					}
-					lastVersion = version
-				}
-			}
-		}
-
+		// React to Jellyfin WebSocket events for live home screen updates.
+		// LibraryChangedMessage fires when playlists are created/updated/deleted,
+		// so Tentacle row changes appear instantly without polling.
 		lifecycleScope.launch {
 			lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
 				api.webSocket.subscribe<UserDataChangedMessage>()
@@ -416,7 +395,15 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					.launchIn(this)
 
 				api.webSocket.subscribe<LibraryChangedMessage>()
-					.onEach { refreshRows(force = true, delayed = false) }
+					.onEach {
+						Timber.i("LibraryChangedMessage received, refreshing rows + Tentacle home")
+						refreshRows(force = true, delayed = false)
+						if (tentacleRepository.checkAvailable()) {
+							// Small delay to let Jellyfin finish indexing playlist changes
+							delay(2.seconds)
+							refreshTentacleRowsInPlace()
+						}
+					}
 					.launchIn(this)
 			}
 		}
@@ -640,7 +627,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		Timber.i("Tentacle section structure changed, rebuilding rows in-place")
 
 		// Pre-fetch items for all playlist rows in parallel
-		val allRowData = kotlinx.coroutines.coroutineScope {
+		val tentacleRowData = kotlinx.coroutines.coroutineScope {
 			newSections
 				.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }
 				.map { section ->
@@ -652,9 +639,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						)
 					}
 				}.awaitAll()
+				.filter { it.items.isNotEmpty() }
 		}
-		val tentacleRowData = allRowData.filter { it.items.isNotEmpty() }
-		val hasEmptyRows = allRowData.size != tentacleRowData.size
 		val tentacleMap = tentacleRowData.associateBy { it.playlistId }
 
 		// Build new rows list
@@ -756,14 +742,6 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		currentTentacleSectionKeys = newKeys
 
 		Timber.i("Tentacle rows rebuilt in-place (${newRows.size} content rows)")
-
-		// If some rows had empty items (playlist just created, items still populating),
-		// retry after a short delay so they appear without waiting for the next version bump
-		if (hasEmptyRows) {
-			Timber.i("Some Tentacle rows had empty items, scheduling retry in 5s")
-			delay(5.seconds)
-			refreshTentacleRowsInPlace()
-		}
 	}
 
 	/**

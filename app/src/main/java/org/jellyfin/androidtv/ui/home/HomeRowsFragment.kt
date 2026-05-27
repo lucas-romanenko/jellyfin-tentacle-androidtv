@@ -526,6 +526,15 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			justLoaded = false
 			// Load initial content on first load
 			mediaBarViewModel.loadInitialContent()
+		} else {
+			// Catch up on home config changes made while paused (WebSocket events
+			// are lost when the fragment is not RESUMED). The structural diff inside
+			// refreshTentacleRowsInPlace() makes this a no-op if nothing changed.
+			lifecycleScope.launch {
+				if (tentacleRepository.checkAvailable()) {
+					refreshTentacleRowsInPlace()
+				}
+			}
 		}
 
 		// Update audio queue — deferred to avoid calling commitNow() during an active fragment transaction.

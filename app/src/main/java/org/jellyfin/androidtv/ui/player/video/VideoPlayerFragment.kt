@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.ui.player.video
 
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -7,6 +8,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.playback.VideoQueueManager
 import org.jellyfin.androidtv.ui.playback.rewrite.RewriteMediaManager
@@ -65,11 +67,18 @@ class VideoPlayerFragment : Fragment() {
 	override fun onResume() {
 		super.onResume()
 
+		// Set window background to pure black so letterbox bars aren't tinted
+		// by the app's navy background (#0F0D1A)
+		activity?.window?.setBackgroundDrawable(ColorDrawable(android.graphics.Color.BLACK))
+
 		playbackManager.state.unpause()
 	}
 
 	override fun onStop() {
 		super.onStop()
+
+		// Restore the app's normal background color
+		activity?.window?.setBackgroundDrawableResource(R.color.not_quite_black)
 
 		playbackManager.state.stop()
 	}

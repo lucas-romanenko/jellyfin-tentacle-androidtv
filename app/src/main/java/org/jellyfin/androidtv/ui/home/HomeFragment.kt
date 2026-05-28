@@ -77,6 +77,12 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 
 class HomeFragment : Fragment() {
+	companion object {
+		// Track whether the loading overlay has been shown at least once this session.
+		// Prevents the Tentacle logo from re-appearing when navigating back to Home.
+		private var overlayShownOnce = false
+	}
+
 	private val mediaBarViewModel by inject<MediaBarSlideshowViewModel>()
 	private val interactionTrackerViewModel by inject<InteractionTrackerViewModel>()
 	private val userSettingPreferences by inject<UserSettingPreferences>()
@@ -121,6 +127,11 @@ class HomeFragment : Fragment() {
 		halloweenView = view.findViewById(R.id.halloweenView)
 		muteButton = view.findViewById(R.id.muteButton)
 		loadingOverlay = view.findViewById(R.id.loadingOverlay)
+
+		// Only show loading overlay on first visit — hide immediately on subsequent navigations
+		if (overlayShownOnce) {
+			loadingOverlay?.isVisible = false
+		}
 
 		// Initialize mute state from preference
 		_isTrailerMuted.value = !userSettingPreferences[UserSettingPreferences.previewAudioEnabled]
@@ -196,6 +207,7 @@ class HomeFragment : Fragment() {
 			fun dismissOverlay() {
 				val overlay = loadingOverlay ?: return
 				if (!overlay.isVisible) return
+				overlayShownOnce = true
 				overlay.animate()
 					.alpha(0f)
 					.setDuration(400)

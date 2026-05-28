@@ -126,3 +126,4 @@
 -keep class org.jellyfin.androidtv.data.repository.TentacleNotification { *; }
 -keep class org.jellyfin.androidtv.ui.activity.* { *; }
 -keep class org.jellyfin.androidtv.ui.discover.* { *; }
+-keep class org.jellyfin.androidtv.ui.search.* { *; }

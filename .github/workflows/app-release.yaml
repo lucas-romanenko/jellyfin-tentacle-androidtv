@@ -22,13 +22,16 @@ jobs:
           java-version-file: .tools-versions
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@f29f5a9d7b09a7c6b29859002d29d24e1674c884 # v5.0.1
-      - name: Create debug keystore
+      - name: Create signing keystore
         run: |
-          mkdir -p ~/.android
-          keytool -genkey -v -keystore ~/.android/debug.keystore \
-            -storepass android -alias androiddebugkey -keypass android \
+          keytool -genkey -v -keystore ${{ github.workspace }}/release.keystore \
+            -storepass tentacle -alias release -keypass tentacle \
             -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US" -noprompt
+            -dname "CN=Tentacle,O=Tentacle,C=US" -noprompt
+          echo "storeFile=${{ github.workspace }}/release.keystore" > keystore.properties
+          echo "storePassword=tentacle" >> keystore.properties
+          echo "keyAlias=release" >> keystore.properties
+          echo "keyPassword=tentacle" >> keystore.properties
       - name: Set version from tag
         run: echo "TENTACLE_VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
       - name: Assemble release APK

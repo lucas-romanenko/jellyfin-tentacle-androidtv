@@ -28,7 +28,7 @@ fun JellyfinImage.getUrl(
 	fillWidth: Int? = null,
 	fillHeight: Int? = null,
 ): String {
-	// Check if tag is already a full URL (for external images like TMDB from Jellyseerr)
+	// Check if tag is already a full URL (for external images like TMDB)
 	if (tag.startsWith("http")) {
 		return tag
 	}

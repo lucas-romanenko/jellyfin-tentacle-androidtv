@@ -24,8 +24,6 @@ import org.jellyfin.androidtv.auth.model.ServerVersionNotSupported
 import org.jellyfin.androidtv.auth.model.User
 import org.jellyfin.androidtv.auth.store.AuthenticationPreferences
 import org.jellyfin.androidtv.auth.store.AuthenticationStore
-import org.jellyfin.androidtv.data.repository.JellyseerrRepository
-import org.jellyfin.androidtv.preference.JellyseerrPreferences
 import org.jellyfin.androidtv.util.apiclient.JellyfinImage
 import org.jellyfin.androidtv.util.apiclient.JellyfinImageSource
 import org.jellyfin.androidtv.util.apiclient.getUrl
@@ -42,9 +40,9 @@ import org.jellyfin.sdk.model.DeviceInfo
 import org.jellyfin.sdk.model.api.AuthenticationResult
 import org.jellyfin.sdk.model.api.ImageType
 import org.jellyfin.sdk.model.api.UserDto
-import org.moonfin.server.core.model.ServerType
+import org.tentacle.server.core.model.ServerType
 import org.jellyfin.sdk.model.serializer.toUUID
-import org.moonfin.server.emby.EmbyApiClient
+import org.tentacle.server.emby.EmbyApiClient
 import timber.log.Timber
 import java.time.Instant
 
@@ -64,8 +62,6 @@ class AuthenticationRepositoryImpl(
 	private val userApiClient: ApiClient,
 	private val authenticationPreferences: AuthenticationPreferences,
 	private val defaultDeviceInfo: DeviceInfo,
-	private val jellyseerrRepository: JellyseerrRepository,
-	private val jellyseerrPreferences: JellyseerrPreferences,
 	private val embyApiClient: EmbyApiClient,
 ) : AuthenticationRepository {
 	override fun authenticate(server: Server, method: AuthenticateMethod): Flow<LoginState> {
@@ -109,9 +105,6 @@ class AuthenticationRepositoryImpl(
 			emit(ApiClientErrorLoginState(err))
 			return@flow
 		}
-
-		// After successful Jellyfin authentication, attempt Jellyseerr auto-login
-		tryJellyseerrAutoLogin(server, username, password)
 
 		emitAll(authenticateAuthenticationResult(server, result))
 	}.flowOn(Dispatchers.IO)
@@ -205,7 +198,7 @@ class AuthenticationRepositoryImpl(
 
 	private suspend fun authenticateFinishEmby(
 		server: Server,
-		userInfo: org.moonfin.server.emby.EmbyUserInfo,
+		userInfo: org.tentacle.server.emby.EmbyUserInfo,
 		accessToken: String,
 		userId: java.util.UUID,
 	) {
@@ -281,67 +274,6 @@ class AuthenticationRepositoryImpl(
 
 		return if (authStoreUser != null) authenticationStore.putUser(user.serverId, user.id, authStoreUser)
 		else false
-	}
-
-	/**
-	 * Attempt to automatically login to Jellyseerr using Jellyfin credentials.
-	 * This is called after successful Jellyfin authentication to provide a seamless single sign-on experience.
-	 * 
-	 * Note: The password is only held in memory temporarily and never stored on disk.
-	 * The Jellyseerr session is maintained via HTTP cookies stored by Ktor's PersistentCookiesStorage,
-	 * which persists across app restarts and updates. Users only need to login again after:
-	 * - Fresh install/reinstall (cookies cleared)
-	 * - Manual logout
-	 * - Cookie expiration (controlled by Jellyseerr server settings)
-	 * 
-	 * IMPORTANT: This method first checks if the session is already valid (using cached result)
-	 * to prevent excessive login attempts that can trigger rate limiting/lockouts on Jellyseerr.
-	 */
-	private fun tryJellyseerrAutoLogin(server: Server, username: String, password: String) {
-		if (jellyseerrRepository.isMoonfinMode.value) {
-			Timber.d("Jellyseerr auto-login skipped: using Moonfin proxy mode")
-			return
-		}
-
-		// Check if Jellyseerr is enabled and configured
-		val enabled = jellyseerrPreferences[JellyseerrPreferences.enabled]
-		val jellyseerrUrl = jellyseerrPreferences[JellyseerrPreferences.serverUrl]
-		
-		if (!enabled || jellyseerrUrl.isNullOrBlank()) {
-			Timber.d("Jellyseerr auto-login skipped: not enabled or configured")
-			return
-		}
-
-		// Launch async login attempt (non-blocking)
-		kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-			try {
-				// First check if session is already valid (uses cache to prevent excessive checks)
-				val sessionAlreadyValid = jellyseerrRepository.isSessionValidCached()
-				if (sessionAlreadyValid) {
-					Timber.d("Jellyseerr auto-login skipped: session already valid for user: $username")
-					return@launch
-				}
-				
-				Timber.d("Attempting Jellyseerr auto-login for user: $username (session invalid or expired)")
-				val result = jellyseerrRepository.loginWithJellyfin(
-					username = username,
-					password = password,
-					jellyfinUrl = server.address,
-					jellyseerrUrl = jellyseerrUrl
-				)
-				
-				if (result.isSuccess) {
-					val user = result.getOrNull()
-					Timber.i("Jellyseerr auto-login successful for user: ${user?.username ?: username}")
-					// Cookie is automatically stored by PersistentCookiesStorage in JellyseerrHttpClient
-					// No need to store API key - cookie-based auth persists across app restarts
-				} else {
-					Timber.w("Jellyseerr auto-login failed: ${result.exceptionOrNull()?.message}")
-				}
-			} catch (err: Exception) {
-				Timber.w(err, "Jellyseerr auto-login exception")
-			}
-		}
 	}
 
 	override fun getUserImageUrl(server: Server, user: User): String? = user.imageTag?.let { primaryImageTag ->

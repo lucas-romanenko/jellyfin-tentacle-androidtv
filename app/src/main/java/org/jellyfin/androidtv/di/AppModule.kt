@@ -24,8 +24,6 @@ import org.jellyfin.androidtv.data.repository.CustomMessageRepositoryImpl
 import org.jellyfin.androidtv.data.repository.ExternalAppRepository
 import org.jellyfin.androidtv.data.repository.ItemMutationRepository
 import org.jellyfin.androidtv.data.repository.ItemMutationRepositoryImpl
-import org.jellyfin.androidtv.data.repository.JellyseerrRepository
-import org.jellyfin.androidtv.data.repository.JellyseerrRepositoryImpl
 import org.jellyfin.androidtv.data.repository.LocalWatchlistRepository
 import org.jellyfin.androidtv.data.repository.MdbListRepository
 import org.jellyfin.androidtv.data.repository.TmdbRepository
@@ -36,7 +34,6 @@ import org.jellyfin.androidtv.data.repository.UserViewsRepository
 import org.jellyfin.androidtv.data.repository.UserViewsRepositoryImpl
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.data.service.UpdateCheckerService
-import org.jellyfin.androidtv.preference.JellyseerrPreferences
 import org.jellyfin.androidtv.data.syncplay.SyncPlayManager
 import org.jellyfin.androidtv.integration.dream.DreamViewModel
 import org.jellyfin.androidtv.ui.InteractionTrackerViewModel
@@ -141,19 +138,21 @@ val appModule = module {
 			serviceLoaderEnabled(false)
 			logger(CoilTimberLogger(if (BuildConfig.DEBUG) Logger.Level.Warn else Logger.Level.Error))
 
-			// Configure memory cache - use 25% of available memory for images
+			// Configure memory cache - use 40% of available memory for images
+			// TV devices have 2-4GB RAM and benefit from a larger cache to avoid
+			// re-fetching images when scrolling through rows
 			memoryCache {
 				coil3.memory.MemoryCache.Builder()
-					.maxSizePercent(context, percent = 0.25)
+					.maxSizePercent(context, percent = 0.40)
 					.strongReferencesEnabled(true)
 					.build()
 			}
 
-			// Configure disk cache - 250MB for image caching
+			// Configure disk cache - 500MB for image caching
 			diskCache {
 				coil3.disk.DiskCache.Builder()
 					.directory(context.cacheDir.resolve("image_cache").toOkioPath())
-					.maxSizeBytes(250L * 1024 * 1024) // 250 MB
+					.maxSizeBytes(500L * 1024 * 1024) // 500 MB
 					.build()
 			}
 
@@ -193,11 +192,6 @@ val appModule = module {
 		org.jellyfin.androidtv.data.repository.ParentalControlsRepositoryImpl(androidContext(), get(), get())
 	}
 
-	// Jellyseerr - Global preferences (server URL, UI settings)
-	single(named("global")) { JellyseerrPreferences(androidContext()) }
-	// Jellyseerr - User-specific preferences (auth data, API keys) - scoped per user
-	factory(named("user")) { (userId: String) -> JellyseerrPreferences(androidContext(), userId) }
-	single<JellyseerrRepository> { JellyseerrRepositoryImpl(androidContext(), get(named("global")), get()) }
 	single { MdbListRepository(get<OkHttpFactory>().createClient(get()), get()) }
 	single { TmdbRepository(get<OkHttpFactory>().createClient(get()), get(), get()) }
 	// Tentacle plugin integration
@@ -213,7 +207,6 @@ val appModule = module {
 	viewModel { DreamViewModel(get(), get(), get(), get(), get()) }
 	viewModel { SettingsViewModel() }
 	viewModel { SyncPlayViewModel() }
-	viewModel { org.jellyfin.androidtv.ui.jellyseerr.JellyseerrViewModel(get()) }
 	viewModel { org.jellyfin.androidtv.ui.itemdetail.v2.ItemDetailsViewModel(get(), get()) }
 	viewModel { org.jellyfin.androidtv.ui.browsing.v2.LibraryBrowseViewModel(get(), get(), get(), get(), get()) }
 	viewModel { org.jellyfin.androidtv.ui.browsing.v2.GenresGridViewModel(get(), get(), get(), get()) }

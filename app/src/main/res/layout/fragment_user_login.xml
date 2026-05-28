@@ -31,7 +31,7 @@
                     android:layout_width="36dp"
                     android:layout_height="36dp"
                     android:contentDescription="@string/app_name"
-                    android:src="@drawable/ic_moonfin" />
+                    android:src="@drawable/ic_tentacle" />
 
                 <TextView
                     android:layout_width="wrap_content"

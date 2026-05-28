@@ -1,4 +1,4 @@
-package org.moonfin.playback.emby.profile
+package org.tentacle.playback.emby.profile
 
 import org.emby.client.model.CodecProfile
 import org.emby.client.model.CodecType

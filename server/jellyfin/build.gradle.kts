@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-	namespace = "org.moonfin.server.jellyfin"
+	namespace = "org.tentacle.server.jellyfin"
 	compileSdk = libs.versions.android.compileSdk.get().toInt()
 
 	defaultConfig {

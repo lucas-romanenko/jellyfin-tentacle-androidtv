@@ -48,21 +48,16 @@ import org.jellyfin.androidtv.ui.composable.AsyncImage
 import org.jellyfin.androidtv.ui.composable.item.EpisodePreviewOverlay
 import org.jellyfin.androidtv.ui.composable.item.ItemCard
 import org.jellyfin.androidtv.ui.composable.item.ItemCardBaseItemOverlay
-import org.jellyfin.androidtv.ui.composable.item.ItemCardJellyseerrOverlay
 import org.jellyfin.androidtv.ui.composable.item.ItemPreview
 import org.jellyfin.androidtv.ui.composable.item.SeriesTrailerOverlay
 import org.jellyfin.androidtv.ui.composable.item.isEligibleForPreview
 import org.jellyfin.androidtv.ui.composable.item.isEligibleForTrailerPreview
 import org.jellyfin.androidtv.preference.UserSettingPreferences
-import org.jellyfin.androidtv.data.service.jellyseerr.JellyseerrDiscoverItemDto
-import org.jellyfin.androidtv.data.service.jellyseerr.getJellyseerrJson
-import org.jellyfin.androidtv.data.service.jellyseerr.isJellyseerrItem
 import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.BaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.BaseRowType
 import org.jellyfin.androidtv.ui.itemhandling.ChapterItemInfoBaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.GridButtonBaseRowItem
-import org.jellyfin.androidtv.ui.itemhandling.JellyseerrMediaBaseRowItem
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.util.ImageHelper
 import org.jellyfin.androidtv.util.UUIDUtils
@@ -464,24 +459,14 @@ private fun CardViewHolderContent(
 				}
 
 				val showInfo = !usePreview && item.showCardInfoOverlay
-				val jellyseerrItem = when {
-					item is JellyseerrMediaBaseRowItem -> item.item
-					item.baseItem?.isJellyseerrItem() == true -> item.baseItem?.getJellyseerrJson()?.let { json ->
-						try { kotlinx.serialization.json.Json.decodeFromString<JellyseerrDiscoverItemDto>(json) } catch (_: Exception) { null }
-					}
-					else -> null
-				}
-				if (jellyseerrItem != null) {
-					ItemCardJellyseerrOverlay(item = jellyseerrItem)
-				} else {
-					item.baseItem?.let { baseItem ->
-						ItemCardBaseItemOverlay(
-							item = baseItem,
-							showServerBadge = showServerBadge,
-							footer = {
-								if (showInfo && title != null) {
-									val focusModifier = if (focused) Modifier.basicMarquee(
-										iterations = Int.MAX_VALUE,
+				item.baseItem?.let { baseItem ->
+					ItemCardBaseItemOverlay(
+						item = baseItem,
+						showServerBadge = showServerBadge,
+						footer = {
+							if (showInfo && title != null) {
+								val focusModifier = if (focused) Modifier.basicMarquee(
+									iterations = Int.MAX_VALUE,
 										initialDelayMillis = 0,
 									) else Modifier
 
@@ -505,7 +490,6 @@ private fun CardViewHolderContent(
 							}
 						)
 					}
-				}
 			},
 			shape = if (displayConfig.isCircular) CircleShape else JellyfinTheme.shapes.medium,
 			modifier = Modifier

@@ -11,7 +11,7 @@ import org.jellyfin.androidtv.data.model.AppNotification
 import org.jellyfin.androidtv.preference.SystemPreferences
 import org.jellyfin.androidtv.util.isTvDevice
 import org.jellyfin.sdk.model.ServerVersion
-import org.moonfin.server.core.model.ServerType
+import org.tentacle.server.core.model.ServerType
 
 interface NotificationsRepository {
 	val notifications: StateFlow<List<AppNotification>>

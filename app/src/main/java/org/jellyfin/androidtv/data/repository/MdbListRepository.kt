@@ -13,7 +13,7 @@ import org.jellyfin.sdk.model.api.BaseItemKind
 import timber.log.Timber
 
 /**
- * Rating entry returned by the Moonfin plugin's `/Moonfin/MdbList/Ratings` endpoint.
+ * Rating entry returned by the Tentacle plugin's `/Tentacle/MdbList/Ratings` endpoint.
  */
 @Serializable
 data class MdbListRating(
@@ -25,7 +25,7 @@ data class MdbListRating(
 )
 
 /**
- * Response wrapper from the Moonfin plugin MDBList proxy.
+ * Response wrapper from the Tentacle plugin MDBList proxy.
  */
 @Serializable
 data class MdbListResponse(
@@ -35,9 +35,9 @@ data class MdbListResponse(
 )
 
 /**
- * Fetches MDBList ratings via the Moonfin server plugin proxy.
+ * Fetches MDBList ratings via the Tentacle server plugin proxy.
  *
- * Endpoint: `GET {serverUrl}/Moonfin/MdbList/Ratings?type={movie|show}&tmdbId={id}`
+ * Endpoint: `GET {serverUrl}/Tentacle/MdbList/Ratings?type={movie|show}&tmdbId={id}`
  * Auth: `Authorization: MediaBrowser Token="{accessToken}"`
  *
  * The API key is managed server-side — no client-side key is needed.
@@ -55,7 +55,7 @@ class MdbListRepository(
 	}
 
 	/**
-	 * Fetch ratings for [item] from the Moonfin MDBList plugin proxy.
+	 * Fetch ratings for [item] from the Tentacle MDBList plugin proxy.
 	 * Returns a map of source name (lowercase) → rating value, or null on failure.
 	 */
 	suspend fun getRatings(item: BaseItemDto): Map<String, Float>? = withContext(Dispatchers.IO) {
@@ -90,7 +90,7 @@ class MdbListRepository(
 				return@withContext null
 			}
 
-			val url = "$baseUrl/Moonfin/MdbList/Ratings?type=$type&tmdbId=$tmdbId"
+			val url = "$baseUrl/Tentacle/MdbList/Ratings?type=$type&tmdbId=$tmdbId"
 			Timber.d("MdbListRepository: Fetching ratings from plugin: $url")
 
 			val request = Request.Builder()

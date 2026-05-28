@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-	namespace = "org.moonfin.server.core"
+	namespace = "org.tentacle.server.core"
 	compileSdk = libs.versions.android.compileSdk.get().toInt()
 
 	defaultConfig {

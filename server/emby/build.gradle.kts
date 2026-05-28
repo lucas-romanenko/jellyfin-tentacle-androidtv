@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-	namespace = "org.moonfin.server.emby"
+	namespace = "org.tentacle.server.emby"
 	compileSdk = libs.versions.android.compileSdk.get().toInt()
 
 	defaultConfig {

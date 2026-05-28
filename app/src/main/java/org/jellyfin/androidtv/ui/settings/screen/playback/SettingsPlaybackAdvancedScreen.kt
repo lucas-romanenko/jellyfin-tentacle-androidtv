@@ -41,7 +41,7 @@ import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.clientLogApi
 import org.jellyfin.sdk.model.ServerVersion
 import org.koin.compose.koinInject
-import org.moonfin.server.core.feature.ServerFeature
+import org.tentacle.server.core.feature.ServerFeature
 import org.jellyfin.androidtv.util.supportsFeature
 import java.text.DecimalFormat
 import kotlin.math.roundToInt

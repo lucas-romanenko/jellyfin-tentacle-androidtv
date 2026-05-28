@@ -32,7 +32,7 @@ import org.jellyfin.androidtv.auth.repository.ServerRepository
 import org.jellyfin.androidtv.util.sdk.forUser
 import org.jellyfin.androidtv.util.supportsFeature
 import org.jellyfin.sdk.Jellyfin
-import org.moonfin.server.core.feature.ServerFeature
+import org.tentacle.server.core.feature.ServerFeature
 import org.jellyfin.sdk.api.client.exception.ApiClientException
 import org.jellyfin.sdk.api.client.extensions.quickConnectApi
 import org.jellyfin.sdk.model.DeviceInfo

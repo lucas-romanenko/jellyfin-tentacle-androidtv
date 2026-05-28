@@ -17,7 +17,7 @@ import timber.log.Timber
 import java.util.UUID
 
 /**
- * Response from the Moonfin plugin's `/Moonfin/Tmdb/EpisodeRating` endpoint.
+ * Response from the Tentacle plugin's `/Tentacle/Tmdb/EpisodeRating` endpoint.
  */
 @Serializable
 data class TmdbEpisodeResponse(
@@ -48,7 +48,7 @@ data class TmdbSeasonEpisode(
 )
 
 /**
- * Response from the Moonfin plugin's `/Moonfin/Tmdb/SeasonRatings` endpoint.
+ * Response from the Tentacle plugin's `/Tentacle/Tmdb/SeasonRatings` endpoint.
  */
 @Serializable
 data class TmdbSeasonResponse(
@@ -59,11 +59,11 @@ data class TmdbSeasonResponse(
 )
 
 /**
- * Fetches TMDB episode ratings via the Moonfin server plugin proxy.
+ * Fetches TMDB episode ratings via the Tentacle server plugin proxy.
  *
  * Endpoints:
- * - `GET {serverUrl}/Moonfin/Tmdb/EpisodeRating?tmdbId={id}&season={n}&episode={n}`
- * - `GET {serverUrl}/Moonfin/Tmdb/SeasonRatings?tmdbId={id}&season={n}`
+ * - `GET {serverUrl}/Tentacle/Tmdb/EpisodeRating?tmdbId={id}&season={n}&episode={n}`
+ * - `GET {serverUrl}/Tentacle/Tmdb/SeasonRatings?tmdbId={id}&season={n}`
  *
  * Auth: `Authorization: MediaBrowser Token="{accessToken}"`
  *
@@ -89,7 +89,7 @@ class TmdbRepository(
 	private fun getApiClientForItem(item: BaseItemDto) = resolveApiClient(item.serverId)
 
 	/**
-	 * Fetch individual episode rating from the Moonfin TMDB plugin proxy.
+	 * Fetch individual episode rating from the Tentacle TMDB plugin proxy.
 	 * Returns the vote_average (0-10 scale) or null.
 	 */
 	suspend fun getEpisodeRating(item: BaseItemDto): Float? = withContext(Dispatchers.IO) {
@@ -147,7 +147,7 @@ class TmdbRepository(
 				return@withContext null
 			}
 
-			val url = "$baseUrl/Moonfin/Tmdb/EpisodeRating?tmdbId=$tmdbId&season=$seasonNumber&episode=$episodeNumber"
+			val url = "$baseUrl/Tentacle/Tmdb/EpisodeRating?tmdbId=$tmdbId&season=$seasonNumber&episode=$episodeNumber"
 			Timber.d("TmdbRepository: Fetching from plugin: $url")
 
 			val request = Request.Builder()
@@ -197,7 +197,7 @@ class TmdbRepository(
 	}
 
 	/**
-	 * Fetch all episode ratings for a season from the Moonfin TMDB plugin proxy.
+	 * Fetch all episode ratings for a season from the Tentacle TMDB plugin proxy.
 	 * Returns a map of episodeNumber → voteAverage, or null on failure.
 	 */
 	suspend fun getSeasonEpisodeRatings(
@@ -226,7 +226,7 @@ class TmdbRepository(
 				return@withContext null
 			}
 
-			val url = "$baseUrl/Moonfin/Tmdb/SeasonRatings?tmdbId=$seriesTmdbId&season=$seasonNumber"
+			val url = "$baseUrl/Tentacle/Tmdb/SeasonRatings?tmdbId=$seriesTmdbId&season=$seasonNumber"
 			Timber.d("TmdbRepository: Fetching season ratings from plugin: $url")
 
 			val request = Request.Builder()

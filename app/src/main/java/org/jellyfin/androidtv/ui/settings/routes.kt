@@ -35,23 +35,21 @@ import org.jellyfin.androidtv.ui.settings.screen.license.SettingsLicensesScreen
 import org.jellyfin.androidtv.ui.settings.screen.livetv.SettingsLiveTvGuideChannelOrderScreen
 import org.jellyfin.androidtv.ui.settings.screen.livetv.SettingsLiveTvGuideFiltersScreen
 import org.jellyfin.androidtv.ui.settings.screen.livetv.SettingsLiveTvGuideOptionsScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsJellyseerrRowsScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsJellyseerrScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinBrowsingBlurScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinDetailsBlurScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinHomeRowsImageScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinMediaBarColorScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinMediaBarContentTypeScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinMediaBarExcludedGenresScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinMediaBarItemCountScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinMediaBarOpacityScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinMediaBarSourceTypeScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinNavbarPositionScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinParentalControlsScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinSeasonalSurpriseScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinShuffleContentTypeScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinSyncPlayScreen
-import org.jellyfin.androidtv.ui.settings.screen.moonfin.SettingsMoonfinThemeMusicVolumeScreen
+import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleBrowsingBlurScreen
+import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleDetailsBlurScreen
+import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleHomeRowsImageScreen
+import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleMediaBarColorScreen
+import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleMediaBarContentTypeScreen
+import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleMediaBarExcludedGenresScreen
+import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleMediaBarItemCountScreen
+import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleMediaBarOpacityScreen
+import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleMediaBarSourceTypeScreen
+import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleNavbarPositionScreen
+import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleParentalControlsScreen
+import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleSeasonalSurpriseScreen
+import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleShuffleContentTypeScreen
+import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleSyncPlayScreen
+import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleThemeMusicVolumeScreen
 import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackAdvancedScreen
 import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackAudioBehaviorScreen
 import org.jellyfin.androidtv.ui.settings.screen.playback.SettingsPlaybackInactivityPromptScreen
@@ -124,29 +122,27 @@ object Routes {
 	const val PLAYBACK_REFRESH_RATE_SWITCHING_BEHAVIOR = "/playback/refresh-rate-switching-behavior"
 	const val PLAYBACK_ZOOM_MODE = "/playback/zoom-mode"
 	const val PLAYBACK_AUDIO_BEHAVIOR = "/playback/audio-behavior"
-	const val JELLYSEERR = "/jellyseerr"
-	const val JELLYSEERR_ROWS = "/jellyseerr/rows"
-	const val MOONFIN_NAVBAR_POSITION = "/moonfin/navbar-position"
-	const val MOONFIN_SHUFFLE_CONTENT_TYPE = "/moonfin/shuffle-content-type"
-	const val MOONFIN_MEDIA_BAR_SOURCE_TYPE = "/moonfin/media-bar-source-type"
-	const val MOONFIN_MEDIA_BAR_EXCLUDED_GENRES = "/moonfin/media-bar-excluded-genres"
-	const val MOONFIN_MEDIA_BAR_CONTENT_TYPE = "/moonfin/media-bar-content-type"
-	const val MOONFIN_MEDIA_BAR_ITEM_COUNT = "/moonfin/media-bar-item-count"
-	const val MOONFIN_MEDIA_BAR_OPACITY = "/moonfin/media-bar-opacity"
-	const val MOONFIN_MEDIA_BAR_COLOR = "/moonfin/media-bar-color"
-	const val MOONFIN_THEME_MUSIC_VOLUME = "/moonfin/theme-music-volume"
-	const val MOONFIN_SEASONAL_SURPRISE = "/moonfin/seasonal-surprise"
+	const val TENTACLE_NAVBAR_POSITION = "/tentacle/navbar-position"
+	const val TENTACLE_SHUFFLE_CONTENT_TYPE = "/tentacle/shuffle-content-type"
+	const val TENTACLE_MEDIA_BAR_SOURCE_TYPE = "/tentacle/media-bar-source-type"
+	const val TENTACLE_MEDIA_BAR_EXCLUDED_GENRES = "/tentacle/media-bar-excluded-genres"
+	const val TENTACLE_MEDIA_BAR_CONTENT_TYPE = "/tentacle/media-bar-content-type"
+	const val TENTACLE_MEDIA_BAR_ITEM_COUNT = "/tentacle/media-bar-item-count"
+	const val TENTACLE_MEDIA_BAR_OPACITY = "/tentacle/media-bar-opacity"
+	const val TENTACLE_MEDIA_BAR_COLOR = "/tentacle/media-bar-color"
+	const val TENTACLE_THEME_MUSIC_VOLUME = "/tentacle/theme-music-volume"
+	const val TENTACLE_SEASONAL_SURPRISE = "/tentacle/seasonal-surprise"
 	@Deprecated("Moved to HOME_ROWS_IMAGE_TYPE", replaceWith = ReplaceWith("HOME_ROWS_IMAGE_TYPE"))
-	const val MOONFIN_HOME_ROWS_IMAGE = "/moonfin/home-rows-image"
-	const val MOONFIN_DETAILS_BLUR = "/moonfin/details-blur"
-	const val MOONFIN_BROWSING_BLUR = "/moonfin/browsing-blur"
-	const val MOONFIN_PARENTAL_CONTROLS = "/moonfin/parental-controls"
-	const val MOONFIN_SYNCPLAY = "/moonfin/syncplay"
-	const val MOONFIN_SYNCPLAY_MIN_DELAY = "/moonfin/syncplay/min-delay-speed-to-sync"
-	const val MOONFIN_SYNCPLAY_MAX_DELAY = "/moonfin/syncplay/max-delay-speed-to-sync"
-	const val MOONFIN_SYNCPLAY_DURATION = "/moonfin/syncplay/speed-to-sync-duration"
-	const val MOONFIN_SYNCPLAY_MIN_DELAY_SKIP = "/moonfin/syncplay/min-delay-skip-to-sync"
-	const val MOONFIN_SYNCPLAY_EXTRA_OFFSET = "/moonfin/syncplay/extra-time-offset"
+	const val TENTACLE_HOME_ROWS_IMAGE = "/tentacle/home-rows-image"
+	const val TENTACLE_DETAILS_BLUR = "/tentacle/details-blur"
+	const val TENTACLE_BROWSING_BLUR = "/tentacle/browsing-blur"
+	const val TENTACLE_PARENTAL_CONTROLS = "/tentacle/parental-controls"
+	const val TENTACLE_SYNCPLAY = "/tentacle/syncplay"
+	const val TENTACLE_SYNCPLAY_MIN_DELAY = "/tentacle/syncplay/min-delay-speed-to-sync"
+	const val TENTACLE_SYNCPLAY_MAX_DELAY = "/tentacle/syncplay/max-delay-speed-to-sync"
+	const val TENTACLE_SYNCPLAY_DURATION = "/tentacle/syncplay/speed-to-sync-duration"
+	const val TENTACLE_SYNCPLAY_MIN_DELAY_SKIP = "/tentacle/syncplay/min-delay-skip-to-sync"
+	const val TENTACLE_SYNCPLAY_EXTRA_OFFSET = "/tentacle/syncplay/extra-time-offset"
 	const val SYNCPLAY = "/syncplay"
 	const val TELEMETRY = "/telemetry"
 	const val DEVELOPER = "/developer"
@@ -305,7 +301,7 @@ val routes = mapOf<String, RouteComposable>(
 		SettingsHomePosterSizeScreen()
 	},
 	Routes.HOME_ROWS_IMAGE_TYPE to {
-		SettingsMoonfinHomeRowsImageScreen()
+		SettingsTentacleHomeRowsImageScreen()
 	},
 	Routes.LIVETV_GUIDE_FILTERS to {
 		SettingsLiveTvGuideFiltersScreen()
@@ -364,60 +360,54 @@ val routes = mapOf<String, RouteComposable>(
 	Routes.PLAYBACK_AUDIO_BEHAVIOR to {
 		SettingsPlaybackAudioBehaviorScreen()
 	},
-	Routes.JELLYSEERR to {
-		SettingsJellyseerrScreen()
+	Routes.TENTACLE_NAVBAR_POSITION to {
+		SettingsTentacleNavbarPositionScreen()
 	},
-	Routes.JELLYSEERR_ROWS to {
-		SettingsJellyseerrRowsScreen()
+	Routes.TENTACLE_SHUFFLE_CONTENT_TYPE to {
+		SettingsTentacleShuffleContentTypeScreen()
 	},
-	Routes.MOONFIN_NAVBAR_POSITION to {
-		SettingsMoonfinNavbarPositionScreen()
+	Routes.TENTACLE_MEDIA_BAR_SOURCE_TYPE to {
+		SettingsTentacleMediaBarSourceTypeScreen()
 	},
-	Routes.MOONFIN_SHUFFLE_CONTENT_TYPE to {
-		SettingsMoonfinShuffleContentTypeScreen()
+	Routes.TENTACLE_MEDIA_BAR_EXCLUDED_GENRES to {
+		SettingsTentacleMediaBarExcludedGenresScreen()
 	},
-	Routes.MOONFIN_MEDIA_BAR_SOURCE_TYPE to {
-		SettingsMoonfinMediaBarSourceTypeScreen()
+	Routes.TENTACLE_MEDIA_BAR_CONTENT_TYPE to {
+		SettingsTentacleMediaBarContentTypeScreen()
 	},
-	Routes.MOONFIN_MEDIA_BAR_EXCLUDED_GENRES to {
-		SettingsMoonfinMediaBarExcludedGenresScreen()
+	Routes.TENTACLE_MEDIA_BAR_ITEM_COUNT to {
+		SettingsTentacleMediaBarItemCountScreen()
 	},
-	Routes.MOONFIN_MEDIA_BAR_CONTENT_TYPE to {
-		SettingsMoonfinMediaBarContentTypeScreen()
+	Routes.TENTACLE_MEDIA_BAR_OPACITY to {
+		SettingsTentacleMediaBarOpacityScreen()
 	},
-	Routes.MOONFIN_MEDIA_BAR_ITEM_COUNT to {
-		SettingsMoonfinMediaBarItemCountScreen()
+	Routes.TENTACLE_MEDIA_BAR_COLOR to {
+		SettingsTentacleMediaBarColorScreen()
 	},
-	Routes.MOONFIN_MEDIA_BAR_OPACITY to {
-		SettingsMoonfinMediaBarOpacityScreen()
+	Routes.TENTACLE_THEME_MUSIC_VOLUME to {
+		SettingsTentacleThemeMusicVolumeScreen()
 	},
-	Routes.MOONFIN_MEDIA_BAR_COLOR to {
-		SettingsMoonfinMediaBarColorScreen()
+	Routes.TENTACLE_SEASONAL_SURPRISE to {
+		SettingsTentacleSeasonalSurpriseScreen()
 	},
-	Routes.MOONFIN_THEME_MUSIC_VOLUME to {
-		SettingsMoonfinThemeMusicVolumeScreen()
+	Routes.TENTACLE_HOME_ROWS_IMAGE to {
+		SettingsTentacleHomeRowsImageScreen()
 	},
-	Routes.MOONFIN_SEASONAL_SURPRISE to {
-		SettingsMoonfinSeasonalSurpriseScreen()
+	Routes.TENTACLE_DETAILS_BLUR to {
+		SettingsTentacleDetailsBlurScreen()
 	},
-	Routes.MOONFIN_HOME_ROWS_IMAGE to {
-		SettingsMoonfinHomeRowsImageScreen()
+	Routes.TENTACLE_BROWSING_BLUR to {
+		SettingsTentacleBrowsingBlurScreen()
 	},
-	Routes.MOONFIN_DETAILS_BLUR to {
-		SettingsMoonfinDetailsBlurScreen()
+	Routes.TENTACLE_PARENTAL_CONTROLS to {
+		SettingsTentacleParentalControlsScreen()
 	},
-	Routes.MOONFIN_BROWSING_BLUR to {
-		SettingsMoonfinBrowsingBlurScreen()
+	Routes.TENTACLE_SYNCPLAY to {
+		SettingsTentacleSyncPlayScreen()
 	},
-	Routes.MOONFIN_PARENTAL_CONTROLS to {
-		SettingsMoonfinParentalControlsScreen()
-	},
-	Routes.MOONFIN_SYNCPLAY to {
-		SettingsMoonfinSyncPlayScreen()
-	},
-	Routes.MOONFIN_SYNCPLAY_MIN_DELAY to {
+	Routes.TENTACLE_SYNCPLAY_MIN_DELAY to {
 		SettingsNumericScreen(
-			route = Routes.MOONFIN_SYNCPLAY_MIN_DELAY,
+			route = Routes.TENTACLE_SYNCPLAY_MIN_DELAY,
 			preference = UserPreferences.syncPlayMinDelaySpeedToSync,
 			titleRes = R.string.pref_syncplay_min_delay_speed_to_sync,
 			valueTemplate = R.string.pref_syncplay_min_delay_speed_to_sync_description,
@@ -426,9 +416,9 @@ val routes = mapOf<String, RouteComposable>(
 			stepSize = 10.0,
 		)
 	},
-	Routes.MOONFIN_SYNCPLAY_MAX_DELAY to {
+	Routes.TENTACLE_SYNCPLAY_MAX_DELAY to {
 		SettingsNumericScreen(
-			route = Routes.MOONFIN_SYNCPLAY_MAX_DELAY,
+			route = Routes.TENTACLE_SYNCPLAY_MAX_DELAY,
 			preference = UserPreferences.syncPlayMaxDelaySpeedToSync,
 			titleRes = R.string.pref_syncplay_max_delay_speed_to_sync,
 			valueTemplate = R.string.pref_syncplay_max_delay_speed_to_sync_description,
@@ -437,9 +427,9 @@ val routes = mapOf<String, RouteComposable>(
 			stepSize = 10.0,
 		)
 	},
-	Routes.MOONFIN_SYNCPLAY_DURATION to {
+	Routes.TENTACLE_SYNCPLAY_DURATION to {
 		SettingsNumericScreen(
-			route = Routes.MOONFIN_SYNCPLAY_DURATION,
+			route = Routes.TENTACLE_SYNCPLAY_DURATION,
 			preference = UserPreferences.syncPlaySpeedToSyncDuration,
 			titleRes = R.string.pref_syncplay_speed_to_sync_duration,
 			valueTemplate = R.string.pref_syncplay_speed_to_sync_duration_description,
@@ -448,9 +438,9 @@ val routes = mapOf<String, RouteComposable>(
 			stepSize = 100.0,
 		)
 	},
-	Routes.MOONFIN_SYNCPLAY_MIN_DELAY_SKIP to {
+	Routes.TENTACLE_SYNCPLAY_MIN_DELAY_SKIP to {
 		SettingsNumericScreen(
-			route = Routes.MOONFIN_SYNCPLAY_MIN_DELAY_SKIP,
+			route = Routes.TENTACLE_SYNCPLAY_MIN_DELAY_SKIP,
 			preference = UserPreferences.syncPlayMinDelaySkipToSync,
 			titleRes = R.string.pref_syncplay_min_delay_skip_to_sync,
 			valueTemplate = R.string.pref_syncplay_min_delay_skip_to_sync_description,
@@ -459,9 +449,9 @@ val routes = mapOf<String, RouteComposable>(
 			stepSize = 10.0,
 		)
 	},
-	Routes.MOONFIN_SYNCPLAY_EXTRA_OFFSET to {
+	Routes.TENTACLE_SYNCPLAY_EXTRA_OFFSET to {
 		SettingsNumericScreen(
-			route = Routes.MOONFIN_SYNCPLAY_EXTRA_OFFSET,
+			route = Routes.TENTACLE_SYNCPLAY_EXTRA_OFFSET,
 			preference = UserPreferences.syncPlayExtraTimeOffset,
 			titleRes = R.string.pref_syncplay_extra_time_offset,
 			valueTemplate = R.string.pref_syncplay_extra_time_offset_description,
@@ -471,7 +461,7 @@ val routes = mapOf<String, RouteComposable>(
 		)
 	},
 	Routes.SYNCPLAY to {
-		SettingsMoonfinSyncPlayScreen()
+		SettingsTentacleSyncPlayScreen()
 	},
 	Routes.TELEMETRY to {
 		SettingsTelemetryScreen()

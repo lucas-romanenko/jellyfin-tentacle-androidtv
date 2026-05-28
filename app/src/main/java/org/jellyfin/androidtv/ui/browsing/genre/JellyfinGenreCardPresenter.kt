@@ -15,7 +15,7 @@ import org.jellyfin.androidtv.R
 
 /**
  * Presenter for displaying Jellyfin genre cards with backdrop images.
- * Similar to Jellyseerr's GenreCardPresenter but uses Jellyfin's image API.
+ * Uses Jellyfin's image API to display genre backdrop images.
  */
 class JellyfinGenreCardPresenter : Presenter() {
 	private val cardWidthDp = 220

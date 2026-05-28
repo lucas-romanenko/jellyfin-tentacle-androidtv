@@ -17,7 +17,7 @@ object UUIDUtils {
 	 */
 	@JvmStatic
 	fun normalizeUUIDString(serverId: String?): String? {
-		if (serverId.isNullOrEmpty() || serverId == "jellyseerr") return null
+		if (serverId.isNullOrEmpty()) return null
 		
 		// If already in proper UUID format (with hyphens), return as-is
 		if (serverId.contains("-")) return serverId

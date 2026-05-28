@@ -34,10 +34,10 @@ fun SettingsAboutScreen(launchedFromLogin: Boolean = false) {
 		}
 
 		item {
-			val heading = "Moonfin app version"
-			val caption = "moonfin-androidtv ${BuildConfig.VERSION_NAME} ${BuildConfig.BUILD_TYPE}"
+			val heading = "Tentacle app version"
+			val caption = "tentacle-androidtv ${BuildConfig.VERSION_NAME} ${BuildConfig.BUILD_TYPE}"
 			ListButton(
-				leadingContent = { Icon(painterResource(R.drawable.ic_moonfin), contentDescription = null) },
+				leadingContent = { Icon(painterResource(R.drawable.ic_tentacle), contentDescription = null) },
 				headingContent = { Text(heading) },
 				captionContent = { Text(caption) },
 				onClick = copyAction(ClipData.newPlainText(heading, caption)),

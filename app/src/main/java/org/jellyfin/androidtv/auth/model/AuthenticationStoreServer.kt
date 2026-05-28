@@ -6,7 +6,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.UseSerializers
 import org.jellyfin.sdk.model.serializer.UUIDSerializer
-import org.moonfin.server.core.model.ServerType
+import org.tentacle.server.core.model.ServerType
 import java.time.Instant
 import java.util.UUID
 

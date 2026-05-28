@@ -38,6 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImagePainter
 import coil3.compose.rememberAsyncImagePainter
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
@@ -73,7 +75,6 @@ import org.jellyfin.androidtv.preference.constant.ClockBehavior
 import org.jellyfin.androidtv.ui.settings.compat.SettingsViewModel
 import org.jellyfin.androidtv.ui.shuffle.ShuffleManager
 import org.jellyfin.androidtv.ui.shuffle.ShuffleOptionsDialog
-import org.jellyfin.androidtv.data.service.pluginsync.PluginSyncService
 import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.primaryImage
 import org.jellyfin.sdk.api.client.ApiClient
@@ -91,7 +92,6 @@ enum class NavbarActiveButton {
 	Home,
 	Library,
 	Search,
-	Jellyseerr,
 	Discover,
 	Activity,
 
@@ -108,8 +108,6 @@ fun Navbar(
 	val userRepository = koinInject<UserRepository>()
 	val settingsViewModel = koinActivityViewModel<SettingsViewModel>()
 	val settingsClosedCounter by settingsViewModel.settingsClosedCounter.collectAsState()
-	val pluginSyncService = koinInject<PluginSyncService>()
-	val syncCompletedCounter by pluginSyncService.syncCompletedCounter.collectAsState()
 	val api = koinInject<ApiClient>()
 	val userViewsRepository = koinInject<UserViewsRepository>()
 	val multiServerRepository = koinInject<org.jellyfin.androidtv.data.repository.MultiServerRepository>()
@@ -126,13 +124,17 @@ fun Navbar(
 
 	// Background polling so badge is populated even before visiting the Activity tab.
 	// Polls every 10s while downloads are active (so badge clears promptly), 30s when idle.
-	LaunchedEffect(Unit) {
-		while (true) {
-			try {
-				tentacleRepository.getActivity()
-			} catch (_: Exception) {}
-			val delay = if (tentacleRepository.activityDownloadCount.value > 0) 10_000L else 30_000L
-			kotlinx.coroutines.delay(delay)
+	// Pauses when the app is not in the foreground.
+	val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+	LaunchedEffect(lifecycleOwner) {
+		lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+			while (true) {
+				try {
+					tentacleRepository.getActivity()
+				} catch (_: Exception) {}
+				val delay = if (tentacleRepository.activityDownloadCount.value > 0) 10_000L else 30_000L
+				kotlinx.coroutines.delay(delay)
+			}
 		}
 	}
 
@@ -174,7 +176,7 @@ fun Navbar(
 	var enableMultiServer by remember { mutableStateOf(false) }
 	var shuffleContentType by remember { mutableStateOf("both") }
 	var clockBehavior by remember { mutableStateOf(ClockBehavior.ALWAYS) }
-	LaunchedEffect(settingsClosedCounter, syncCompletedCounter) {
+	LaunchedEffect(settingsClosedCounter) {
 		enableMultiServer = userPreferences[UserPreferences.enableMultiServerLibraries] ?: false
 		shuffleContentType = userPreferences[UserPreferences.shuffleContentType] ?: "both"
 		clockBehavior = userPreferences[UserPreferences.clockBehavior]

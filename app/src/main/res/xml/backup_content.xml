@@ -20,8 +20,4 @@
     <include
         domain="sharedpref"
         path="AuthenticationPreferences" />
-    <!-- JellyseerrPreferences -->
-    <include
-        domain="sharedpref"
-        path="jellyseerr_prefs" />
 </full-backup-content>

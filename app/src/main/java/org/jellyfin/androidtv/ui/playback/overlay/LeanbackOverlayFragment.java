@@ -16,7 +16,7 @@ import org.jellyfin.androidtv.ui.playback.PlaybackController;
 import org.jellyfin.androidtv.ui.playback.PlaybackControllerContainer;
 import org.jellyfin.androidtv.auth.repository.ServerRepository;
 import org.jellyfin.androidtv.util.FeatureSupportKt;
-import org.moonfin.server.core.feature.ServerFeature;
+import org.tentacle.server.core.feature.ServerFeature;
 import org.jellyfin.sdk.api.client.ApiClient;
 
 import coil3.ImageLoader;

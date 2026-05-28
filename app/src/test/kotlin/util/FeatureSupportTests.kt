@@ -3,10 +3,10 @@ package org.jellyfin.androidtv.util
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import org.jellyfin.androidtv.auth.model.Server
-import org.moonfin.server.core.feature.ServerFeature
-import org.moonfin.server.core.model.ServerType
-import org.moonfin.server.emby.feature.EmbyFeatureSupport
-import org.moonfin.server.jellyfin.feature.JellyfinFeatureSupport
+import org.tentacle.server.core.feature.ServerFeature
+import org.tentacle.server.core.model.ServerType
+import org.tentacle.server.emby.feature.EmbyFeatureSupport
+import org.tentacle.server.jellyfin.feature.JellyfinFeatureSupport
 import java.util.UUID
 
 class FeatureSupportTests : FunSpec({
@@ -47,7 +47,6 @@ class FeatureSupportTests : FunSpec({
 		server.supportsFeature(ServerFeature.WATCH_PARTY) shouldBe true
 		server.supportsFeature(ServerFeature.BIF_TRICKPLAY) shouldBe true
 		server.supportsFeature(ServerFeature.EMBY_CONNECT) shouldBe true
-		server.supportsFeature(ServerFeature.JELLYSEERR) shouldBe true
 	}
 
 	test("Jellyfin server supports Jellyfin features") {
@@ -59,7 +58,6 @@ class FeatureSupportTests : FunSpec({
 		server.supportsFeature(ServerFeature.TRICKPLAY) shouldBe true
 		server.supportsFeature(ServerFeature.LYRICS) shouldBe true
 		server.supportsFeature(ServerFeature.CLIENT_LOG) shouldBe true
-		server.supportsFeature(ServerFeature.JELLYSEERR) shouldBe true
 	}
 
 	test("Jellyfin server does not support Emby-only features") {
@@ -76,7 +74,6 @@ class FeatureSupportTests : FunSpec({
 		server.supportsFeature(ServerFeature.WATCH_PARTY) shouldBe true
 		server.supportsFeature(ServerFeature.BIF_TRICKPLAY) shouldBe true
 		server.supportsFeature(ServerFeature.EMBY_CONNECT) shouldBe true
-		server.supportsFeature(ServerFeature.JELLYSEERR) shouldBe true
 	}
 
 	test("Emby server does not support Jellyfin-only features") {
@@ -90,8 +87,4 @@ class FeatureSupportTests : FunSpec({
 		server.supportsFeature(ServerFeature.CLIENT_LOG) shouldBe false
 	}
 
-	test("JELLYSEERR is supported by both server types") {
-		jellyfinServer().supportsFeature(ServerFeature.JELLYSEERR) shouldBe true
-		embyServer().supportsFeature(ServerFeature.JELLYSEERR) shouldBe true
-	}
 })

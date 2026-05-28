@@ -25,9 +25,9 @@ import org.jellyfin.sdk.api.client.extensions.clientLogApi
 import org.jellyfin.sdk.api.client.extensions.userApi
 import org.jellyfin.sdk.model.DeviceInfo
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
-import org.moonfin.server.core.model.ServerType
-import org.moonfin.server.emby.EmbyApiClient
-import org.moonfin.server.emby.socket.EmbyWebSocketClient
+import org.tentacle.server.core.model.ServerType
+import org.tentacle.server.emby.EmbyApiClient
+import org.tentacle.server.emby.socket.EmbyWebSocketClient
 import timber.log.Timber
 import java.util.UUID
 
@@ -208,8 +208,7 @@ class SessionRepositoryImpl(
 					)
 					userRepository.setCurrentUser(jellyfinUser)
 					serverRepository.setCurrentServer(server)
-					preferencesRepository.configureJellyseerr()
-				}
+					}
 				ServerType.JELLYFIN -> {
 					val applied = userApiClient.applySession(session, deviceInfo)
 					if (!applied) {
@@ -225,8 +224,7 @@ class SessionRepositoryImpl(
 						preferencesRepository.onSessionChanged()
 						userRepository.setCurrentUser(user)
 						serverRepository.setCurrentServer(server)
-						preferencesRepository.configureJellyseerr()
-					} catch (err: ApiClientException) {
+							} catch (err: ApiClientException) {
 						Timber.e(err, "Unable to authenticate: bad response when getting user info")
 						destroyCurrentSession()
 						return false

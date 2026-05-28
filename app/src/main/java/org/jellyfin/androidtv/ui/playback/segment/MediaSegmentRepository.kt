@@ -8,7 +8,7 @@ import org.jellyfin.androidtv.util.UUIDUtils
 import org.jellyfin.androidtv.util.sdk.ApiClientFactory
 import org.jellyfin.androidtv.util.sdk.duration
 import org.jellyfin.androidtv.util.supportsFeature
-import org.moonfin.server.core.feature.ServerFeature
+import org.tentacle.server.core.feature.ServerFeature
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.mediaSegmentsApi
 import org.jellyfin.sdk.model.api.BaseItemDto

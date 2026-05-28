@@ -1,4 +1,4 @@
-package org.moonfin.playback.emby.mediastream
+package org.tentacle.playback.emby.mediastream
 
 import org.emby.client.api.MediaInfoServiceApi
 import org.emby.client.model.DlnaProfileType
@@ -13,8 +13,8 @@ import org.jellyfin.playback.jellyfin.queue.baseItem
 import org.jellyfin.playback.jellyfin.queue.mediaSourceId
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.MediaType
-import org.moonfin.playback.emby.profile.toEmbyDeviceProfile
-import org.moonfin.server.emby.EmbyApiClient
+import org.tentacle.playback.emby.profile.toEmbyDeviceProfile
+import org.tentacle.server.emby.EmbyApiClient
 import timber.log.Timber
 import java.net.URLEncoder
 import java.util.UUID

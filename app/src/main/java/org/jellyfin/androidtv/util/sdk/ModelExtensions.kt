@@ -9,7 +9,7 @@ import org.jellyfin.sdk.model.api.ServerDiscoveryInfo
 import org.jellyfin.sdk.model.api.UserDto
 import org.jellyfin.sdk.model.serializer.toUUID
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
-import org.moonfin.server.core.model.ServerType
+import org.tentacle.server.core.model.ServerType
 
 fun ServerDiscoveryInfo.toServer(serverType: ServerType = ServerType.JELLYFIN): Server = Server(
 	id = id.toUUID(),

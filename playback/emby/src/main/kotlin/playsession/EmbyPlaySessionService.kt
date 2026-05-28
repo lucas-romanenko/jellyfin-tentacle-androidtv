@@ -1,4 +1,4 @@
-package org.moonfin.playback.emby.playsession
+package org.tentacle.playback.emby.playsession
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.launchIn
@@ -19,8 +19,8 @@ import org.jellyfin.playback.core.plugin.PlayerService
 import org.jellyfin.playback.core.queue.queue
 import org.jellyfin.playback.jellyfin.queue.baseItem
 import org.jellyfin.sdk.model.extensions.inWholeTicks
-import org.moonfin.playback.emby.mediastream.toEmbyId
-import org.moonfin.server.emby.EmbyApiClient
+import org.tentacle.playback.emby.mediastream.toEmbyId
+import org.tentacle.server.emby.EmbyApiClient
 import timber.log.Timber
 import kotlin.math.roundToInt
 import org.jellyfin.playback.core.model.RepeatMode as CoreRepeatMode

@@ -44,10 +44,10 @@ import org.jellyfin.sdk.model.api.SyncPlayGroupUpdateMessage
 import org.jellyfin.sdk.model.extensions.get
 import org.jellyfin.sdk.model.extensions.getValue
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
-import org.moonfin.server.core.model.EmbyConnectionState
-import org.moonfin.server.core.model.ServerType
-import org.moonfin.server.core.model.ServerWebSocketMessage
-import org.moonfin.server.emby.socket.EmbyWebSocketClient
+import org.tentacle.server.core.model.EmbyConnectionState
+import org.tentacle.server.core.model.ServerType
+import org.tentacle.server.core.model.ServerWebSocketMessage
+import org.tentacle.server.emby.socket.EmbyWebSocketClient
 import timber.log.Timber
 import java.time.Instant
 import java.util.UUID

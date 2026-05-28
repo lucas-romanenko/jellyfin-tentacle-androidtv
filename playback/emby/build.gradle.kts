@@ -3,7 +3,7 @@ plugins {
 }
 
 android {
-	namespace = "org.moonfin.playback.emby"
+	namespace = "org.tentacle.playback.emby"
 	compileSdk = libs.versions.android.compileSdk.get().toInt()
 
 	defaultConfig {

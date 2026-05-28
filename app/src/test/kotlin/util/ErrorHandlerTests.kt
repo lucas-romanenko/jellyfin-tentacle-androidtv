@@ -3,7 +3,7 @@ package org.jellyfin.androidtv.util
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
-import org.moonfin.server.emby.EmbyApiException
+import org.tentacle.server.emby.EmbyApiException
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException

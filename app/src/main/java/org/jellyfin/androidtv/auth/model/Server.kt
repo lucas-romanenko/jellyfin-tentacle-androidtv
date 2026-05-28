@@ -2,7 +2,7 @@ package org.jellyfin.androidtv.auth.model
 
 import org.jellyfin.androidtv.auth.repository.ServerRepository
 import org.jellyfin.sdk.model.ServerVersion
-import org.moonfin.server.core.model.ServerType
+import org.tentacle.server.core.model.ServerType
 import java.time.Instant
 import java.util.UUID
 

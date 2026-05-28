@@ -85,6 +85,12 @@ class MainActivity : FragmentActivity() {
 
 		super.onCreate(savedInstanceState)
 
+		// Inflate layout immediately so the window has content during activity
+		// transition — prevents black flash while waiting for session validation.
+		binding = ActivityMainBinding.inflate(layoutInflater)
+		binding.background.setContent { AppBackground() }
+		setContentView(binding.root)
+
 		// Wait for session restoration before validating authentication
 		// This prevents race condition where activity recreates before session is restored
 		lifecycleScope.launch {
@@ -93,7 +99,7 @@ class MainActivity : FragmentActivity() {
 				.first()
 
 			if (!validateAuthentication()) return@launch
-			
+
 			setupSyncPlayQueueLauncher()
 			setupActivity(savedInstanceState)
 		}
@@ -118,8 +124,12 @@ class MainActivity : FragmentActivity() {
 				interactionTrackerViewModel.notifyInteraction(canCancel = false, userInitiated = false)
 			}.launchIn(lifecycleScope)
 
-		binding = ActivityMainBinding.inflate(layoutInflater)
-		binding.background.setContent { AppBackground() }
+		// Layout already inflated + setContentView called in onCreate.
+		// Replace the splash drawable window background with a plain color now that
+		// the layout is rendered — prevents the logo from peeking through on other screens.
+		window.setBackgroundDrawableResource(R.color.not_quite_black)
+
+		// Wire up the remaining Compose views.
 		binding.settings.setContent { MainActivitySettings() }
 		binding.screensaver.setContent { InAppScreensaver() }
 		binding.exitDialog.setContent {
@@ -130,7 +140,6 @@ class MainActivity : FragmentActivity() {
 				)
 			}
 		}
-		setContentView(binding.root)
 
 		// Check for updates on app launch (libre builds only)
 		if (org.jellyfin.androidtv.BuildConfig.ENABLE_OTA_UPDATES) {

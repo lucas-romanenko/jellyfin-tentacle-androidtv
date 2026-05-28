@@ -1,6 +1,6 @@
 # Emby Server Support
 
-Moonfin supports Emby Server **4.8.0.0 and newer** as a first-class server backend alongside Jellyfin. Both server types can be used simultaneously in multi-server configurations.
+Tentacle supports Emby Server **4.8.0.0 and newer** as a first-class server backend alongside Jellyfin. Both server types can be used simultaneously in multi-server configurations.
 
 ## Supported Versions
 
@@ -12,7 +12,7 @@ Moonfin supports Emby Server **4.8.0.0 and newer** as a first-class server backe
 
 ## Server Detection
 
-When adding a server, Moonfin automatically detects whether it is running Jellyfin or Emby by querying the `/System/Info/Public` endpoint. No manual configuration is required. The detected server type is stored with the server entry and used for all subsequent connections.
+When adding a server, Tentacle automatically detects whether it is running Jellyfin or Emby by querying the `/System/Info/Public` endpoint. No manual configuration is required. The detected server type is stored with the server entry and used for all subsequent connections.
 
 ## Feature Compatibility Matrix
 
@@ -82,7 +82,7 @@ No manual configuration is needed. The feature set adapts automatically based on
 
 ## ID Format Differences
 
-Jellyfin uses UUID-format IDs (`550e8400-e29b-41d4-a716-446655440000`) while Emby uses numeric IDs (`12345`). Moonfin handles this transparently:
+Jellyfin uses UUID-format IDs (`550e8400-e29b-41d4-a716-446655440000`) while Emby uses numeric IDs (`12345`). Tentacle handles this transparently:
 
 - The `EmbyCompatInterceptor` converts between formats in API requests and responses
 - Numeric Emby IDs are mapped to deterministic UUIDs for internal consistency
@@ -90,7 +90,7 @@ Jellyfin uses UUID-format IDs (`550e8400-e29b-41d4-a716-446655440000`) while Emb
 
 ## Image Caching
 
-Emby image URLs include an `api_key` query parameter for authentication. Moonfin strips this parameter from Coil cache keys so that image caches survive token rotation. The `tag` parameter is preserved as a cache buster for content changes.
+Emby image URLs include an `api_key` query parameter for authentication. Tentacle strips this parameter from Coil cache keys so that image caches survive token rotation. The `tag` parameter is preserved as a cache buster for content changes.
 
 ## WebSocket Reconnection
 

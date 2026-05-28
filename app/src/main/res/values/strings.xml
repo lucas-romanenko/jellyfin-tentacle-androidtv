@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name_release" translatable="false" tools:ignore="UnusedResources">Moonfin</string>
-    <string name="app_name_debug" translatable="false" tools:ignore="UnusedResources">Moonfin Debug</string>
+    <string name="app_name_release" translatable="false" tools:ignore="UnusedResources">Tentacle</string>
+    <string name="app_name_debug" translatable="false" tools:ignore="UnusedResources">Tentacle Debug</string>
     <string name="video_error_unknown_error">Failed to load video</string>
     <string name="loading">Loading…</string>
     <string name="btn_cancel">Cancel</string>
@@ -54,7 +54,7 @@
     <string name="lbl_pause">Pause</string>
     <string name="lbl_restart">Restart</string>
     <string name="lbl_exit">Exit</string>
-    <string name="exit_confirmation_title">Exit Moonfin?</string>
+    <string name="exit_confirmation_title">Exit Tentacle?</string>
     <string name="exit_confirmation_message">Are you sure you want to exit the app?</string>
     <string name="lbl_cancel">Cancel</string>
     <string name="lbl_cancel_recording">Cancel recording</string>
@@ -312,10 +312,10 @@
     <string name="pref_poster_size_large">Large</string>
     <string name="pref_poster_size_extra_large">Extra large</string>
     <string name="pref_about_title">About</string>
-    <string name="pref_donate_title">Support Moonfin</string>
+    <string name="pref_donate_title">Support Tentacle</string>
     <string name="pref_donate_description">Help keep this project alive</string>
-    <string name="donate_dialog_title">Support Moonfin Development</string>
-    <string name="donate_dialog_message">Thank you for considering a donation! Your support helps keep Moonfin alive and enables continued development of new features and improvements.\n\nScan the QR code below to donate:</string>
+    <string name="donate_dialog_title">Support Tentacle Development</string>
+    <string name="donate_dialog_message">Thank you for considering a donation! Your support helps keep Tentacle alive and enables continued development of new features and improvements.\n\nScan the QR code below to donate:</string>
     <string name="donate_dialog_thanks">Every contribution makes a difference. Thank you!</string>
     <string name="pref_external_player">Use external player</string>
     <string name="pref_next_up_timeout_summary">How long to wait before playing the next item</string>
@@ -417,7 +417,7 @@
     <string name="user_picker_last_user_title">Most recently used</string>
     <string name="user_picker_last_user_summary">Use the last active account</string>
     <string name="lbl_switch_user">Switch account</string>
-    <string name="no_network_permissions">Moonfin requires network permissions to function</string>
+    <string name="no_network_permissions">Tentacle requires network permissions to function</string>
     <string name="press_to_close">Press to close</string>
     <string name="saved_servers">Saved servers</string>
     <string name="welcome_title">Welcome to Tentacle!</string>
@@ -485,7 +485,7 @@
     <string name="duration_format_hours_minutes">%1$dh %2$dm</string>
     <string name="duration_format_minutes">%1$dm</string>
     <string name="licenses_link">Licenses</string>
-    <string name="licenses_link_description">View the licenses of the libraries used by the Moonfin app</string>
+    <string name="licenses_link_description">View the licenses of the libraries used by the Tentacle app</string>
     <string name="license_description">Description</string>
     <string name="license_version">Version</string>
     <string name="license_artifact">Artifact</string>
@@ -527,7 +527,7 @@
     <string name="pref_home_favorites_button_summary">Toggle the favorites button in the top toolbar</string>
     <string name="pref_show_libraries_in_toolbar">Show library buttons in toolbar</string>
     <string name="pref_show_libraries_in_toolbar_description">Toggle library buttons in the top toolbar</string>
-    <string name="searchable_hint">Search Moonfin</string>
+    <string name="searchable_hint">Search Tentacle</string>
     <string name="searchable_settings_description">Media</string>
     <string name="pref_subtitles_background_title">Enable background</string>
     <string name="pref_subtitles_background_summary">Show a black background behind the subtitles</string>
@@ -608,7 +608,7 @@
     <string name="crash_report_toast">Oops! Something went wrong, a crash report was sent to your Jellyfin server.</string>
     <string name="server_setup_incomplete">The setup of this server has not been completed. Open Jellyfin in a web browser to finish setup before signing in.</string>
     <string name="episode_name_special">special</string>
-    <string name="app_notification_beta">App updated to %1$s\nThank you for participating in the Moonfin beta program.</string>
+    <string name="app_notification_beta">App updated to %1$s\nThank you for participating in the Tentacle beta program.</string>
     <string name="item_deleted">%1$s deleted</string>
     <string name="item_deletion_failed">Unable to delete %1$s</string>
     <string name="pref_enable_media_management">Enable media management</string>
@@ -617,7 +617,7 @@
     <string name="item_delete_confirm_message">Are you sure you want to delete this item from the server? This action cannot be undone.</string>
     <string name="pref_screensaver">Screensaver</string>
     <string name="pref_screensaver_inapp_enabled">Use in-app screensaver</string>
-    <string name="pref_screensaver_inapp_enabled_description">Show the Moonfin screensaver while the app is open</string>
+    <string name="pref_screensaver_inapp_enabled_description">Show the Tentacle screensaver while the app is open</string>
     <string name="pref_screensaver_inapp_timeout">Start screensaver after</string>
     <string name="enable_reactive_homepage">Enable reactive homepage</string>
     <string name="not_set">Not set</string>
@@ -650,7 +650,7 @@
     <string name="pref_screensaver_ageratingrequired_disabled">Showing all items</string>
     <string name="pref_screensaver_mode">Screensaver mode</string>
     <string name="pref_screensaver_mode_library">Library images</string>
-    <string name="pref_screensaver_mode_logo">Moonfin logo</string>
+    <string name="pref_screensaver_mode_logo">Tentacle logo</string>
     <string name="pref_screensaver_dimming">Screen dimming level</string>
     <string name="pref_screensaver_dimming_level_description">Adjust how much to darken the screensaver display. Logo and clock move every 60 seconds to prevent burn-in.</string>
     <string name="pref_screensaver_dimming_description">Darken the screensaver display</string>
@@ -843,44 +843,14 @@
     <string name="pref_theme_music_on_home_rows">Play on home rows</string>
     <string name="pref_theme_music_on_home_rows_summary">Play theme music when focusing on items in home rows</string>
 
-    <!-- Seerr Settings -->
-    <string name="jellyseerr">Seerr</string>
     <string name="home">Home</string>
     <string name="search">Search</string>
-    <string name="jellyseerr_settings">Seerr</string>
-    <string name="jellyseerr_settings_description">Authentication, rows &amp; full configuration</string>
-    <string name="jellyseerr_server_settings">Server Configuration</string>
-    <string name="jellyseerr_enabled">Enable Seerr</string>
-    <string name="jellyseerr_enabled_description">Show Seerr integration in the app</string>
-    <string name="jellyseerr_server_url">Server URL</string>
-    <string name="jellyseerr_server_url_description">Seerr server address (e.g., http://192.168.1.100:5055)</string>
-    <string name="jellyseerr_password">Password</string>
-    <string name="jellyseerr_password_description">Your Jellyfin password for Seerr authentication</string>
-    <string name="jellyseerr_test_connection">Test Connection</string>
-    <string name="jellyseerr_test_connection_description">Test the connection to your Seerr server</string>
-    <string name="jellyseerr_connection_success">Successfully connected to Seerr!</string>
-    <string name="jellyseerr_fill_fields">Please enter server URL and API key</string>
-    <string name="jellyseerr_search_results">Seerr</string>
-    <string name="jellyseerr_connect_jellyfin">Login with Jellyfin</string>
-    <string name="jellyseerr_connect_jellyfin_description">Automatically authenticate using your current Jellyfin account for ~30 days</string>
-    <string name="jellyseerr_connection_error">Unable to connect to Seerr. Please log in again from settings to restore your session.</string>
-    <string name="jellyseerr_setup_title">How to Connect</string>
-    <string name="jellyseerr_setup_info">Enter your Seerr server URL and Jellyfin password above. Test the connection to authenticate and save your session.</string>
-    <string name="jellyseerr_show_in_toolbar">Show Seerr in Toolbar</string>
-    <string name="jellyseerr_show_in_toolbar_description">Display Seerr button in the main navigation toolbar</string>
-    <string name="jellyseerr_fetch_limit_title">Items per Row (3 pages loaded per category)</string>
-    <string name="jellyseerr_fetch_limit_description">Number of items to fetch per API request (3 pages are loaded at once)</string>
-    <string name="jellyseerr_fetch_limit_25">25 items</string>
-    <string name="jellyseerr_fetch_limit_50">50 items</string>
-    <string name="jellyseerr_fetch_limit_75">75 items</string>
-    <string name="jellyseerr_block_nsfw">Block Adult Content</string>
-    <string name="jellyseerr_block_nsfw_description">Hide content tagged as adult/NSFW from Seerr results</string>
 
     <!-- Plugin Settings -->
     <string name="pref_plugin_settings">Plugin</string>
-    <string name="pref_plugin_description">Settings synced via Moonfin server plugin</string>
+    <string name="pref_plugin_description">Settings synced via Tentacle server plugin</string>
     <string name="pref_plugin_sync_enable">Enable Plugin Sync</string>
-    <string name="pref_plugin_sync_description">Sync settings with the Moonfin server plugin</string>
+    <string name="pref_plugin_sync_description">Sync settings with the Tentacle server plugin</string>
     <string name="pref_toolbar_customization_description">Navigation bar and toolbar buttons</string>
     <string name="pref_home_section_settings_description">Continue watching, libraries, folder view</string>
     <string name="pref_media_bar_settings_description">Featured content carousel on home screen</string>
@@ -889,86 +859,11 @@
     <string name="pref_ratings_title">Ratings</string>
     <string name="pref_ratings_settings_description">External ratings and episode ratings</string>
 
-    <!-- Moonfin Settings -->
-    <string name="moonfin_settings">Moonfin Settings</string>
-    <string name="moonfin_settings_description">Customize Moonfin-specific features</string>
-    <string name="moonfin_general_settings">General</string>
+    <!-- Tentacle Settings -->
+    <string name="tentacle_settings">Tentacle Settings</string>
+    <string name="tentacle_settings_description">Customize Tentacle-specific features</string>
+    <string name="tentacle_general_settings">General</string>
     <string name="settings_available_after_login">Settings available after login</string>
-
-    <!-- Seerr Authentication -->
-    <string name="jellyseerr_auth_method">Authentication Method</string>
-    <string name="jellyseerr_auth_method_description">Choose how to authenticate with Seerr</string>
-    <string name="jellyseerr_auth_jellyfin">Jellyfin SSO</string>
-    <string name="jellyseerr_auth_jellyfin_description">Login with your Jellyfin account (cookie-based, 30-day expiration)</string>
-    <string name="jellyseerr_auth_local">Local Account</string>
-    <string name="jellyseerr_auth_local_description">Login with Seerr email/password (permanent API key)</string>
-    <string name="jellyseerr_auto_api_key">Auto-Generate API Key</string>
-    <string name="jellyseerr_auto_api_key_description">After Jellyfin login, generate permanent API key (requires admin permissions)</string>
-    <string name="jellyseerr_regenerate_api_key">Regenerate API Key</string>
-    <string name="jellyseerr_regenerate_api_key_description">Generate permanent API key (requires admin permissions in Seerr)</string>
-    <string name="jellyseerr_local_email">Email</string>
-    <string name="jellyseerr_local_email_description">Your Seerr account email</string>
-    <string name="jellyseerr_local_password">Local Password</string>
-    <string name="jellyseerr_local_password_description">Your Seerr account password (not Jellyfin)</string>
-    <string name="jellyseerr_api_key_status">API Key Status</string>
-    <string name="jellyseerr_api_key_present">Permanent API key active</string>
-    <string name="jellyseerr_api_key_absent">Using cookie-based auth (expires in ~30 days)</string>
-    <string name="jellyseerr_not_logged_in">Not logged in</string>
-    <string name="jellyseerr_login_local">Login with Local Account</string>
-    <string name="jellyseerr_login_local_description">Authenticate using email and password</string>
-    <string name="jellyseerr_login_api_key">Login with API Key</string>
-    <string name="jellyseerr_login_api_key_description">Use a permanent API key from Seerr settings</string>
-    <string name="jellyseerr_api_key_input">API Key</string>
-    <string name="jellyseerr_api_key_input_description">Get this from Seerr web UI under Settings → General</string>
-    <string name="jellyseerr_logout">Log Out</string>
-    <string name="jellyseerr_logout_description">Clear all Seerr authentication data and cookies</string>
-    <string name="jellyseerr_logout_success">Logged out of Seerr successfully</string>
-    <string name="jellyseerr_logout_confirm_title">Log Out of Seerr?</string>
-    <string name="jellyseerr_logout_confirm_message">This will clear all authentication data and cookies. You will need to log in again to use Seerr.</string>
-
-    <!-- Seerr Moonfin Proxy -->
-    <string name="jellyseerr_moonfin_proxy">Moonfin Proxy</string>
-    <string name="jellyseerr_moonfin_proxy_status">Connection managed by Moonfin server plugin</string>
-    <string name="jellyseerr_moonfin_connected">Connected as %s</string>
-    <string name="jellyseerr_moonfin_not_authenticated">Not authenticated — login required on server</string>
-    <string name="jellyseerr_moonfin_disconnect">Disconnect Moonfin Proxy</string>
-    <string name="jellyseerr_moonfin_disconnect_description">Stop using the server plugin proxy and return to direct connection mode</string>
-    <string name="jellyseerr_moonfin_reconnect">Connect via Moonfin Plugin</string>
-    <string name="jellyseerr_moonfin_reconnect_description">Reconnect Seerr through the Moonfin server plugin proxy</string>
-    <string name="jellyseerr_moonfin_reconnect_success">Connected via Moonfin plugin</string>
-    <string name="jellyseerr_moonfin_reconnect_failed">Failed to connect via Moonfin plugin</string>
-    <string name="jellyseerr_moonfin_not_enabled">Seerr not enabled on server plugin</string>
-
-    <!-- Seerr Advanced Settings -->
-    <string name="jellyseerr_advanced_settings">Advanced Request Settings</string>
-    <string name="jellyseerr_advanced_settings_description">Configure custom quality profiles, root folders, and servers for requests</string>
-    <string name="jellyseerr_hd_movie_profile">HD Movie Profile</string>
-    <string name="jellyseerr_hd_movie_profile_description">Quality profile for HD movie requests (uses server default if not set)</string>
-    <string name="jellyseerr_4k_movie_profile">4K Movie Profile</string>
-    <string name="jellyseerr_4k_movie_profile_description">Quality profile for 4K movie requests (uses server default if not set)</string>
-    <string name="jellyseerr_hd_tv_profile">HD TV Profile</string>
-    <string name="jellyseerr_hd_tv_profile_description">Quality profile for HD TV requests (uses server default if not set)</string>
-    <string name="jellyseerr_4k_tv_profile">4K TV Profile</string>
-    <string name="jellyseerr_4k_tv_profile_description">Quality profile for 4K TV requests (uses server default if not set)</string>
-    <string name="jellyseerr_profile_default">Server Default</string>
-    <string name="jellyseerr_profile_loading">Loading profiles…</string>
-    <string name="jellyseerr_profile_error">Unable to load profiles. Check connection.</string>
-    <string name="jellyseerr_profile_admin_required">Admin permissions required to configure quality profiles</string>
-
-    <!-- Seerr Row Configuration -->
-    <string name="jellyseerr_rows_title">Discover Rows</string>
-    <string name="jellyseerr_rows_description">Enable, disable, and reorder rows on the Seerr discover screen</string>
-    <string name="jellyseerr_rows_reset">Reset to Defaults</string>
-    <string name="jellyseerr_row_recent_requests">Recent Requests</string>
-    <string name="jellyseerr_row_trending">Trending</string>
-    <string name="jellyseerr_row_popular_movies">Popular Movies</string>
-    <string name="jellyseerr_row_movie_genres">Movie Genres</string>
-    <string name="jellyseerr_row_upcoming_movies">Upcoming Movies</string>
-    <string name="jellyseerr_row_studios">Studios</string>
-    <string name="jellyseerr_row_popular_series">Popular Series</string>
-    <string name="jellyseerr_row_series_genres">Series Genres</string>
-    <string name="jellyseerr_row_upcoming_series">Upcoming Series</string>
-    <string name="jellyseerr_row_networks">Networks</string>
 
     <string name="enabled">Enabled</string>
     <string name="disabled">Disabled</string>
@@ -993,7 +888,7 @@
     <string name="pref_enable_additional_ratings_description">Fetch ratings from MDBList API (IMDB, TMDB, Metacritic, Trakt, Letterboxd, etc.)</string>
     <string name="pref_mdblist_api_key">MDBList API Key</string>
     <string name="pref_mdblist_api_key_description">Get a free API key from mdblist.com/preferences</string>
-    <string name="pref_additional_ratings_no_api_key">Please add your MDBList API key in Moonfin Settings</string>
+    <string name="pref_additional_ratings_no_api_key">Please add your MDBList API key in Tentacle Settings</string>
     <string name="pref_rating_source_imdb">IMDB</string>
     <string name="pref_rating_source_rt_audience">Rotten Tomatoes Audience</string>
     <string name="pref_rating_source_tmdb">The Movie Database</string>

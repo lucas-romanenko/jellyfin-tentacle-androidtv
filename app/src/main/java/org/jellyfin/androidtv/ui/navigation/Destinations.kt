@@ -23,13 +23,6 @@ import org.jellyfin.androidtv.ui.itemdetail.ItemListFragment
 import org.jellyfin.androidtv.ui.itemdetail.v2.ItemDetailsFragment
 import org.jellyfin.androidtv.ui.itemdetail.v2.TrailerPlayerFragment
 import org.jellyfin.androidtv.ui.itemdetail.MusicFavoritesListFragment
-import org.jellyfin.androidtv.ui.jellyseerr.BrowseFilterType
-import org.jellyfin.androidtv.ui.jellyseerr.DiscoverFragment
-import org.jellyfin.androidtv.ui.jellyseerr.JellyseerrBrowseByFragment
-import org.jellyfin.androidtv.ui.jellyseerr.MediaDetailsFragment
-import org.jellyfin.androidtv.ui.jellyseerr.PersonDetailsFragment
-import org.jellyfin.androidtv.ui.jellyseerr.RequestsFragment
-import org.jellyfin.androidtv.ui.jellyseerr.SettingsFragment as JellyseerrSettingsFragment
 import org.jellyfin.androidtv.ui.livetv.LiveTvGuideFragment
 import org.jellyfin.androidtv.ui.playback.AudioNowPlayingFragment
 import org.jellyfin.androidtv.ui.playback.CustomPlaybackOverlayFragment
@@ -232,38 +225,4 @@ object Destinations {
 	val tentacleDiscover = fragmentDestination<TentacleDiscoverFragment>()
 	val tentacleActivity = fragmentDestination<ActivityFragment>()
 
-	// Jellyseerr
-	val jellyseerrDiscover = fragmentDestination<DiscoverFragment>()
-	val jellyseerrRequests = fragmentDestination<RequestsFragment>()
-	val jellyseerrSettings = fragmentDestination<JellyseerrSettingsFragment>()
-	
-	fun jellyseerrBrowseBy(
-		filterId: Int, 
-		filterName: String, 
-		mediaType: String,
-		filterType: BrowseFilterType = BrowseFilterType.GENRE
-	) = fragmentDestination<JellyseerrBrowseByFragment>(
-		"filter_id" to filterId,
-		"filter_name" to filterName,
-		"media_type" to mediaType,
-		"filter_type" to filterType.name,
-	)
-	
-	// Convenience methods for specific filter types
-	fun jellyseerrBrowseByGenre(genreId: Int, genreName: String, mediaType: String) = 
-		jellyseerrBrowseBy(genreId, genreName, mediaType, BrowseFilterType.GENRE)
-	
-	fun jellyseerrBrowseByNetwork(networkId: Int, networkName: String) = 
-		jellyseerrBrowseBy(networkId, networkName, "tv", BrowseFilterType.NETWORK)
-	
-	fun jellyseerrBrowseByStudio(studioId: Int, studioName: String) = 
-		jellyseerrBrowseBy(studioId, studioName, "movie", BrowseFilterType.STUDIO)
-	
-	fun jellyseerrMediaDetails(itemJson: String) = fragmentDestination<MediaDetailsFragment>(
-		"item" to itemJson
-	)
-	
-	fun jellyseerrPersonDetails(personId: Int) = fragmentDestination<PersonDetailsFragment>(
-		"personId" to personId.toString()
-	)
 }

@@ -164,11 +164,20 @@ class StartupActivity : FragmentActivity() {
 		navigationRepository.reset(destination, true)
 
 		val intent = Intent(this, MainActivity::class.java)
-		// Clear navigation history
-		intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_TASK_ON_HOME)
+		// Clear navigation history + suppress activity transition animation.
+		// FLAG_ACTIVITY_NO_ANIMATION is more reliable than overridePendingTransition
+		// on modern Android TV devices.
+		intent.addFlags(
+			Intent.FLAG_ACTIVITY_NEW_TASK
+				or Intent.FLAG_ACTIVITY_TASK_ON_HOME
+				or Intent.FLAG_ACTIVITY_NO_ANIMATION
+		)
 		Timber.i("Opening next activity $intent")
 		startActivity(intent)
-		finishAfterTransition()
+		finish()
+		// Belt-and-suspenders: also suppress via the deprecated API for older devices
+		@Suppress("DEPRECATION")
+		overridePendingTransition(0, 0)
 	}
 
 	// Fragment switching

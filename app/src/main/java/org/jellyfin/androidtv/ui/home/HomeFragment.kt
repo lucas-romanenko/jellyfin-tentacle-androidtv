@@ -17,6 +17,7 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import coil3.load
 import coil3.request.crossfade
 import kotlinx.coroutines.flow.launchIn
@@ -92,6 +93,7 @@ class HomeFragment : Fragment() {
 	private var trailerWebView: ComposeView? = null
 	private var rowsFragment: HomeRowsFragment? = null
 	private var muteButton: ImageButton? = null
+	private var loadingOverlay: View? = null
 	private val _isTrailerMuted = kotlinx.coroutines.flow.MutableStateFlow(false)
 	private var snowfallView: SnowfallView? = null
 	private var petalfallView: PetalfallView? = null
@@ -118,6 +120,7 @@ class HomeFragment : Fragment() {
 		summerView = view.findViewById(R.id.summerView)
 		halloweenView = view.findViewById(R.id.halloweenView)
 		muteButton = view.findViewById(R.id.muteButton)
+		loadingOverlay = view.findViewById(R.id.loadingOverlay)
 
 		// Initialize mute state from preference
 		_isTrailerMuted.value = !userSettingPreferences[UserSettingPreferences.previewAudioEnabled]
@@ -185,6 +188,44 @@ class HomeFragment : Fragment() {
 
 		rowsFragment = childFragmentManager.findFragmentById(R.id.rowsFragment) as? HomeRowsFragment
 
+		// Dismiss loading overlay once rows are rendered and hero is resolved.
+		// Keeps the Tentacle logo visible during loading so users see a polished
+		// transition instead of an empty home screen that pops in piece by piece.
+		val fragment = rowsFragment
+		if (fragment != null) {
+			fun dismissOverlay() {
+				val overlay = loadingOverlay ?: return
+				if (!overlay.isVisible) return
+				overlay.animate()
+					.alpha(0f)
+					.setDuration(400)
+					.withEndAction { overlay.isVisible = false }
+					.start()
+			}
+
+			kotlinx.coroutines.flow.combine(
+				fragment.contentReady,
+				mediaBarViewModel.state,
+			) { rowsReady, heroState ->
+				if (!rowsReady) return@combine false
+				// If hero is part of the layout, wait for it to finish loading
+				if (fragment.hasMediaBarAtPosition0) {
+					heroState !is org.jellyfin.androidtv.ui.home.mediabar.MediaBarState.Loading
+				} else {
+					true // No hero — rows ready is enough
+				}
+			}
+				.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
+				.onEach { allReady -> if (allReady) dismissOverlay() }
+				.launchIn(lifecycleScope)
+
+			// Safety timeout — dismiss after 8s no matter what
+			lifecycleScope.launch {
+				delay(8000)
+				dismissOverlay()
+			}
+		}
+
 		rowsFragment?.selectedItemStateFlow
 			?.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
 			?.onEach { state ->
@@ -201,25 +242,13 @@ class HomeFragment : Fragment() {
 			}
 			?.launchIn(lifecycleScope)
 
-		mediaBarViewModel.state
+		kotlinx.coroutines.flow.combine(
+			mediaBarViewModel.state,
+			mediaBarViewModel.isFocused,
+			mediaBarViewModel.playbackState,
+		) { _, _, _ -> Unit }
 			.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
-			.onEach { state ->
-				updateMediaBarBackground()
-			}
-			.launchIn(lifecycleScope)
-
-		mediaBarViewModel.isFocused
-			.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
-			.onEach { isFocused ->
-				updateMediaBarBackground()
-			}
-			.launchIn(lifecycleScope)
-
-		mediaBarViewModel.playbackState
-			.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
-			.onEach {
-				updateMediaBarBackground()
-			}
+			.onEach { updateMediaBarBackground() }
 			.launchIn(lifecycleScope)
 
 		trailerWebView?.setContent {
@@ -336,11 +365,13 @@ class HomeFragment : Fragment() {
 
 	private fun startNotificationPolling() {
 		lifecycleScope.launch {
-			while (true) {
-				delay(15_000) // Poll every 15 seconds
-				try {
-					tentacleRepository.pollNotifications()
-				} catch (_: Exception) {}
+			lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+				while (true) {
+					delay(15_000)
+					try {
+						tentacleRepository.pollNotifications()
+					} catch (_: Exception) {}
+				}
 			}
 		}
 	}

@@ -87,12 +87,12 @@ class ActivityFragment : Fragment() {
 			var isLoading by remember { mutableStateOf(true) }
 			val contentFocusRequester = remember { FocusRequester() }
 
-			// Poll every 3 seconds
+			// Poll for activity updates
 			LaunchedEffect(Unit) {
 				while (true) {
 					activity = tentacleRepository.getActivity()
 					isLoading = false
-					delay(3_000)
+					delay(5_000)
 				}
 			}
 

@@ -8,7 +8,7 @@ import org.jellyfin.sdk.Jellyfin
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.DeviceInfo
 import org.jellyfin.sdk.model.api.BaseItemDto
-import org.moonfin.server.core.model.ServerType
+import org.tentacle.server.core.model.ServerType
 import timber.log.Timber
 import java.util.UUID
 

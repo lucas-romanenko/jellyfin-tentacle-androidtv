@@ -60,7 +60,7 @@ data class GenreItemSortOption(
 
 /**
  * Fragment that displays items from a specific genre in a grid layout.
- * Uses the same layout and styling as JellyseerrBrowseByFragment for consistency.
+ * Displays items from a specific genre in a grid layout.
  */
 class GenreBrowseFragment : Fragment() {
 	private val apiClient by inject<ApiClient>()
@@ -321,7 +321,7 @@ class GenreBrowseFragment : Fragment() {
 		// Clear existing views
 		infoRow.removeAllViews()
 		
-		// Add metadata items similar to JellyseerrBrowseByFragment
+		// Add metadata items
 		val metadataItems = mutableListOf<String>()
 		
 		// Year

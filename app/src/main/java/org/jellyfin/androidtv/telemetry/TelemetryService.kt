@@ -85,7 +85,7 @@ object TelemetryService {
 			val connection = URL(url).openConnection() as HttpURLConnection
 			// Add authorization
 			val clientName = buildString {
-				append("Moonfin Android TV")
+				append("Tentacle Android TV")
 				if (BuildConfig.DEBUG) append(" (debug)")
 			}
 			val authorization = AuthorizationHeaderBuilder.buildHeader(
@@ -113,9 +113,9 @@ object TelemetryService {
 			private fun CrashReportData.toReport(): String = buildMarkdown {
 			// Header
 			appendLine("---")
-			appendLine("client: Moonfin for Android TV")
+			appendLine("client: Tentacle for Android TV")
 			appendLine("client_version: ${BuildConfig.VERSION_NAME}")
-			appendLine("client_repository: https://github.com/Moonfin-Client/AndroidTV-FireTV")
+			appendLine("client_repository: https://github.com/lucas-romanenko/jellyfin-tentacle-androidtv")
 			appendLine("type: crash_report")
 			appendLine("format: markdown")
 			appendLine("---")

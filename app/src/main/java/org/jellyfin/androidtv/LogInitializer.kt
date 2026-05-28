@@ -27,7 +27,7 @@ class LogInitializer : Initializer<Unit> {
 			Timber.plant(object : Timber.Tree() {
 				override fun log(priority: Int, tag: String?, message: String, t: Throwable?) {
 					if (priority >= android.util.Log.WARN) {
-						android.util.Log.println(priority, tag ?: "Moonfin", message)
+						android.util.Log.println(priority, tag ?: "Tentacle", message)
 					}
 				}
 			})

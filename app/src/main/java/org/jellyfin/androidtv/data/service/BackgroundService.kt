@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import coil3.ImageLoader
 import coil3.request.ImageRequest
+import coil3.size.Size
 import coil3.toBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -126,7 +127,7 @@ class BackgroundService(
 	}
 
 	/**
-	 * Use a direct image URL as background (e.g., TMDB images for Jellyseerr).
+	 * Use a direct image URL as background (e.g., TMDB images).
 	 * @param blurContext The context to determine which blur amount preference to use
 	 */
 	fun setBackgroundUrl(imageUrl: String, blurContext: BlurContext = BlurContext.BROWSING) {
@@ -207,7 +208,11 @@ class BackgroundService(
 		loadBackgroundsJob = scope.launch(Dispatchers.IO) {
 			_backgrounds = backdropUrls.mapNotNull { url ->
 				val bitmap = imageLoader.execute(
-					request = ImageRequest.Builder(context).data(url).build()
+					request = ImageRequest.Builder(context).data(url)
+						// Downscale for background use — full resolution is unnecessary
+						// and significantly slows blur processing on TV hardware
+						.size(Size(960, 540))
+						.build()
 				).image?.toBitmap()
 				
 				if (bitmap != null && !useComposeBlur && blurAmount > 0) {

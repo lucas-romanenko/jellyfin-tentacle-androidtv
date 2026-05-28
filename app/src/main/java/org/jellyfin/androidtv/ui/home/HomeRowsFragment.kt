@@ -106,6 +106,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val _selectedItemStateFlow = MutableStateFlow(SelectedItemState.EMPTY)
 	val selectedItemStateFlow: StateFlow<SelectedItemState> = _selectedItemStateFlow.asStateFlow()
 
+	// Signal that rows have been rendered and are ready to display
+	private val _contentReady = MutableStateFlow(false)
+	val contentReady: StateFlow<Boolean> = _contentReady.asStateFlow()
+
 	// Data
 	private var currentItem: BaseRowItem? = null
 	private var currentRow: ListRow? = null
@@ -135,7 +139,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 	// Debouncer for selection updates - only update UI after user stops navigating
 	private val selectionDebouncer by lazy { Debouncer(150.milliseconds, lifecycleScope) }
-	private val backgroundDebouncer by lazy { Debouncer(200.milliseconds, lifecycleScope) }
+	private val backgroundDebouncer by lazy { Debouncer(350.milliseconds, lifecycleScope) }
 
 	override fun onCreate(savedInstanceState: Bundle?) {
 		super.onCreate(savedInstanceState)
@@ -205,6 +209,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					rows.add(mediaBarRow)
 					// Apply trailer audio setting from dashboard config
 					userSettingPreferences[UserSettingPreferences.previewAudioEnabled] = heroConfig.trailerAudio
+					// Start loading hero content immediately — don't wait for all rows to finish
+					mediaBarViewModel.loadInitialContent()
 					Timber.d("MediaBar row added (hero enabled, trailerAudio=${heroConfig.trailerAudio})")
 				} else {
 					Timber.d("MediaBar row skipped (hero disabled or no config)")
@@ -264,7 +270,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				}
 			}
 
-			// If no Tentacle dashboard, fall back to standard Moonfin home sections
+			// If no Tentacle dashboard, fall back to standard home sections
 			if (tentacleSections.isEmpty()) {
 				val mergeContinueWatching = userPreferences[UserPreferences.mergeContinueWatchingNextUp]
 				var mergedRowAdded = false
@@ -343,6 +349,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						baseItem = firstItem.baseItem
 					)
 				}
+
+				_contentReady.value = true
 			}
 		}
 
@@ -365,25 +373,24 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				}
 			}.launchIn(lifecycleScope)
 
-		var lastMergeState = userPreferences[UserPreferences.mergeContinueWatchingNextUp]
-		var lastFocusExpansion = userPreferences[UserPreferences.cardFocusExpansion]
-		lifecycleScope.launch {
-			lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-				while (true) {
-					delay(500.milliseconds)
-					val currentMergeState = userPreferences[UserPreferences.mergeContinueWatchingNextUp]
-					val currentFocusExpansion = userPreferences[UserPreferences.cardFocusExpansion]
-					if (currentMergeState != lastMergeState || currentFocusExpansion != lastFocusExpansion) {
-						lastMergeState = currentMergeState
-						lastFocusExpansion = currentFocusExpansion
-						// Replace with new instance so onCreate re-runs with fresh data
-						parentFragmentManager.beginTransaction()
-							.replace(R.id.rowsFragment, HomeRowsFragment())
-							.commitNow()
-					}
-				}
+		// Listen for preference changes that require a full rows rebuild
+		val watchedKeys = setOf(
+			UserPreferences.mergeContinueWatchingNextUp.key,
+			UserPreferences.cardFocusExpansion.key,
+		)
+		val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+			if (key in watchedKeys && isAdded) {
+				parentFragmentManager.beginTransaction()
+					.replace(R.id.rowsFragment, HomeRowsFragment())
+					.commitNow()
 			}
 		}
+		userPreferences.registerChangeListener(prefListener)
+		lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {
+			override fun onDestroy(owner: androidx.lifecycle.LifecycleOwner) {
+				userPreferences.unregisterChangeListener(prefListener)
+			}
+		})
 
 		// React to Jellyfin WebSocket events for live home screen updates.
 		// LibraryChangedMessage fires when playlists are created/updated/deleted,
@@ -524,8 +531,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 		if (justLoaded) {
 			justLoaded = false
-			// Load initial content on first load
-			mediaBarViewModel.loadInitialContent()
+			// Hero content loading is kicked off early in onCreate (as soon as hero
+			// config is confirmed enabled), so no need to call loadInitialContent here.
 		} else {
 			// Catch up on home config changes made while paused (WebSocket events
 			// are lost when the fragment is not RESUMED). The structural diff inside

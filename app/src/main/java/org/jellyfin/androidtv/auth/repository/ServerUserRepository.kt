@@ -11,8 +11,8 @@ import org.jellyfin.sdk.Jellyfin
 import org.jellyfin.sdk.api.client.exception.ApiClientException
 import org.jellyfin.sdk.api.client.extensions.userApi
 import org.jellyfin.sdk.model.api.UserDto
-import org.moonfin.server.core.model.ServerType
-import org.moonfin.server.emby.EmbyApiClient
+import org.tentacle.server.core.model.ServerType
+import org.tentacle.server.emby.EmbyApiClient
 import timber.log.Timber
 import java.util.UUID
 
@@ -72,7 +72,7 @@ class ServerUserRepositoryImpl(
 		return try {
 			val tempClient = EmbyApiClient(
 				appVersion = "1.0.0",
-				clientName = "Moonfin",
+				clientName = "Tentacle",
 				deviceId = embyApiClient.deviceId,
 				deviceName = "AndroidTV",
 			)

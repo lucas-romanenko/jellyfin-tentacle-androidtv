@@ -26,7 +26,7 @@ import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.request.GetLatestMediaRequest
 import org.jellyfin.sdk.model.api.request.GetNextUpRequest
 import org.jellyfin.sdk.model.api.request.GetResumeItemsRequest
-import org.moonfin.server.core.model.ServerType
+import org.tentacle.server.core.model.ServerType
 import timber.log.Timber
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds

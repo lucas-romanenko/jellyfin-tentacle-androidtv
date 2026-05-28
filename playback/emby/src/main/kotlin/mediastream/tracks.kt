@@ -1,4 +1,4 @@
-package org.moonfin.playback.emby.mediastream
+package org.tentacle.playback.emby.mediastream
 
 import org.emby.client.model.MediaStream
 import org.emby.client.model.MediaStreamType

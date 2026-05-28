@@ -119,7 +119,7 @@ fun DonateDialog(onDismiss: () -> Unit) {
 
 				// URL
 				Text(
-					text = "buymeacoffee.com/moonfin",
+					text = "buymeacoffee.com/tentacle",
 					fontSize = 14.sp,
 					color = Color(0xFF00A4DC),
 					fontFamily = FontFamily.Monospace,

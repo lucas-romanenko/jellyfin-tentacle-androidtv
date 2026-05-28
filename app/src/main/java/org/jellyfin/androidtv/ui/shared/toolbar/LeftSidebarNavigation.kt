@@ -64,8 +64,6 @@ import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.data.model.AggregatedLibrary
 import org.jellyfin.androidtv.data.repository.MultiServerRepository
 import org.jellyfin.androidtv.data.repository.UserViewsRepository
-import org.jellyfin.androidtv.data.service.pluginsync.PluginSyncService
-import org.jellyfin.androidtv.preference.JellyseerrPreferences
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.constant.ClockBehavior
 import org.jellyfin.androidtv.ui.base.Icon
@@ -86,7 +84,7 @@ import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.primaryImage
 import org.jellyfin.androidtv.util.supportsFeature
 import org.jellyfin.androidtv.auth.repository.ServerRepository
-import org.moonfin.server.core.feature.ServerFeature
+import org.tentacle.server.core.feature.ServerFeature
 import org.jellyfin.androidtv.util.sdk.ApiClientFactory
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemDto
@@ -113,9 +111,6 @@ fun LeftSidebarNavigation(
 	val apiClientFactory = koinInject<ApiClientFactory>()
 	val settingsViewModel = koinActivityViewModel<SettingsViewModel>()
 	val settingsClosedCounter by settingsViewModel.settingsClosedCounter.collectAsState()
-	val pluginSyncService = koinInject<PluginSyncService>()
-	val syncCompletedCounter by pluginSyncService.syncCompletedCounter.collectAsState()
-	val jellyseerrPreferences = koinInject<JellyseerrPreferences>(named("global"))
 	val serverRepository = koinInject<ServerRepository>()
 	val currentServer by serverRepository.currentServer.collectAsState()
 
@@ -131,13 +126,10 @@ fun LeftSidebarNavigation(
 	var shuffleContentType by remember { mutableStateOf("both") }
 	var enableMultiServer by remember { mutableStateOf(false) }
 	var syncPlayEnabled by remember { mutableStateOf(false) }
-	var jellyseerrEnabled by remember { mutableStateOf(false) }
-	var jellyseerrVariant by remember { mutableStateOf("jellyseerr") }
-	var jellyseerrDisplayName by remember { mutableStateOf("Jellyseerr") }
 	var enableFolderView by remember { mutableStateOf(false) }
 	var clockBehavior by remember { mutableStateOf(ClockBehavior.ALWAYS) }
 
-	LaunchedEffect(settingsClosedCounter, syncCompletedCounter) {
+	LaunchedEffect(settingsClosedCounter) {
 		showShuffleButton = userPreferences[UserPreferences.showShuffleButton]
 		showGenresButton = userPreferences[UserPreferences.showGenresButton]
 		showFavoritesButton = userPreferences[UserPreferences.showFavoritesButton]
@@ -147,19 +139,6 @@ fun LeftSidebarNavigation(
 		syncPlayEnabled = userPreferences[UserPreferences.syncPlayEnabled]
 		enableFolderView = userPreferences[UserPreferences.enableFolderView]
 		clockBehavior = userPreferences[UserPreferences.clockBehavior]
-	}
-
-	// Check Jellyseerr settings
-	LaunchedEffect(currentUser) {
-		if (currentUser != null) {
-			val userJellyseerrPrefs = JellyseerrPreferences.migrateToUserPreferences(context, currentUser!!.id.toString())
-			jellyseerrEnabled = userJellyseerrPrefs[JellyseerrPreferences.enabled]
-			jellyseerrVariant = userJellyseerrPrefs[JellyseerrPreferences.moonfinVariant]
-			val dn = userJellyseerrPrefs[JellyseerrPreferences.moonfinDisplayName]
-			jellyseerrDisplayName = if (dn.isNotBlank()) dn else if (jellyseerrVariant == "seerr") "Seerr" else "Jellyseerr"
-		} else {
-			jellyseerrEnabled = false
-		}
 	}
 
 	// Load user views/libraries
@@ -205,9 +184,6 @@ fun LeftSidebarNavigation(
 		showGenresButton = showGenresButton,
 		showFavoritesButton = showFavoritesButton,
 		showLibrariesInToolbar = showLibrariesInToolbar,
-		jellyseerrEnabled = jellyseerrEnabled,
-		jellyseerrVariant = jellyseerrVariant,
-		jellyseerrDisplayName = jellyseerrDisplayName,
 		syncPlayEnabled = syncPlayEnabled && currentServer.supportsFeature(ServerFeature.SYNC_PLAY),
 		enableFolderView = enableFolderView,
 		clockBehavior = clockBehavior,
@@ -233,9 +209,6 @@ private fun CollapsibleSidebarContent(
 	showGenresButton: Boolean = true,
 	showFavoritesButton: Boolean = true,
 	showLibrariesInToolbar: Boolean = true,
-	jellyseerrEnabled: Boolean = false,
-	jellyseerrVariant: String = "jellyseerr",
-	jellyseerrDisplayName: String = "Jellyseerr",
 	syncPlayEnabled: Boolean = false,
 	enableFolderView: Boolean = false,
 	clockBehavior: ClockBehavior = ClockBehavior.ALWAYS,
@@ -260,9 +233,6 @@ private fun CollapsibleSidebarContent(
 	val shuffleIcon = ImageVector.vectorResource(R.drawable.ic_shuffle)
 	val genresIcon = ImageVector.vectorResource(R.drawable.ic_masks)
 	val favoritesIcon = ImageVector.vectorResource(R.drawable.ic_heart)
-	val jellyseerrIcon = ImageVector.vectorResource(
-		if (jellyseerrVariant == "seerr") R.drawable.ic_seer else R.drawable.ic_jellyseerr_jellyfish
-	)
 	val syncplayIcon = ImageVector.vectorResource(R.drawable.ic_syncplay)
 	val librariesIcon = ImageVector.vectorResource(R.drawable.ic_clapperboard)
 	val settingsIcon = ImageVector.vectorResource(R.drawable.ic_settings)
@@ -497,19 +467,6 @@ private fun CollapsibleSidebarContent(
 						isExpanded = isExpanded,
 						onClick = {
 							navigationRepository.navigate(Destinations.allFavorites)
-						}
-					)
-					Spacer(modifier = Modifier.height(2.dp))
-				}
-
-				if (jellyseerrEnabled) {
-					SidebarIconItem(
-						icon = jellyseerrIcon,
-						label = jellyseerrDisplayName,
-						showLabel = isExpanded,
-						isExpanded = isExpanded,
-						onClick = {
-							navigationRepository.navigate(Destinations.jellyseerrDiscover)
 						}
 					)
 					Spacer(modifier = Modifier.height(2.dp))

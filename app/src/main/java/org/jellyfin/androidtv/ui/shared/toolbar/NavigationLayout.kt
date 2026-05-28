@@ -11,7 +11,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import org.jellyfin.androidtv.data.service.pluginsync.PluginSyncService
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.constant.NavbarPosition
 import org.jellyfin.androidtv.ui.settings.compat.SettingsViewModel
@@ -20,16 +19,15 @@ import org.koin.compose.viewmodel.koinActivityViewModel
 import java.util.UUID
 
 /**
- * Observes [NavbarPosition] and re-reads it when settings close or plugin sync completes.
+ * Observes [NavbarPosition] and re-reads it when settings close.
  */
 @Composable
 fun rememberNavbarPosition(): NavbarPosition {
 	val userPreferences = koinInject<UserPreferences>()
 	val settingsClosedCounter by koinActivityViewModel<SettingsViewModel>().settingsClosedCounter.collectAsState()
-	val syncCompletedCounter by koinInject<PluginSyncService>().syncCompletedCounter.collectAsState()
 
 	var position by remember { mutableStateOf(userPreferences[UserPreferences.navbarPosition]) }
-	LaunchedEffect(settingsClosedCounter, syncCompletedCounter) {
+	LaunchedEffect(settingsClosedCounter) {
 		position = userPreferences[UserPreferences.navbarPosition]
 	}
 	return position

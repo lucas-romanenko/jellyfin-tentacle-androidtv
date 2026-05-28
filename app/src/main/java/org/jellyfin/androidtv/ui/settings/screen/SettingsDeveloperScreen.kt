@@ -23,7 +23,7 @@ import org.jellyfin.androidtv.ui.settings.composable.SettingsColumn
 import org.jellyfin.androidtv.util.isTvDevice
 import org.jellyfin.androidtv.util.supportsFeature
 import org.jellyfin.androidtv.auth.repository.ServerRepository
-import org.moonfin.server.core.feature.ServerFeature
+import org.tentacle.server.core.feature.ServerFeature
 import org.koin.compose.koinInject
 
 @Composable

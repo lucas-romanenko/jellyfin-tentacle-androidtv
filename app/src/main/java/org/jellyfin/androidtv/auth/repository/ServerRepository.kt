@@ -28,7 +28,7 @@ import org.jellyfin.sdk.discovery.RecommendedServerInfoScore
 import org.jellyfin.sdk.model.ServerVersion
 import org.jellyfin.sdk.model.api.BrandingOptionsDto
 import org.jellyfin.sdk.model.serializer.toUUID
-import org.moonfin.server.core.model.ServerType
+import org.tentacle.server.core.model.ServerType
 import timber.log.Timber
 import java.time.Instant
 import java.util.UUID

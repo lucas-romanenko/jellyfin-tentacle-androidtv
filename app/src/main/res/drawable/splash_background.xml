@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <color android:color="@color/not_quite_black" />
+    </item>
+    <item>
+        <bitmap
+            android:gravity="fill"
+            android:src="@drawable/tentacle_logo" />
+    </item>
+</layer-list>

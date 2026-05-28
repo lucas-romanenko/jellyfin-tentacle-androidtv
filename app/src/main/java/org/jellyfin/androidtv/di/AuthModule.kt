@@ -14,10 +14,9 @@ import org.jellyfin.androidtv.auth.repository.SessionRepositoryImpl
 import org.jellyfin.androidtv.auth.store.AuthenticationPreferences
 import org.jellyfin.androidtv.auth.store.AuthenticationStore
 import org.jellyfin.sdk.model.DeviceInfo
-import org.koin.core.qualifier.named
 import org.koin.dsl.module
-import org.moonfin.server.emby.EmbyApiClient
-import org.moonfin.server.emby.socket.EmbyWebSocketClient
+import org.tentacle.server.emby.EmbyApiClient
+import org.tentacle.server.emby.socket.EmbyWebSocketClient
 
 val authModule = module {
 	single { AuthenticationStore(get()) }
@@ -27,7 +26,7 @@ val authModule = module {
 		val deviceInfo = get<DeviceInfo>(defaultDeviceInfo)
 		EmbyApiClient(
 			appVersion = BuildConfig.VERSION_NAME,
-			clientName = "Moonfin Android TV",
+			clientName = "Tentacle Android TV",
 			deviceId = deviceInfo.id,
 			deviceName = deviceInfo.name,
 		)
@@ -43,7 +42,7 @@ val authModule = module {
 	}
 
 	single<AuthenticationRepository> {
-		AuthenticationRepositoryImpl(get(), get(), get(), get(), get(), get(defaultDeviceInfo), get(), get(named("global")), get())
+		AuthenticationRepositoryImpl(get(), get(), get(), get(), get(), get(defaultDeviceInfo), get())
 	}
 	single<ServerRepository> { ServerRepositoryImpl(get(), get()) }
 	single<ServerUserRepository> { ServerUserRepositoryImpl(get(), get(), get()) }

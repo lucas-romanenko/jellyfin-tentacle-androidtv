@@ -3,7 +3,7 @@ package org.jellyfin.androidtv.util
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import org.jellyfin.androidtv.R
-import org.moonfin.server.core.model.ServerType
+import org.tentacle.server.core.model.ServerType
 
 fun TextView.setServerTypeIcon(serverType: ServerType, sizeDp: Int = 18, paddingDp: Int = 8) {
 	val density = context.resources.displayMetrics.density

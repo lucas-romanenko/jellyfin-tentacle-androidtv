@@ -23,8 +23,8 @@ import org.jellyfin.androidtv.util.profile.createDeviceProfile
 import org.jellyfin.androidtv.util.sdk.ApiClientFactory
 import org.jellyfin.playback.core.playbackManager
 import org.jellyfin.playback.jellyfin.jellyfinPlugin
-import org.moonfin.playback.emby.embyPlugin
-import org.moonfin.server.core.model.ServerType
+import org.tentacle.playback.emby.embyPlugin
+import org.tentacle.server.core.model.ServerType
 import org.jellyfin.playback.media3.exoplayer.ExoPlayerOptions
 import org.jellyfin.playback.media3.exoplayer.exoPlayerPlugin
 import org.jellyfin.playback.media3.session.MediaSessionOptions

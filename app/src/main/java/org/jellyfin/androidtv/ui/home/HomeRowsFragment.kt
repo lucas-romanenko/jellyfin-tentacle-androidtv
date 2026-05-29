@@ -137,12 +137,18 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	// Index in the adapter where content rows start (after notifications + nowPlaying)
 	private var contentRowStartIndex = 0
 
+	// Shared card presenter used by all rows — enables RecycledViewPool sharing
+	// across rows, avoiding expensive ComposeView inflation on vertical scroll.
+	private lateinit var sharedCardPresenter: CardPresenter
+
 	// Debouncer for selection updates - only update UI after user stops navigating
 	private val selectionDebouncer by lazy { Debouncer(150.milliseconds, lifecycleScope) }
-	private val backgroundDebouncer by lazy { Debouncer(350.milliseconds, lifecycleScope) }
+	private val backgroundDebouncer by lazy { Debouncer(500.milliseconds, lifecycleScope) }
 
 	override fun onCreate(savedInstanceState: Bundle?) {
 		super.onCreate(savedInstanceState)
+
+		sharedCardPresenter = CardPresenter(true, org.jellyfin.androidtv.constant.ImageType.POSTER, 150, true)
 
 		// Create a custom row presenter that keeps headers always visible
 		val zoomFactor = if (userPreferences[UserPreferences.cardFocusExpansion])
@@ -152,6 +158,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		val rowPresenter = PositionableListRowPresenter(requireContext(), focusZoomFactor = zoomFactor).apply {
 			// Enable select effect for rows
 			setSelectEffectEnabled(true)
+			// Share card views across rows for faster vertical scrolling
+			setRecycledPoolSize(sharedCardPresenter, 24)
 		}
 
 		// Create presenter selector to handle different row types
@@ -209,6 +217,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					rows.add(mediaBarRow)
 					// Apply trailer audio setting from dashboard config
 					userSettingPreferences[UserSettingPreferences.previewAudioEnabled] = heroConfig.trailerAudio
+					(parentFragment as? HomeFragment)?.applyTrailerAudioSetting(heroConfig.trailerAudio)
 					// Start loading hero content immediately — don't wait for all rows to finish
 					mediaBarViewModel.loadInitialContent()
 					Timber.d("MediaBar row added (hero enabled, trailerAudio=${heroConfig.trailerAudio})")
@@ -323,14 +332,13 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			// Add sections to layout
 			withContext(Dispatchers.Main) {
-				val cardPresenter = CardPresenter()
-
-				// Add rows in order
-				notificationsRow.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
-				nowPlaying.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
+				// Add rows in order — all rows use the shared card presenter
+				// for RecycledViewPool sharing across rows
+				notificationsRow.addToRowsAdapter(requireContext(), sharedCardPresenter, adapter as MutableObjectAdapter<Row>)
+				nowPlaying.addToRowsAdapter(requireContext(), sharedCardPresenter, adapter as MutableObjectAdapter<Row>)
 				contentRowStartIndex = adapter.size() // Mark where content rows begin
 				hasMediaBarAtPosition0 = rows.firstOrNull() is HomeFragmentMediaBarRow
-				for (row in rows) row.addToRowsAdapter(requireContext(), cardPresenter, adapter as MutableObjectAdapter<Row>)
+				for (row in rows) row.addToRowsAdapter(requireContext(), sharedCardPresenter, adapter as MutableObjectAdapter<Row>)
 
 				// Populate info area for the initial selected item — the Leanback
 				// selection callback fires before HomeFragment's observers are ready,
@@ -695,7 +703,6 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		withContext(Dispatchers.Main) {
 			if (!isAdded) return@withContext
 			val rowsAdapter = (adapter as? MutableObjectAdapter<Row>) ?: return@withContext
-			val cardPresenter = CardPresenter()
 
 			// Suppress selection callbacks during rebuild
 			suppressSelectionClearing = true
@@ -726,7 +733,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			val ctx = context ?: return@withContext
 			val tempAdapter = MutableObjectAdapter<Row>(presenterSelector)
 			for (row in newRows) {
-				row.addToRowsAdapter(ctx, cardPresenter, tempAdapter)
+				row.addToRowsAdapter(ctx, sharedCardPresenter, tempAdapter)
 			}
 
 			val newContentRows = mutableListOf<Row>()

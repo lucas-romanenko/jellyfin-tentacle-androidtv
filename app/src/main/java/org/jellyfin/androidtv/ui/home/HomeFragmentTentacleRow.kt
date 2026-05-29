@@ -27,17 +27,14 @@ class HomeFragmentTentacleRow(
 		cardPresenter: CardPresenter,
 		rowsAdapter: MutableObjectAdapter<Row>,
 	) {
-		// Use a uniform poster presenter for consistent card sizing
-		val posterPresenter = CardPresenter(true, org.jellyfin.androidtv.constant.ImageType.POSTER, 150, true)
-
 		for (rowData in rowDataList) {
 			if (rowData.items.isEmpty()) continue
 
-			// Use the StaticItems constructor — items are already fetched
+			// Use the shared cardPresenter for RecycledViewPool sharing across rows
 			val rowAdapter = ItemRowAdapter(
 				context,
 				rowData.items,
-				posterPresenter,
+				cardPresenter,
 				rowsAdapter,
 				true, // staticItems flag
 			)

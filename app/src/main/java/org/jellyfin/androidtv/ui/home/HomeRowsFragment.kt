@@ -66,6 +66,7 @@ import org.jellyfin.androidtv.util.KeyProcessor
 import org.jellyfin.androidtv.util.Debouncer
 import org.jellyfin.playback.core.PlaybackManager
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.client.extensions.imageApi
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
 import org.jellyfin.sdk.api.sockets.subscribe
 import org.jellyfin.sdk.model.api.BaseItemDto

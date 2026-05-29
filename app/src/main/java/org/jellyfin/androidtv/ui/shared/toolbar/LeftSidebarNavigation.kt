@@ -65,7 +65,7 @@ import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.data.model.AggregatedLibrary
 import org.jellyfin.androidtv.data.repository.MultiServerRepository
 import org.jellyfin.androidtv.data.repository.TentacleRepository
-import org.jellyfin.androidtv.data.repository.TentacleRepository.ToolbarButton
+import org.jellyfin.androidtv.data.repository.ToolbarButton
 import org.jellyfin.androidtv.data.repository.UserViewsRepository
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.constant.ClockBehavior
@@ -88,7 +88,7 @@ import org.jellyfin.androidtv.util.apiclient.primaryImage
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.CollectionType
-import org.jellyfin.sdk.model.socket.LibraryChangedMessage
+import org.jellyfin.sdk.model.api.LibraryChangedMessage
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinActivityViewModel
 import androidx.compose.ui.res.stringResource

@@ -20,6 +20,11 @@ sealed interface NavigationAction {
 	data object GoBack : NavigationAction
 
 	/**
+	 * Pop all fragments above the first entry (home) and reattach it.
+	 */
+	data object PopToFirst : NavigationAction
+
+	/**
 	 * Do nothing.
 	 */
 	data object Nothing : NavigationAction

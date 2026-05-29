@@ -62,6 +62,12 @@ interface NavigationRepository {
 	 * Reset navigation to the initial destination or a specific [Destination.Fragment] without clearing history.
 	 */
 	fun reset(destination: Destination.Fragment? = null) = reset(destination, false)
+
+	/**
+	 * Navigate to the home screen, preserving the existing home fragment if it's
+	 * already in the back stack. This avoids recreating and reloading the home screen.
+	 */
+	fun goHome()
 }
 
 class NavigationRepositoryImpl(
@@ -103,6 +109,21 @@ class NavigationRepositoryImpl(
 		val actualDestination = destination ?: defaultDestination
 		_currentAction.tryEmit(NavigationAction.NavigateFragment(actualDestination, true, false, clearHistory))
 		Timber.i("Navigating to $actualDestination (via reset, clearHistory=$clearHistory)")
+	}
+
+	override fun goHome() {
+		if (fragmentHistory.size <= 1) {
+			// Already on home (or empty stack) — nothing to do
+			Timber.i("goHome: already on home screen")
+			return
+		}
+
+		// Pop everything above the first entry (home)
+		while (fragmentHistory.size > 1) {
+			fragmentHistory.pop()
+		}
+		_currentAction.tryEmit(NavigationAction.PopToFirst)
+		Timber.i("goHome: popping back to home screen")
 	}
 }
 

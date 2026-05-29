@@ -403,7 +403,7 @@ private fun CollapsibleSidebarContent(
 					isExpanded = isExpanded,
 					focusRequester = homeFocusRequester,
 					onClick = {
-						navigationRepository.navigate(Destinations.home)
+						navigationRepository.goHome()
 					}
 				)
 

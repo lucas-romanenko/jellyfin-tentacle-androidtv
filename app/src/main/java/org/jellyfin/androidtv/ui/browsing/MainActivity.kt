@@ -257,6 +257,7 @@ class MainActivity : FragmentActivity() {
 		when (action) {
 			is NavigationAction.NavigateFragment -> binding.contentView.navigate(action)
 			NavigationAction.GoBack -> binding.contentView.goBack()
+			NavigationAction.PopToFirst -> binding.contentView.popToFirst()
 
 			NavigationAction.Nothing -> Unit
 		}

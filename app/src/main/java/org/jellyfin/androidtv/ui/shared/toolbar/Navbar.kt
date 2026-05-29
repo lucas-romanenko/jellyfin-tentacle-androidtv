@@ -377,7 +377,7 @@ private fun Navbar(
 					icon = ImageVector.vectorResource(R.drawable.ic_house),
 					label = stringResource(R.string.lbl_home),
 					onClick = {
-						navigationRepository.reset(Destinations.home)
+						navigationRepository.goHome()
 					},
 					colors = toolbarButtonColors,
 				)

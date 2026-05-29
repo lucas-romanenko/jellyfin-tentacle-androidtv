@@ -116,6 +116,25 @@ class DestinationFragmentView @JvmOverloads constructor(
 		return true
 	}
 
+	fun popToFirst(): Boolean {
+		// Require at least 2 items to pop anything
+		if (history.size < 2) return false
+
+		val transaction = fragmentManager.beginTransaction()
+
+		// Remove all entries above the first (home)
+		while (history.size > 1) {
+			val entry = history.pop()
+			entry.fragment?.let { transaction.remove(it) }
+		}
+
+		// Reattach the first entry (home)
+		val entry = history.last()
+		activateHistoryEntry(entry, transaction)
+
+		return true
+	}
+
 	private fun saveCurrentFragmentState() {
 		if (history.isEmpty()) return
 

@@ -306,18 +306,26 @@ class MediaBarSlideshowViewModel(
 					)
 				}
 				if (items.isNotEmpty()) {
-					// Eagerly load the first slide's images into Coil's cache before
-					// signalling Ready, so HomeFragment's overlay can fade out
-					// with images already available (no flash of empty screen).
+					// Pre-warm Coil's cache for the first slide so the image
+					// appears quickly when the overlay fades out. Use a short
+					// timeout so low-end devices / slow networks don't block
+					// the home screen from becoming interactive.
 					val firstItem = items.first()
-					listOfNotNull(firstItem.backdropUrl, firstItem.logoUrl).forEach { url ->
-						try {
-							imageLoader.execute(
-								ImageRequest.Builder(context).data(url).build()
-							)
-						} catch (_: Exception) { /* non-fatal */ }
-					}
+					try {
+						withTimeoutOrNull(3000) {
+							listOfNotNull(firstItem.backdropUrl, firstItem.logoUrl).forEach { url ->
+								try {
+									imageLoader.execute(
+										ImageRequest.Builder(context).data(url).build()
+									)
+								} catch (_: Exception) { /* non-fatal */ }
+							}
+						} ?: Timber.d("MediaBar: First slide pre-warm timed out, continuing with async load")
+					} catch (_: Exception) { /* non-fatal */ }
+
 					_state.value = MediaBarState.Ready(items)
+
+					// Continue pre-loading remaining images in background
 					preloadAdjacentImages(0)
 					startAutoPlay()
 					startTrailerResolution(0)

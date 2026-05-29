@@ -134,6 +134,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	// Track current Tentacle section structure for detecting structural changes
 	private var currentTentacleSectionKeys = listOf<String>()
 
+	// Dirty flag: set true when a WebSocket event fires while the fragment is paused.
+	// On resume, only refresh if something actually changed — avoids full re-fetch
+	// every time the user navigates back from Search/Discover/etc.
+	private var tentacleDirty = false
+
 	// Index in the adapter where content rows start (after notifications + nowPlaying)
 	private var contentRowStartIndex = 0
 
@@ -158,8 +163,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		val rowPresenter = PositionableListRowPresenter(requireContext(), focusZoomFactor = zoomFactor).apply {
 			// Enable select effect for rows
 			setSelectEffectEnabled(true)
-			// Share card views across rows for faster vertical scrolling
-			setRecycledPoolSize(sharedCardPresenter, 24)
+			// Share card views across rows for faster vertical scrolling.
+			// Larger pool avoids expensive ComposeView re-inflation on low-end
+			// devices (Chromecast, budget TVs) during vertical scroll.
+			setRecycledPoolSize(sharedCardPresenter, 48)
 		}
 
 		// Create presenter selector to handle different row types
@@ -359,6 +366,43 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				}
 
 				_contentReady.value = true
+
+				// Pre-warm Coil cache for poster images in the first few rows.
+				// Collect image URLs on Main thread (adapter access), then load on IO.
+				val imageUrls = mutableListOf<String>()
+				val rowsToPrewarm = 3
+				var rowCount = 0
+				for (i in contentRowStartIndex until adapter.size()) {
+					if (rowCount >= rowsToPrewarm) break
+					val listRow = adapter[i] as? ListRow ?: continue
+					val rowAdapter = listRow.adapter as? MutableObjectAdapter<*> ?: continue
+					rowCount++
+					for (j in 0 until minOf(rowAdapter.size(), 10)) {
+						val item = (rowAdapter[j] as? BaseRowItem)?.baseItem ?: continue
+						val imageTag = item.imageTags?.get(org.jellyfin.sdk.model.api.ImageType.PRIMARY) ?: continue
+						imageUrls += api.imageApi.getItemImageUrl(
+							itemId = item.id,
+							imageType = org.jellyfin.sdk.model.api.ImageType.PRIMARY,
+							tag = imageTag,
+							maxHeight = 150,
+						)
+					}
+				}
+				if (imageUrls.isNotEmpty()) {
+					val ctx = context
+					lifecycleScope.launch(Dispatchers.IO) {
+						val loader = ctx?.let { coil3.SingletonImageLoader.get(it) } ?: return@launch
+						for (url in imageUrls) {
+							try {
+								loader.execute(
+									coil3.request.ImageRequest.Builder(ctx)
+										.data(url)
+										.build()
+								)
+							} catch (_: Exception) { }
+						}
+					}
+				}
 			}
 		}
 
@@ -403,10 +447,22 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		// React to Jellyfin WebSocket events for live home screen updates.
 		// LibraryChangedMessage fires when playlists are created/updated/deleted,
 		// so Tentacle row changes appear instantly without polling.
+
+		// Track events at STARTED level so we know if something changed while paused.
+		// This sets tentacleDirty=true for events arriving between onPause and onResume,
+		// so onResume only refreshes if actually needed (avoids full re-fetch on every nav back).
+		lifecycleScope.launch {
+			lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+				api.webSocket.subscribe<LibraryChangedMessage>()
+					.onEach { tentacleDirty = true }
+					.launchIn(this)
+			}
+		}
+
 		lifecycleScope.launch {
 			lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
 				api.webSocket.subscribe<UserDataChangedMessage>()
-					.onEach { refreshRows(force = true, delayed = false) }
+					.onEach { refreshRows(force = false, delayed = true) }
 					.launchIn(this)
 
 				api.webSocket.subscribe<LibraryChangedMessage>()
@@ -421,6 +477,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 								if (!isAdded) return@onEach
 								refreshTentacleRowsInPlace()
 							}
+							tentacleDirty = false
 						} catch (e: Exception) {
 							Timber.w(e, "Error handling LibraryChangedMessage refresh")
 						}
@@ -453,8 +510,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		super.onViewCreated(view, savedInstanceState)
 		
 		verticalGridView?.apply {
-			// Reduce item prefetch distance for faster initial load
-			setItemViewCacheSize(20)
+			// Cache nearby rows to reduce view re-creation during vertical scroll.
+			// Lower than the default to avoid excessive upfront binding on low-end devices.
+			setItemViewCacheSize(12)
 			
 			// Intercept DPAD_LEFT before HorizontalGridView consumes it.
 			// HorizontalGridView eats DPAD_LEFT even at position 0, so the only
@@ -541,16 +599,16 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			justLoaded = false
 			// Hero content loading is kicked off early in onCreate (as soon as hero
 			// config is confirmed enabled), so no need to call loadInitialContent here.
-		} else {
-			// Catch up on home config changes made while paused (WebSocket events
-			// are lost when the fragment is not RESUMED). The structural diff inside
-			// refreshTentacleRowsInPlace() makes this a no-op if nothing changed.
+		} else if (tentacleDirty) {
+			// A WebSocket event fired while we were paused — catch up now.
+			tentacleDirty = false
 			lifecycleScope.launch {
 				if (tentacleRepository.checkAvailable()) {
 					refreshTentacleRowsInPlace()
 				}
 			}
 		}
+		// If !justLoaded && !tentacleDirty: nothing changed, skip the network round-trip.
 
 		// Update audio queue — deferred to avoid calling commitNow() during an active fragment transaction.
 		// isResumed guard prevents "Can not perform this action after onSaveInstanceState" if the
@@ -591,10 +649,17 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		lifecycleScope.launch {
 			if (delayed) delay(1.5.seconds)
 
+			// Collect the set of Tentacle-managed adapters so we can skip them.
+			// Tentacle rows are refreshed separately by refreshTentacleRowsInPlace()
+			// which fetches fresh data from the plugin — calling Retrieve() on them
+			// concurrently causes races that can empty rows.
+			val tentacleAdapters = tentacleRowAdapters.values.toSet()
+
 			// Must run on Main thread: Retrieve()/ReRetrieveIfNeeded() may call loadStaticItems()
 			// which adds items directly to the Leanback adapter (UI operation)
 			repeat(adapter.size()) { i ->
 				val rowAdapter = (adapter[i] as? ListRow)?.adapter as? ItemRowAdapter
+				if (rowAdapter != null && rowAdapter in tentacleAdapters) return@repeat
 				if (force) rowAdapter?.Retrieve()
 				else rowAdapter?.ReRetrieveIfNeeded()
 			}

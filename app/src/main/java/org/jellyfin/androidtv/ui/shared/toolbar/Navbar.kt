@@ -363,11 +363,8 @@ private fun Navbar(
 		center = {
 			// Determine button order: use toolbar config order for the 5 configurable buttons,
 			// interleaved with local-only buttons in fixed positions
-			val configuredIds = if (toolbarButtons.isNotEmpty()) {
-				toolbarButtons.filter { it.enabled }.map { it.id }
-			} else {
-				listOf("search", "discover", "activity", "favorites", "libraries")
-			}
+			// No local fallback — Tentacle backend always provides toolbar config
+			val configuredIds = toolbarButtons.filter { it.enabled }.map { it.id }
 
 			ToolbarButtons(
 				modifier = Modifier

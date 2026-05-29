@@ -29,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -63,6 +64,8 @@ import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.data.model.AggregatedLibrary
 import org.jellyfin.androidtv.data.repository.MultiServerRepository
+import org.jellyfin.androidtv.data.repository.TentacleRepository
+import org.jellyfin.androidtv.data.repository.TentacleRepository.ToolbarButton
 import org.jellyfin.androidtv.data.repository.UserViewsRepository
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.constant.ClockBehavior
@@ -82,17 +85,13 @@ import org.jellyfin.androidtv.ui.syncplay.SyncPlayDialog
 import org.jellyfin.androidtv.ui.syncplay.SyncPlayViewModel
 import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.primaryImage
-import org.jellyfin.androidtv.util.supportsFeature
-import org.jellyfin.androidtv.auth.repository.ServerRepository
-import org.tentacle.server.core.feature.ServerFeature
-import org.jellyfin.androidtv.util.sdk.ApiClientFactory
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.CollectionType
+import org.jellyfin.sdk.model.socket.LibraryChangedMessage
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinActivityViewModel
 import androidx.compose.ui.res.stringResource
-import org.koin.core.qualifier.named
 import java.util.UUID
 
 @Composable
@@ -108,36 +107,38 @@ fun LeftSidebarNavigation(
 	val sessionRepository = koinInject<SessionRepository>()
 	val mediaManager = koinInject<MediaManager>()
 	val api = koinInject<ApiClient>()
-	val apiClientFactory = koinInject<ApiClientFactory>()
 	val settingsViewModel = koinActivityViewModel<SettingsViewModel>()
 	val settingsClosedCounter by settingsViewModel.settingsClosedCounter.collectAsState()
-	val serverRepository = koinInject<ServerRepository>()
-	val currentServer by serverRepository.currentServer.collectAsState()
+	val tentacleRepository = koinInject<TentacleRepository>()
 
 	// User image - same pattern as Navbar
 	val currentUser by remember { userRepository.currentUser.filterNotNull() }.collectAsState(null)
 	val userImageUrl = remember(currentUser) { currentUser?.primaryImage?.getUrl(api) }
 
-	// User preferences
-	var showShuffleButton by remember { mutableStateOf(true) }
-	var showGenresButton by remember { mutableStateOf(true) }
-	var showFavoritesButton by remember { mutableStateOf(true) }
-	var showLibrariesInToolbar by remember { mutableStateOf(true) }
+	// Fetch toolbar config from Tentacle plugin (same pattern as Navbar.kt)
+	var toolbarButtons by remember { mutableStateOf<List<ToolbarButton>>(emptyList()) }
+	var toolbarRefreshKey by remember { mutableIntStateOf(0) }
+	LaunchedEffect(toolbarRefreshKey) {
+		toolbarButtons = tentacleRepository.getToolbarConfig()
+	}
+
+	// React to library changes — refresh toolbar config (same as Navbar.kt)
+	LaunchedEffect(api) {
+		try {
+			api.webSocket.subscribe<LibraryChangedMessage>().collect {
+				toolbarRefreshKey++
+			}
+		} catch (_: Exception) {}
+	}
+
+	// Local preferences that are NOT controlled by Tentacle toolbar config
 	var shuffleContentType by remember { mutableStateOf("both") }
 	var enableMultiServer by remember { mutableStateOf(false) }
-	var syncPlayEnabled by remember { mutableStateOf(false) }
-	var enableFolderView by remember { mutableStateOf(false) }
 	var clockBehavior by remember { mutableStateOf(ClockBehavior.ALWAYS) }
 
 	LaunchedEffect(settingsClosedCounter) {
-		showShuffleButton = userPreferences[UserPreferences.showShuffleButton]
-		showGenresButton = userPreferences[UserPreferences.showGenresButton]
-		showFavoritesButton = userPreferences[UserPreferences.showFavoritesButton]
-		showLibrariesInToolbar = userPreferences[UserPreferences.showLibrariesInToolbar]
 		enableMultiServer = userPreferences[UserPreferences.enableMultiServerLibraries]
 		shuffleContentType = userPreferences[UserPreferences.shuffleContentType]
-		syncPlayEnabled = userPreferences[UserPreferences.syncPlayEnabled]
-		enableFolderView = userPreferences[UserPreferences.enableFolderView]
 		clockBehavior = userPreferences[UserPreferences.clockBehavior]
 	}
 
@@ -180,12 +181,7 @@ fun LeftSidebarNavigation(
 		aggregatedLibraries = aggregatedLibraries,
 		enableMultiServer = enableMultiServer,
 		shuffleContentType = shuffleContentType,
-		showShuffleButton = showShuffleButton,
-		showGenresButton = showGenresButton,
-		showFavoritesButton = showFavoritesButton,
-		showLibrariesInToolbar = showLibrariesInToolbar,
-		syncPlayEnabled = syncPlayEnabled && currentServer.supportsFeature(ServerFeature.SYNC_PLAY),
-		enableFolderView = enableFolderView,
+		toolbarButtons = toolbarButtons,
 		clockBehavior = clockBehavior,
 	)
 }
@@ -205,12 +201,7 @@ private fun CollapsibleSidebarContent(
 	aggregatedLibraries: List<AggregatedLibrary> = emptyList(),
 	enableMultiServer: Boolean = false,
 	shuffleContentType: String = "both",
-	showShuffleButton: Boolean = true,
-	showGenresButton: Boolean = true,
-	showFavoritesButton: Boolean = true,
-	showLibrariesInToolbar: Boolean = true,
-	syncPlayEnabled: Boolean = false,
-	enableFolderView: Boolean = false,
+	toolbarButtons: List<ToolbarButton> = emptyList(),
 	clockBehavior: ClockBehavior = ClockBehavior.ALWAYS,
 ) {
 	val context = LocalContext.current
@@ -220,20 +211,20 @@ private fun CollapsibleSidebarContent(
 	val settingsViewModel = koinActivityViewModel<SettingsViewModel>()
 	val syncPlayViewModel = koinActivityViewModel<SyncPlayViewModel>()
 	val apiClient = koinInject<ApiClient>()
-	val apiClientFactory = koinInject<ApiClientFactory>()
 	val shuffleManager = koinInject<ShuffleManager>()
 	val themeMusicPlayer = koinInject<ThemeMusicPlayer>()
 
 	var showShuffleDialog by remember { mutableStateOf(false) }
 	val isShuffling by shuffleManager.isShuffling.collectAsState()
-	val showShuffle = shuffleContentType != "disabled" && showShuffleButton
+
+	// No local fallback — Tentacle backend always provides toolbar config
+	val configuredIds = toolbarButtons.filter { it.enabled }.map { it.id }
 
 	val homeIcon = ImageVector.vectorResource(R.drawable.ic_house)
 	val searchIcon = ImageVector.vectorResource(R.drawable.ic_search)
 	val shuffleIcon = ImageVector.vectorResource(R.drawable.ic_shuffle)
 	val genresIcon = ImageVector.vectorResource(R.drawable.ic_masks)
 	val favoritesIcon = ImageVector.vectorResource(R.drawable.ic_heart)
-	val syncplayIcon = ImageVector.vectorResource(R.drawable.ic_syncplay)
 	val librariesIcon = ImageVector.vectorResource(R.drawable.ic_clapperboard)
 	val settingsIcon = ImageVector.vectorResource(R.drawable.ic_settings)
 
@@ -403,6 +394,7 @@ private fun CollapsibleSidebarContent(
 				horizontalAlignment = Alignment.Start,
 				verticalArrangement = if (isExpanded) Arrangement.Top else Arrangement.Center
 			) {
+				// Home is always first
 				SidebarIconItem(
 					icon = homeIcon,
 					label = stringResource(R.string.lbl_home),
@@ -416,180 +408,159 @@ private fun CollapsibleSidebarContent(
 
 				Spacer(modifier = Modifier.height(2.dp))
 
-				SidebarIconItem(
-					icon = searchIcon,
-					label = stringResource(R.string.lbl_search),
-					showLabel = isExpanded,
-					isExpanded = isExpanded,
-					onClick = {
-						navigationRepository.navigate(Destinations.search())
-					}
-				)
-
-				Spacer(modifier = Modifier.height(2.dp))
-
-				if (showShuffle) {
-					SidebarIconItem(
-						icon = shuffleIcon,
-						label = if (isShuffling) "..." else stringResource(R.string.lbl_shuffle),
-						showLabel = isExpanded,
-						isExpanded = isExpanded,
-						onClick = {
-							if (!isShuffling) {
-								kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
-									shuffleManager.quickShuffle(context)
+				// Render buttons in Tentacle dashboard config order (same pattern as Navbar.kt)
+				for (btnId in configuredIds) {
+					when (btnId) {
+						"search" -> {
+							SidebarIconItem(
+								icon = searchIcon,
+								label = stringResource(R.string.lbl_search),
+								showLabel = isExpanded,
+								isExpanded = isExpanded,
+								onClick = {
+									navigationRepository.navigate(Destinations.search())
 								}
-							}
-						},
-						onLongClick = { showShuffleDialog = true }
-					)
-					Spacer(modifier = Modifier.height(2.dp))
-				}
-
-				if (showGenresButton) {
-					SidebarIconItem(
-						icon = genresIcon,
-						label = stringResource(R.string.lbl_genres),
-						showLabel = isExpanded,
-						isExpanded = isExpanded,
-						onClick = {
-							navigationRepository.navigate(Destinations.allGenres)
+							)
+							Spacer(modifier = Modifier.height(2.dp))
 						}
-					)
-					Spacer(modifier = Modifier.height(2.dp))
-				}
-
-				if (showFavoritesButton) {
-					SidebarIconItem(
-						icon = favoritesIcon,
-						label = stringResource(R.string.lbl_favorites),
-						showLabel = isExpanded,
-						isExpanded = isExpanded,
-						onClick = {
-							navigationRepository.navigate(Destinations.allFavorites)
+						"discover" -> {
+							SidebarIconItem(
+								icon = ImageVector.vectorResource(R.drawable.ic_compass),
+								label = stringResource(R.string.lbl_add_media),
+								showLabel = isExpanded,
+								isExpanded = isExpanded,
+								onClick = {
+									navigationRepository.navigate(Destinations.tentacleDiscover)
+								}
+							)
+							Spacer(modifier = Modifier.height(2.dp))
 						}
-					)
-					Spacer(modifier = Modifier.height(2.dp))
-				}
-
-
-				SidebarIconItem(
-					icon = ImageVector.vectorResource(R.drawable.ic_compass),
-					label = stringResource(R.string.lbl_add_media),
-					showLabel = isExpanded,
-					isExpanded = isExpanded,
-					onClick = {
-						navigationRepository.navigate(Destinations.tentacleDiscover)
-					}
-				)
-				Spacer(modifier = Modifier.height(2.dp))
-
-				SidebarIconItem(
-					icon = ImageVector.vectorResource(R.drawable.ic_down),
-					label = stringResource(R.string.lbl_downloads),
-					showLabel = isExpanded,
-					isExpanded = isExpanded,
-					onClick = {
-						navigationRepository.navigate(Destinations.tentacleActivity)
-					}
-				)
-				Spacer(modifier = Modifier.height(2.dp))
-
-				if (enableFolderView) {
-					SidebarIconItem(
-						icon = ImageVector.vectorResource(R.drawable.ic_folder),
-						label = stringResource(R.string.lbl_folders),
-						showLabel = isExpanded,
-						isExpanded = isExpanded,
-						onClick = {
-							navigationRepository.navigate(Destinations.folderView)
+						"activity" -> {
+							SidebarIconItem(
+								icon = ImageVector.vectorResource(R.drawable.ic_info_circle),
+								label = stringResource(R.string.lbl_downloads),
+								showLabel = isExpanded,
+								isExpanded = isExpanded,
+								onClick = {
+									navigationRepository.navigate(Destinations.tentacleActivity)
+								}
+							)
+							Spacer(modifier = Modifier.height(2.dp))
 						}
-					)
-					Spacer(modifier = Modifier.height(2.dp))
-				}
-
-				if (syncPlayEnabled) {
-					SidebarIconItem(
-						icon = syncplayIcon,
-						label = stringResource(R.string.syncplay),
-						showLabel = isExpanded,
-						isExpanded = isExpanded,
-						onClick = {
-							syncPlayViewModel.show()
+						"favorites" -> {
+							SidebarIconItem(
+								icon = favoritesIcon,
+								label = stringResource(R.string.lbl_favorites),
+								showLabel = isExpanded,
+								isExpanded = isExpanded,
+								onClick = {
+									navigationRepository.navigate(Destinations.allFavorites)
+								}
+							)
+							Spacer(modifier = Modifier.height(2.dp))
 						}
-					)
-					Spacer(modifier = Modifier.height(2.dp))
-				}
-
-				if (showLibrariesInToolbar) {
-					val librariesFocusRequester = remember { FocusRequester() }
-					Column(
-						modifier = Modifier.onFocusChanged { focusState ->
-							librariesHasFocus = focusState.hasFocus
-						}
-					) {
-						LaunchedEffect(librariesHasFocus) {
-							if (!librariesHasFocus && librariesExpanded) {
-								delay(100)
-								librariesExpanded = false
+						"shuffle" -> {
+							if (shuffleContentType != "disabled") {
+								SidebarIconItem(
+									icon = shuffleIcon,
+									label = if (isShuffling) "..." else stringResource(R.string.lbl_shuffle),
+									showLabel = isExpanded,
+									isExpanded = isExpanded,
+									onClick = {
+										if (!isShuffling) {
+											kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+												shuffleManager.quickShuffle(context)
+											}
+										}
+									},
+									onLongClick = { showShuffleDialog = true }
+								)
+								Spacer(modifier = Modifier.height(2.dp))
 							}
 						}
-
-						LaunchedEffect(isExpanded) {
-							if (!isExpanded) librariesExpanded = false
+						"genres" -> {
+							SidebarIconItem(
+								icon = genresIcon,
+								label = stringResource(R.string.lbl_genres),
+								showLabel = isExpanded,
+								isExpanded = isExpanded,
+								onClick = {
+									navigationRepository.navigate(Destinations.allGenres)
+								}
+							)
+							Spacer(modifier = Modifier.height(2.dp))
 						}
+						"libraries" -> {
+							val librariesFocusRequester = remember { FocusRequester() }
+							Column(
+								modifier = Modifier.onFocusChanged { focusState ->
+									librariesHasFocus = focusState.hasFocus
+								}
+							) {
+								LaunchedEffect(librariesHasFocus) {
+									if (!librariesHasFocus && librariesExpanded) {
+										delay(100)
+										librariesExpanded = false
+									}
+								}
 
-						SidebarIconItem(
-							icon = librariesIcon,
-							label = stringResource(R.string.pref_libraries),
-							showLabel = isExpanded,
-							isExpanded = isExpanded,
-							onClick = {
-								librariesExpanded = !librariesExpanded
-								if (librariesExpanded) {
-									scope.launch {
-										librariesFocusRequester.requestFocus()
+								LaunchedEffect(isExpanded) {
+									if (!isExpanded) librariesExpanded = false
+								}
+
+								SidebarIconItem(
+									icon = librariesIcon,
+									label = stringResource(R.string.pref_libraries),
+									showLabel = isExpanded,
+									isExpanded = isExpanded,
+									onClick = {
+										librariesExpanded = !librariesExpanded
+										if (librariesExpanded) {
+											scope.launch {
+												librariesFocusRequester.requestFocus()
+											}
+										}
+									}
+								)
+
+								if (isExpanded && librariesExpanded) {
+									if (enableMultiServer && aggregatedLibraries.isNotEmpty()) {
+										aggregatedLibraries.forEachIndexed { index, aggLib ->
+											SidebarTextItem(
+												label = aggLib.displayName,
+												modifier = if (index == 0) Modifier.focusRequester(librariesFocusRequester) else Modifier,
+												onClick = {
+													scope.launch {
+														val destination = when (aggLib.library.collectionType) {
+															CollectionType.LIVETV, CollectionType.MUSIC -> {
+																itemLauncher.getUserViewDestination(aggLib.library)
+															}
+															else -> {
+																Destinations.libraryBrowser(aggLib.library, aggLib.server.id, aggLib.userId)
+															}
+														}
+														navigationRepository.navigate(destination)
+													}
+												}
+											)
+										}
+									} else {
+										userViews.forEachIndexed { index, library ->
+											SidebarTextItem(
+												label = library.name ?: "",
+												modifier = if (index == 0) Modifier.focusRequester(librariesFocusRequester) else Modifier,
+												onClick = {
+													val destination = itemLauncher.getUserViewDestination(library)
+													navigationRepository.navigate(destination)
+												}
+											)
+										}
 									}
 								}
 							}
-						)
-
-						if (isExpanded && librariesExpanded) {
-							if (enableMultiServer && aggregatedLibraries.isNotEmpty()) {
-								aggregatedLibraries.forEachIndexed { index, aggLib ->
-									SidebarTextItem(
-										label = aggLib.displayName,
-										modifier = if (index == 0) Modifier.focusRequester(librariesFocusRequester) else Modifier,
-										onClick = {
-											scope.launch {
-												val destination = when (aggLib.library.collectionType) {
-													CollectionType.LIVETV, CollectionType.MUSIC -> {
-														itemLauncher.getUserViewDestination(aggLib.library)
-													}
-													else -> {
-														Destinations.libraryBrowser(aggLib.library, aggLib.server.id, aggLib.userId)
-													}
-												}
-												navigationRepository.navigate(destination)
-											}
-										}
-									)
-								}
-							} else {
-								userViews.forEachIndexed { index, library ->
-									SidebarTextItem(
-										label = library.name ?: "",
-										modifier = if (index == 0) Modifier.focusRequester(librariesFocusRequester) else Modifier,
-										onClick = {
-											val destination = itemLauncher.getUserViewDestination(library)
-											navigationRepository.navigate(destination)
-										}
-									)
-								}
-							}
+							Spacer(modifier = Modifier.height(2.dp))
 						}
 					}
-					Spacer(modifier = Modifier.height(2.dp))
 				}
 			}
 

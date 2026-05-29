@@ -100,7 +100,7 @@ class HomeFragment : Fragment() {
 	private var rowsFragment: HomeRowsFragment? = null
 	private var muteButton: ImageButton? = null
 	private var loadingOverlay: View? = null
-	private val _isTrailerMuted = kotlinx.coroutines.flow.MutableStateFlow(true)
+	private lateinit var _isTrailerMuted: kotlinx.coroutines.flow.MutableStateFlow<Boolean>
 	private var snowfallView: SnowfallView? = null
 	private var petalfallView: PetalfallView? = null
 	private var leaffallView: LeaffallView? = null
@@ -133,7 +133,10 @@ class HomeFragment : Fragment() {
 			loadingOverlay?.isVisible = false
 		}
 
-		// Mute state starts as true (muted) and gets updated when hero config loads
+		// Initialize mute state from the persisted preference so it survives fragment recreation
+		_isTrailerMuted = kotlinx.coroutines.flow.MutableStateFlow(
+			!userSettingPreferences[UserSettingPreferences.previewAudioEnabled]
+		)
 		updateMuteButtonIcon()
 		muteButton?.setOnClickListener {
 			_isTrailerMuted.value = !_isTrailerMuted.value

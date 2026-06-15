@@ -80,7 +80,13 @@ android {
 				signingConfig = signingConfigs.getByName("release")
 			}
 
-			isDebuggable = false
+			// Debuggable so Android Studio's Run button works on THIS build. You then
+			// develop, test, and ship the exact same minified (R8) build — eliminating the
+			// classic "works in debug, breaks as a release APK" surprise, which is almost
+			// always R8 stripping/renaming something. Flip back to false only if you later
+			// want a locked-down production APK (you'd then no longer be able to Run it
+			// from Android Studio).
+			isDebuggable = true
 			isMinifyEnabled = true
 			isShrinkResources = true
 			proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

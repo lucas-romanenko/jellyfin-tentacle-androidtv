@@ -420,7 +420,11 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         playbackRetries++;
         lastPlaybackError = Instant.now().toEpochMilli();
 
-        if (playbackRetries < 3) {
+        // Retry ladder (see buildExoPlayerOptions): attempt 1 disables direct play, attempt 2
+        // disables direct stream AND forces an H.264 transcode. Allow up to 4 attempts so the
+        // guaranteed-playable H.264 transcode actually gets tried (and retried once) before we
+        // give up — previously the ceiling of 3 cut it off at its first attempt.
+        if (playbackRetries < 4) {
             if (mFragment != null)
                 Utils.showToast(mFragment.getContext(), mFragment.getString(R.string.player_error));
             Timber.i("Player error encountered - retrying");
@@ -765,10 +769,16 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 internalOptions.setMediaSourceId(currentMediaSource.getId());
             }
         }
+        // Once direct play AND direct stream have both been disabled by earlier retries (i.e. we
+        // are now forcing a full server transcode), also force the transcode target to H.264.
+        // Otherwise a device that over-reports HEVC support (emulators, some boxes) receives an
+        // HEVC transcode it still can't decode, so the fallback fails exactly like direct play did.
+        boolean forceH264Transcode = playbackRetries > 1;
         DeviceProfile internalProfile = DeviceProfileKt.createDeviceProfile(
                 mFragment.getContext(),
                 userPreferences.getValue(),
-                get(ServerVersion.class)
+                get(ServerVersion.class),
+                forceH264Transcode
         );
         internalOptions.setProfile(internalProfile);
         return internalOptions;

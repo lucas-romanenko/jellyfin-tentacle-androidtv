@@ -76,10 +76,12 @@ private fun UserPreferences.getMaxBitrate(): Int {
 	return (maxBitrate * 1_000_000).roundToInt()
 }
 
+@JvmOverloads
 fun createDeviceProfile(
 	context: Context,
 	userPreferences: UserPreferences,
 	serverVersion: ServerVersion,
+	forceH264Transcode: Boolean = false,
 ) = createDeviceProfile(
 	mediaTest = MediaCodecCapabilitiesTest(context),
 	maxBitrate = userPreferences.getMaxBitrate(),
@@ -88,6 +90,7 @@ fun createDeviceProfile(
 	downMixAudio = userPreferences[UserPreferences.audioBehaviour] == AudioBehavior.DOWNMIX_TO_STEREO,
 	assDirectPlay = userPreferences[UserPreferences.assDirectPlay],
 	pgsDirectPlay = userPreferences[UserPreferences.pgsDirectPlay],
+	forceH264Transcode = forceH264Transcode,
 )
 
 fun createDeviceProfile(
@@ -98,6 +101,7 @@ fun createDeviceProfile(
 	downMixAudio: Boolean,
 	assDirectPlay: Boolean,
 	pgsDirectPlay: Boolean,
+	forceH264Transcode: Boolean = false,
 ) = buildDeviceProfile {
 	val allowedAudioCodecs = when {
 		downMixAudio -> downmixSupportedAudioCodecs
@@ -156,8 +160,12 @@ fun createDeviceProfile(
 
 	/// Transcoding profiles
 	// Video
+	// On the forced-transcode playback fallback we drop HEVC so the server transcodes to
+	// H.264, which every device (and the emulator) can decode. Without this, a device that
+	// over-reports HEVC support gets an HEVC transcode it still can't play, so the fallback
+	// fails just like the original direct-play attempt.
 	val hlsVideoCodecs = listOfNotNull(
-		if (supportsHevc) Codec.Video.HEVC else null,
+		if (supportsHevc && !forceH264Transcode) Codec.Video.HEVC else null,
 		Codec.Video.H264
 	).toTypedArray()
 

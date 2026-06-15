@@ -5,12 +5,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -63,7 +61,8 @@ class TentacleRepository(
 	private val knownNotificationIds = mutableSetOf<Int>()
 
 	fun bumpActivityDownloadCount(count: Int) {
-		_activityDownloadCount.value = _activityDownloadCount.value + count
+		// Atomic read-modify-write — multiple callers (episode picker, pollers) may bump concurrently.
+		_activityDownloadCount.update { it + count }
 	}
 
 	suspend fun checkAvailable(): Boolean {
@@ -73,21 +72,31 @@ class TentacleRepository(
 			try {
 				val url = buildUrl("/TentacleHome/Sections")
 				val request = Request.Builder().url(url).get().build()
-				val response = httpClient.newCall(request).execute()
-				isAvailable = response.isSuccessful
-				availabilityChecked = true
-
-				if (isAvailable) {
-					Timber.i("Tentacle plugin detected on server")
-				} else {
-					Timber.i("Tentacle plugin not available (HTTP ${response.code})")
+				httpClient.newCall(request).execute().use { response ->
+					when {
+						response.isSuccessful -> {
+							// Definitive: plugin present and responding.
+							isAvailable = true
+							availabilityChecked = true
+							Timber.i("Tentacle plugin detected on server")
+						}
+						response.code == 404 -> {
+							// Definitive: plugin/endpoint absent. Cache so we stop probing.
+							isAvailable = false
+							availabilityChecked = true
+							Timber.i("Tentacle plugin not available (HTTP 404)")
+						}
+						else -> {
+							// Transient (5xx, 401, etc.) — don't cache, retry on next build.
+							isAvailable = false
+							Timber.i("Tentacle plugin probe inconclusive (HTTP ${response.code}), will retry")
+						}
+					}
+					isAvailable
 				}
-
-				response.close()
-				isAvailable
 			} catch (e: Exception) {
-				Timber.w(e, "Tentacle plugin not reachable")
-				availabilityChecked = true
+				// Transient (timeout, slow wifi, connection refused) — don't cache, retry later.
+				Timber.w(e, "Tentacle plugin not reachable, will retry")
 				isAvailable = false
 				false
 			}
@@ -267,11 +276,11 @@ class TentacleRepository(
 		try {
 			val url = buildUrl("/TentacleDiscover/RadarrProfiles")
 			val request = Request.Builder().url(url).get().build()
-			val response = httpClient.newCall(request).execute()
-			val body = response.body?.string() ?: return@withContext emptyList()
-			response.close()
-			if (!response.isSuccessful) return@withContext emptyList()
-			json.decodeFromString<List<QualityProfile>>(body)
+			httpClient.newCall(request).execute().use { response ->
+				if (!response.isSuccessful) return@withContext emptyList()
+				val body = response.body?.string() ?: return@withContext emptyList()
+				json.decodeFromString<List<QualityProfile>>(body)
+			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch Radarr profiles")
 			emptyList()
@@ -285,11 +294,11 @@ class TentacleRepository(
 		try {
 			val url = buildUrl("/TentacleDiscover/SonarrProfiles")
 			val request = Request.Builder().url(url).get().build()
-			val response = httpClient.newCall(request).execute()
-			val body = response.body?.string() ?: return@withContext emptyList()
-			response.close()
-			if (!response.isSuccessful) return@withContext emptyList()
-			json.decodeFromString<List<QualityProfile>>(body)
+			httpClient.newCall(request).execute().use { response ->
+				if (!response.isSuccessful) return@withContext emptyList()
+				val body = response.body?.string() ?: return@withContext emptyList()
+				json.decodeFromString<List<QualityProfile>>(body)
+			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch Sonarr profiles")
 			emptyList()
@@ -307,23 +316,23 @@ class TentacleRepository(
 				if (qualityProfileId != null) append(""","quality_profile_id":$qualityProfileId""")
 				append("}")
 			}
-			Timber.d("addToRadarr: POST $url body=$jsonBody")
+			// Don't log the URL — it carries the api_key/access token in query params.
+			Timber.d("addToRadarr: POST tmdb:$tmdbId")
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
-			val response = httpClient.newCall(request).execute()
+			httpClient.newCall(request).execute().use { response ->
+				val body = response.body?.string() ?: return@withContext AddResult(error = "Empty response")
 
-			val body = response.body?.string() ?: return@withContext AddResult(error = "Empty response")
-			response.close()
+				Timber.d("addToRadarr: HTTP ${response.code} body=$body")
 
-			Timber.d("addToRadarr: HTTP ${response.code} body=$body")
+				if (!response.isSuccessful) {
+					return@withContext AddResult(error = "HTTP ${response.code}: $body")
+				}
 
-			if (!response.isSuccessful) {
-				return@withContext AddResult(error = "HTTP ${response.code}: $body")
+				val result = json.decodeFromString<AddResult>(body)
+				Timber.d("addToRadarr: parsed result added=${result.added} exists=${result.alreadyExists} failed=${result.failed} error=${result.error}")
+				result
 			}
-
-			val result = json.decodeFromString<AddResult>(body)
-			Timber.d("addToRadarr: parsed result added=${result.added} exists=${result.alreadyExists} failed=${result.failed} error=${result.error}")
-			result
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to add tmdb:$tmdbId to Radarr")
 			AddResult(error = e.message ?: "Unknown error")
@@ -347,16 +356,15 @@ class TentacleRepository(
 			}
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
-			val response = httpClient.newCall(request).execute()
+			httpClient.newCall(request).execute().use { response ->
+				val body = response.body?.string() ?: return@withContext AddResult(error = "Empty response")
 
-			val body = response.body?.string() ?: return@withContext AddResult(error = "Empty response")
-			response.close()
+				if (!response.isSuccessful) {
+					return@withContext AddResult(error = "HTTP ${response.code}")
+				}
 
-			if (!response.isSuccessful) {
-				return@withContext AddResult(error = "HTTP ${response.code}")
+				json.decodeFromString<AddResult>(body)
 			}
-
-			json.decodeFromString<AddResult>(body)
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to add tmdb:$tmdbId tvdb:$tvdbId to Sonarr")
 			AddResult(error = e.message ?: "Unknown error")
@@ -379,12 +387,14 @@ class TentacleRepository(
 			val result = api.itemsApi.getItems(request).content
 			val items = result.items
 
-			// Try exact title + year match first
+			// Only return an unambiguous exact title (+ year) match. Falling back to the
+			// first search result risks navigating to the wrong item, so return null instead
+			// and let the caller handle "not found".
 			val match = items.firstOrNull { item ->
 				val itemTitle = item.name.orEmpty()
 				val itemYear = item.productionYear?.toString() ?: ""
 				itemTitle.equals(title, ignoreCase = true) && (year.isEmpty() || itemYear == year)
-			} ?: items.firstOrNull() // Fall back to first result
+			}
 
 			match?.id
 		} catch (e: Exception) {
@@ -465,24 +475,26 @@ class TentacleRepository(
 		}
 	}
 
-	suspend fun getToolbarConfig(): List<ToolbarButton> = withContext(Dispatchers.IO) {
+	/**
+	 * Fetch the toolbar button config.
+	 *
+	 * Returns null on a fetch FAILURE (network error, non-200) so the caller can
+	 * fall back to the default button set instead of rendering an empty toolbar.
+	 * Returns an actual (possibly empty) list only when the plugin responds successfully,
+	 * so a genuinely-empty config is honoured.
+	 */
+	suspend fun getToolbarConfig(): List<ToolbarButton>? = withContext(Dispatchers.IO) {
 		try {
 			val url = buildUrl("/TentacleHome/Toolbar")
 			val request = Request.Builder().url(url).get().build()
-			val response = httpClient.newCall(request).execute()
-
-			if (!response.isSuccessful) {
-				response.close()
-				return@withContext emptyList()
+			httpClient.newCall(request).execute().use { response ->
+				if (!response.isSuccessful) return@withContext null
+				val body = response.body?.string() ?: return@withContext null
+				json.decodeFromString<ToolbarResponse>(body).buttons
 			}
-
-			val body = response.body?.string() ?: return@withContext emptyList()
-			response.close()
-
-			json.decodeFromString<ToolbarResponse>(body).buttons
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch toolbar config")
-			emptyList()
+			null
 		}
 	}
 
@@ -501,32 +513,6 @@ class TentacleRepository(
 			Timber.d("Plugin cache refresh: ${response.code}")
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to refresh plugin cache")
-		}
-	}
-
-	/**
-	 * Get the home screen version counter. Used for live-update polling.
-	 * Returns -1 if unavailable.
-	 */
-	suspend fun getHomeVersion(): Int = withContext(Dispatchers.IO) {
-		try {
-			val url = buildUrl("/TentacleHome/Version")
-			val request = Request.Builder().url(url).get().build()
-			val response = httpClient.newCall(request).execute()
-
-			if (!response.isSuccessful) {
-				response.close()
-				return@withContext -1
-			}
-
-			val body = response.body?.string() ?: return@withContext -1
-			response.close()
-
-			val element = json.parseToJsonElement(body)
-			element.jsonObject["version"]?.jsonPrimitive?.intOrNull ?: -1
-		} catch (e: Exception) {
-			Timber.w(e, "Failed to fetch home version")
-			-1
 		}
 	}
 
@@ -578,19 +564,14 @@ class TentacleRepository(
 		try {
 			val url = buildUrl("/TentacleDiscover/Activity")
 			val request = Request.Builder().url(url).get().build()
-			val response = httpClient.newCall(request).execute()
+			httpClient.newCall(request).execute().use { response ->
+				if (!response.isSuccessful) return@withContext null
+				val body = response.body?.string() ?: return@withContext null
 
-			if (!response.isSuccessful) {
-				response.close()
-				return@withContext null
+				val result = json.decodeFromString<ActivityResponse>(body)
+				_activityDownloadCount.value = result.downloads.size
+				result
 			}
-
-			val body = response.body?.string() ?: return@withContext null
-			response.close()
-
-			val result = json.decodeFromString<ActivityResponse>(body)
-			_activityDownloadCount.value = result.downloads.size
-			result
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch Tentacle activity")
 			null
@@ -605,17 +586,20 @@ class TentacleRepository(
 		try {
 			val url = buildUrl("/TentacleDiscover/Notifications")
 			val request = Request.Builder().url(url).get().build()
-			val response = httpClient.newCall(request).execute()
-			if (!response.isSuccessful) { response.close(); return@withContext null }
-			val body = response.body?.string() ?: return@withContext null
-			response.close()
-			val result = json.decodeFromString<NotificationsResponse>(body)
+			val result = httpClient.newCall(request).execute().use { response ->
+				if (!response.isSuccessful) return@withContext null
+				val body = response.body?.string() ?: return@withContext null
+				json.decodeFromString<NotificationsResponse>(body)
+			}
 
 			if (result.notificationsEnabled) {
-				val newNotifs = result.notifications.filter { it.id !in knownNotificationIds }
+				val newNotifs = synchronized(knownNotificationIds) {
+					val fresh = result.notifications.filter { it.id !in knownNotificationIds }
+					knownNotificationIds.addAll(fresh.map { it.id })
+					fresh
+				}
 				if (newNotifs.isNotEmpty()) {
-					knownNotificationIds.addAll(newNotifs.map { it.id })
-					_pendingNotifications.value = _pendingNotifications.value + newNotifs
+					_pendingNotifications.update { it + newNotifs }
 				}
 			}
 			result
@@ -654,11 +638,11 @@ class TentacleRepository(
 				else "/TentacleDiscover/SeasonsTvdb/$tvdbId"
 			val url = buildUrl(path)
 			val request = Request.Builder().url(url).get().build()
-			val response = httpClient.newCall(request).execute()
-			if (!response.isSuccessful) { response.close(); return@withContext null }
-			val body = response.body?.string() ?: return@withContext null
-			response.close()
-			json.decodeFromString<SeasonsResponse>(body)
+			httpClient.newCall(request).execute().use { response ->
+				if (!response.isSuccessful) return@withContext null
+				val body = response.body?.string() ?: return@withContext null
+				json.decodeFromString<SeasonsResponse>(body)
+			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch seasons for tmdb:$tmdbId tvdb:$tvdbId")
 			null
@@ -674,11 +658,11 @@ class TentacleRepository(
 				else "/TentacleDiscover/SeasonTvdb/$tvdbId/$seasonNumber"
 			val url = buildUrl(path)
 			val request = Request.Builder().url(url).get().build()
-			val response = httpClient.newCall(request).execute()
-			if (!response.isSuccessful) { response.close(); return@withContext emptyList() }
-			val body = response.body?.string() ?: return@withContext emptyList()
-			response.close()
-			json.decodeFromString<SeasonEpisodesResponse>(body).episodes
+			httpClient.newCall(request).execute().use { response ->
+				if (!response.isSuccessful) return@withContext emptyList()
+				val body = response.body?.string() ?: return@withContext emptyList()
+				json.decodeFromString<SeasonEpisodesResponse>(body).episodes
+			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch episodes for tmdb:$tmdbId tvdb:$tvdbId season $seasonNumber")
 			emptyList()
@@ -692,11 +676,11 @@ class TentacleRepository(
 		try {
 			val url = buildUrl("/TentacleDiscover/SonarrEpisodes/$tmdbId")
 			val request = Request.Builder().url(url).get().build()
-			val response = httpClient.newCall(request).execute()
-			if (!response.isSuccessful) { response.close(); return@withContext SonarrEpisodesResponse() }
-			val body = response.body?.string() ?: return@withContext SonarrEpisodesResponse()
-			response.close()
-			json.decodeFromString<SonarrEpisodesResponse>(body)
+			httpClient.newCall(request).execute().use { response ->
+				if (!response.isSuccessful) return@withContext SonarrEpisodesResponse()
+				val body = response.body?.string() ?: return@withContext SonarrEpisodesResponse()
+				json.decodeFromString<SonarrEpisodesResponse>(body)
+			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch Sonarr episodes for tmdb:$tmdbId")
 			SonarrEpisodesResponse()
@@ -710,11 +694,11 @@ class TentacleRepository(
 		try {
 			val url = buildUrl("/TentacleDiscover/VodEpisodes/$tmdbId")
 			val request = Request.Builder().url(url).get().build()
-			val response = httpClient.newCall(request).execute()
-			if (!response.isSuccessful) { response.close(); return@withContext VodEpisodesResponse() }
-			val body = response.body?.string() ?: return@withContext VodEpisodesResponse()
-			response.close()
-			json.decodeFromString<VodEpisodesResponse>(body)
+			httpClient.newCall(request).execute().use { response ->
+				if (!response.isSuccessful) return@withContext VodEpisodesResponse()
+				val body = response.body?.string() ?: return@withContext VodEpisodesResponse()
+				json.decodeFromString<VodEpisodesResponse>(body)
+			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch VOD episodes for tmdb:$tmdbId")
 			VodEpisodesResponse()
@@ -730,11 +714,11 @@ class TentacleRepository(
 			val jsonBody = """{"follow":$follow}"""
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
-			val response = httpClient.newCall(request).execute()
-			val body = response.body?.string() ?: return@withContext FollowResult()
-			response.close()
-			if (!response.isSuccessful) return@withContext FollowResult()
-			json.decodeFromString<FollowResult>(body)
+			httpClient.newCall(request).execute().use { response ->
+				val body = response.body?.string() ?: return@withContext FollowResult()
+				if (!response.isSuccessful) return@withContext FollowResult()
+				json.decodeFromString<FollowResult>(body)
+			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to toggle follow for tmdb:$tmdbId")
 			FollowResult()
@@ -775,11 +759,11 @@ class TentacleRepository(
 			Timber.d("addToSonarrWithEpisodes: POST body=$jsonBody")
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
-			val response = httpClient.newCall(request).execute()
-			val body = response.body?.string() ?: return@withContext AddResult(error = "Empty response")
-			response.close()
-			if (!response.isSuccessful) return@withContext AddResult(error = "HTTP ${response.code}: $body")
-			json.decodeFromString<AddResult>(body)
+			httpClient.newCall(request).execute().use { response ->
+				val body = response.body?.string() ?: return@withContext AddResult(error = "Empty response")
+				if (!response.isSuccessful) return@withContext AddResult(error = "HTTP ${response.code}: $body")
+				json.decodeFromString<AddResult>(body)
+			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to add tmdb:$tmdbId tvdb:$tvdbId to Sonarr with episodes")
 			AddResult(error = e.message ?: "Unknown error")
@@ -801,11 +785,11 @@ class TentacleRepository(
 			}
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
-			val response = httpClient.newCall(request).execute()
-			val body = response.body?.string() ?: return@withContext ManageEpisodesResult()
-			response.close()
-			if (!response.isSuccessful) return@withContext ManageEpisodesResult()
-			json.decodeFromString<ManageEpisodesResult>(body)
+			httpClient.newCall(request).execute().use { response ->
+				val body = response.body?.string() ?: return@withContext ManageEpisodesResult()
+				if (!response.isSuccessful) return@withContext ManageEpisodesResult()
+				json.decodeFromString<ManageEpisodesResult>(body)
+			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to manage episodes for tmdb:$tmdbId")
 			ManageEpisodesResult()
@@ -814,10 +798,15 @@ class TentacleRepository(
 
 	/**
 	 * Reset the availability cache (e.g. after server reconnect).
+	 * Also clears per-user notification state so a switched-in user doesn't
+	 * inherit the previous user's dedupe set or pending toasts.
 	 */
 	fun resetAvailabilityCache() {
 		availabilityChecked = false
 		isAvailable = false
+		_activityDownloadCount.value = 0
+		synchronized(knownNotificationIds) { knownNotificationIds.clear() }
+		_pendingNotifications.value = emptyList()
 	}
 
 	private fun buildUrl(path: String): String {

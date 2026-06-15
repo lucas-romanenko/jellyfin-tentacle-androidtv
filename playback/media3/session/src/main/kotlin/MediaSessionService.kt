@@ -1,6 +1,7 @@
 package org.jellyfin.playback.media3.session
 
 import android.content.Context
+import android.os.Handler
 import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.core.app.NotificationCompat
@@ -12,6 +13,7 @@ import androidx.media3.session.MediaStyleNotificationHelper
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.guava.await
+import kotlinx.coroutines.job
 import org.jellyfin.playback.core.plugin.PlayerService
 import org.jellyfin.playback.core.queue.QueueEntry
 import org.jellyfin.playback.core.queue.metadata
@@ -36,6 +38,20 @@ class MediaSessionService(
 			setId(options.notificationId.toString())
 			setSessionActivity(options.openIntent)
 		}.build()
+
+		// Release the session (and detach its player) when this service is torn down, otherwise the
+		// MediaSession and its player leak for the rest of the process lifetime. MediaSession must
+		// be released on its application thread, so post to the session's looper.
+		coroutineScope.coroutineContext.job.invokeOnCompletion {
+			Handler(Looper.getMainLooper()).post {
+				session.player.release()
+				session.release()
+				notifiedNotificationId?.let { id ->
+					notificationManager.cancel(id)
+					notifiedNotificationId = null
+				}
+			}
+		}
 
 		manager.queue.entry.onEach { item ->
 			if (item != null) updateNotification(session, item)

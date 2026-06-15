@@ -361,8 +361,18 @@ class HomeFragment : Fragment() {
 	}
 
 	fun applyTrailerAudioSetting(audioEnabled: Boolean) {
-		_isTrailerMuted.value = !audioEnabled
-		updateMuteButtonIcon()
+		// Invoked from HomeRowsFragment's row-build coroutine, which runs on a
+		// background (IO) thread. _isTrailerMuted is a lateinit StateFlow set in
+		// onViewCreated and updateMuteButtonIcon() touches Views, so both must run
+		// on the main thread and only once the view exists — otherwise this throws
+		// CalledFromWrongThreadException / UninitializedPropertyAccessException on
+		// every cold launch with the hero enabled. lifecycleScope.launch defaults to
+		// Dispatchers.Main.immediate, so this is safe to call from any thread.
+		lifecycleScope.launch {
+			if (!::_isTrailerMuted.isInitialized) return@launch
+			_isTrailerMuted.value = !audioEnabled
+			updateMuteButtonIcon()
+		}
 	}
 
 	private fun updateMuteButtonIcon() {

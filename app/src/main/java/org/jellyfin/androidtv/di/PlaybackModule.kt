@@ -104,7 +104,7 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 	val serverRepository = get<ServerRepository>()
 	val isEmbyActive = { serverRepository.currentServer.value?.serverType == ServerType.EMBY }
 
-	install(embyPlugin(get(), deviceProfileBuilder))
+	install(embyPlugin(get(), deviceProfileBuilder, isActive = { isEmbyActive() }))
 	install(jellyfinPlugin(get(), deviceProfileBuilder, ProcessLifecycleOwner.get().lifecycle, apiClientResolver, isActive = { !isEmbyActive() }))
 
 	val userSettingPreferences = get<UserSettingPreferences>()

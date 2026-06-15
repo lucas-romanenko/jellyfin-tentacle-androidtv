@@ -323,12 +323,23 @@ class EmbyCompatInterceptor : Interceptor {
 	private fun replaceNumericIds(json: String, pattern: Regex): String {
 		return pattern.replace(json) { match ->
 			val key = match.groupValues[1]
+			// Only convert fields the Jellyfin SDK actually models as UUIDs. Matching every
+			// "*Id" field risks corrupting String-typed identifiers (ServerId, DeviceId,
+			// external provider IDs, etc.) that legitimately carry numeric values.
+			if (key !in UUID_ID_FIELDS) return@replace match.value
 			val numericId = match.groupValues[2]
 			"\"$key\":\"${numericToUuid(numericId)}\""
 		}
 	}
 
 	private fun patchMissingRequiredFields(json: String, path: String): String {
+		// Avoid the expensive org.json parse + re-serialize when the body contains none of the
+		// structures this method touches. This is a cheap substring scan; if any marker is present
+		// (or the endpoint needs path-based fields) we fall through to the full parse unchanged.
+		val needsEndpointFields = path.contains("/Branding/Configuration", ignoreCase = true) ||
+			path.contains("/DisplayPreferences", ignoreCase = true)
+		if (!needsEndpointFields && PATCH_MARKERS.none { json.contains(it) }) return json
+
 		return try {
 			val trimmed = json.trimStart()
 			if (trimmed.startsWith("[")) {
@@ -602,6 +613,49 @@ class EmbyCompatInterceptor : Interceptor {
 
 	companion object {
 		private val STREAMING_PATH_PATTERN = Regex("/(Videos|Audio)/[^/]+/(stream|master\\.m3u8|main\\.m3u8)", RegexOption.IGNORE_CASE)
+
+		/**
+		 * Identifier fields the Jellyfin SDK models as UUIDs. Only these are converted from Emby's
+		 * numeric form. String-typed identifiers (ServerId, DeviceId, SessionId, PlaySessionId,
+		 * MediaSourceId, external provider IDs like TmdbId/TvdbId/ImdbId) are intentionally excluded
+		 * — converting them would corrupt valid numeric string values.
+		 */
+		private val UUID_ID_FIELDS = setOf(
+			"Id",
+			"ItemId",
+			"ParentId",
+			"SeriesId",
+			"SeasonId",
+			"AlbumId",
+			"ChannelId",
+			"ProgramId",
+			"TimerId",
+			"SeriesTimerId",
+			"DisplayPreferencesId",
+			"PlaylistItemId",
+			"ArtistId",
+			"ParentLogoItemId",
+			"ParentBackdropItemId",
+			"ParentThumbItemId",
+			"ParentArtItemId",
+			"ParentPrimaryImageItemId",
+		)
+
+		/**
+		 * Quoted JSON keys whose presence means [patchMissingRequiredFields] might modify the body.
+		 * Used as a cheap substring pre-filter to skip the org.json parse/re-serialize otherwise.
+		 * Must cover every branch in patchObjectTree.
+		 */
+		private val PATCH_MARKERS = listOf(
+			"\"UserData\"",
+			"\"Configuration\"",
+			"\"Policy\"",
+			"\"MediaSources\"",
+			"\"MediaStreams\"",
+			"\"Chapters\"",
+			"\"LockedFields\"",
+			"\"Items\"",
+		)
 
 		// "SomeId":"12345" — quoted numeric string
 		private val NUMERIC_ID_PATTERN = Regex("\"(\\w*Id)\"\\s*:\\s*\"(\\d+)\"")

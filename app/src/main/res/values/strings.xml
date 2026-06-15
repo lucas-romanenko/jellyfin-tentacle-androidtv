@@ -932,10 +932,6 @@
     <string name="msg_no_folders">No folders found</string>
     <string name="pref_show_shuffle_button">Show Shuffle Button</string>
     <string name="pref_show_shuffle_button_description">Display shuffle button in main toolbar</string>
-    <string name="pref_show_genres_button">Show Genres Button</string>
-    <string name="pref_show_genres_button_description">Display genres button in main toolbar</string>
-    <string name="pref_show_favorites_button">Show Favorites Button</string>
-    <string name="pref_show_favorites_button_description">Display favorites button in main toolbar</string>
     <string name="pref_shuffle_content_type">Shuffle Content Type</string>
     <string name="pref_shuffle_content_type_description">Choose which content types to include when shuffling</string>
     <string name="pref_shuffle_movies">Movies only</string>

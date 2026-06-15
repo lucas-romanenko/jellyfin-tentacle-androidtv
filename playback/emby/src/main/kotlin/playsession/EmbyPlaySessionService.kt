@@ -27,6 +27,7 @@ import org.jellyfin.playback.core.model.RepeatMode as CoreRepeatMode
 
 class EmbyPlaySessionService(
 	private val api: EmbyApiClient,
+	private val isActive: () -> Boolean = { true },
 ) : PlayerService() {
 
 	override suspend fun onInitialize() {
@@ -66,7 +67,7 @@ class EmbyPlaySessionService(
 	}
 
 	private suspend fun sendStreamStart() {
-		if (!api.isConfigured) return
+		if (!isActive() || !api.isConfigured) return
 		val entry = manager.queue.entry.value ?: return
 		val stream = entry.mediaStream ?: return
 		val item = entry.baseItem ?: return
@@ -93,7 +94,7 @@ class EmbyPlaySessionService(
 	}
 
 	private suspend fun sendStreamUpdate() {
-		if (!api.isConfigured) return
+		if (!isActive() || !api.isConfigured) return
 		val entry = manager.queue.entry.value ?: return
 		val stream = entry.mediaStream ?: return
 		val item = entry.baseItem ?: return
@@ -120,7 +121,7 @@ class EmbyPlaySessionService(
 	}
 
 	private suspend fun sendStreamStop() {
-		if (!api.isConfigured) return
+		if (!isActive() || !api.isConfigured) return
 		val entry = manager.queue.entry.value ?: return
 		val stream = entry.mediaStream ?: return
 		val item = entry.baseItem ?: return

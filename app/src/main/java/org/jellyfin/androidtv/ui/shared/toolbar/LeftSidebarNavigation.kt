@@ -53,6 +53,7 @@ import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.LocalActivity
+import androidx.lifecycle.repeatOnLifecycle
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -116,20 +117,34 @@ fun LeftSidebarNavigation(
 	val currentUser by remember { userRepository.currentUser.filterNotNull() }.collectAsState(null)
 	val userImageUrl = remember(currentUser) { currentUser?.primaryImage?.getUrl(api) }
 
-	// Fetch toolbar config from Tentacle plugin (same pattern as Navbar.kt)
-	var toolbarButtons by remember { mutableStateOf<List<ToolbarButton>>(emptyList()) }
+	// Fetch toolbar config from Tentacle plugin (same pattern as Navbar.kt).
+	// Start with the documented defaults so the sidebar is never empty while loading
+	// or if the fetch fails. A successful (even empty) response replaces them.
+	var toolbarButtons by remember { mutableStateOf(DEFAULT_TOOLBAR_BUTTONS) }
 	var toolbarRefreshKey by remember { mutableIntStateOf(0) }
 	LaunchedEffect(toolbarRefreshKey) {
-		toolbarButtons = tentacleRepository.getToolbarConfig()
+		repeat(3) { attempt ->
+			val config = tentacleRepository.getToolbarConfig()
+			if (config != null) {
+				toolbarButtons = config
+				return@LaunchedEffect
+			}
+			if (attempt < 2) delay(3_000)
+		}
+		// All attempts failed — leave the default button set in place.
 	}
 
-	// React to library changes — refresh toolbar config (same as Navbar.kt)
-	LaunchedEffect(api) {
-		try {
-			api.webSocket.subscribe<LibraryChangedMessage>().collect {
-				toolbarRefreshKey++
-			}
-		} catch (_: Exception) {}
+	// React to library changes — refresh toolbar config (same as Navbar.kt).
+	// Gated to the STARTED lifecycle so the subscription stops when not visible.
+	val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+	LaunchedEffect(api, lifecycleOwner) {
+		lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+			try {
+				api.webSocket.subscribe<LibraryChangedMessage>().collect {
+					toolbarRefreshKey++
+				}
+			} catch (_: Exception) {}
+		}
 	}
 
 	// Local preferences that are NOT controlled by Tentacle toolbar config

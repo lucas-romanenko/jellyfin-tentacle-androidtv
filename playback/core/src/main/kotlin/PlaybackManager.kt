@@ -51,4 +51,16 @@ class PlaybackManager internal constructor(
 		service.coroutineScope.cancel()
 		services.remove(service)
 	}
+
+	/**
+	 * Tears down playback: cancels all service scopes and releases the player backend (decoders,
+	 * threads, surfaces). The manager must not be reused after this.
+	 */
+	fun release() {
+		Timber.i("Releasing PlaybackManager")
+		services.forEach { it.coroutineScope.cancel() }
+		services.clear()
+		backendService.release()
+		job.cancel()
+	}
 }

@@ -44,15 +44,26 @@ class EmbyMediaServerClient(
     override val sessionApi: ServerSessionApi get() = EmbySessionApi(apiClient)
     override val imageApi: ServerImageApi get() = EmbyImageApi(apiClient)
     override val systemApi: ServerSystemApi get() = EmbySystemApi(apiClient)
-    override val userViewsApi: ServerUserViewsApi get() = EmbyUserViewsApi(apiClient)
     override val liveTvApi: ServerLiveTvApi get() = EmbyLiveTvApi(apiClient)
     override val instantMixApi: ServerInstantMixApi get() = EmbyInstantMixApi(apiClient)
-    override val displayPreferencesApi: ServerDisplayPreferencesApi get() = EmbyDisplayPreferencesApi(apiClient)
+
+    // These two wrappers maintain in-memory caches (user views / display prefs). They are kept as
+    // stable instances so the caches actually persist between calls — building a fresh wrapper per
+    // access (as a `get()` factory) would make the caches dead, never surviving a single call.
+    // Recreated whenever the underlying apiClient is replaced (configure).
+    private var _userViewsApi = EmbyUserViewsApi(apiClient)
+    override val userViewsApi: ServerUserViewsApi get() = _userViewsApi
+
+    private var _displayPreferencesApi = EmbyDisplayPreferencesApi(apiClient)
+    override val displayPreferencesApi: ServerDisplayPreferencesApi get() = _displayPreferencesApi
 
     override fun configure(baseUrl: String, accessToken: String?, userId: String?, deviceInfo: DeviceInfo) {
         this.deviceInfo = deviceInfo
         apiClient = createApiClient(deviceInfo)
         apiClient.configure(baseUrl, accessToken, userId)
+        // Rebuild the caching wrappers against the new apiClient (also clears stale cached data).
+        _userViewsApi = EmbyUserViewsApi(apiClient)
+        _displayPreferencesApi = EmbyDisplayPreferencesApi(apiClient)
     }
 
     override fun createForServer(baseUrl: String, accessToken: String?, deviceInfo: DeviceInfo): MediaServerClient {

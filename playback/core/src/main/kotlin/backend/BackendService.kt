@@ -18,16 +18,32 @@ class BackendService {
 	private var _subtitleView: PlayerSubtitleView? = null
 
 	fun switchBackend(backend: PlayerBackend) {
-		_backend?.stop()
-		_backend?.setListener(null)
-		_backend?.setSurfaceView(null)
-		_backend?.setSubtitleView(null)
+		val previous = _backend
+		previous?.stop()
+		previous?.setListener(null)
+		previous?.setSurfaceView(null)
+		previous?.setSubtitleView(null)
 
 		_backend = backend.apply {
 			_surfaceView?.let(::setSurfaceView)
 			_subtitleView?.let(::setSubtitleView)
 			setListener(BackendEventListener())
 		}
+
+		// Release the old backend's resources once it has been fully detached.
+		previous?.release()
+	}
+
+	/**
+	 * Releases the current backend and clears the reference. Call when tearing down playback.
+	 */
+	fun release() {
+		_backend?.stop()
+		_backend?.setListener(null)
+		_backend?.setSurfaceView(null)
+		_backend?.setSubtitleView(null)
+		_backend?.release()
+		_backend = null
 	}
 
 	fun attachSurfaceView(surfaceView: PlayerSurfaceView) {

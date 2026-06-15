@@ -54,12 +54,19 @@ fun getVersionCode(versionName: String): Int {
 		?.substringAfter('.')
 		?.let(String::toIntOrNull)
 
+	// Each component occupies exactly two decimal digits in the version code, so any
+	// value >= 100 would carry into the next component and corrupt the ordering.
+	val preRelease = buildVersion ?: 99
+	require(minor in 0..99) { "Version minor must be in 0..99 (was $minor) to avoid versionCode overflow: $versionName" }
+	require(patch in 0..99) { "Version patch must be in 0..99 (was $patch) to avoid versionCode overflow: $versionName" }
+	require(preRelease in 0..99) { "Version pre-release must be in 0..99 (was $preRelease) to avoid versionCode overflow: $versionName" }
+
 	// Build code
 	var code = 0
 	code += major * 1000000 // Major (0-99)
 	code += minor * 10000 // Minor (0-99)
 	code += patch * 100 // Patch (0-99)
-	code += buildVersion ?: 99 // Pre release (0-99)
+	code += preRelease // Pre release (0-99)
 
 	return code
 }

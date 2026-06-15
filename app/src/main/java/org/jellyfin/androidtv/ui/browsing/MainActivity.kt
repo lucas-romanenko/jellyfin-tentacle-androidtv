@@ -43,6 +43,7 @@ import org.jellyfin.androidtv.ui.settings.compat.MainActivitySettings
 import org.jellyfin.androidtv.ui.startup.StartupActivity
 import org.jellyfin.androidtv.util.applyTheme
 import org.jellyfin.androidtv.util.isMediaSessionKeyEvent
+import org.jellyfin.playback.core.PlaybackManager
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
 import timber.log.Timber
@@ -58,6 +59,7 @@ class MainActivity : FragmentActivity() {
 	private val themeMusicPlayer by inject<ThemeMusicPlayer>()
 	private val syncPlayManager by inject<SyncPlayManager>()
 	private val playbackLauncher by inject<PlaybackLauncher>()
+	private val playbackManager by inject<PlaybackManager>()
 
 	private lateinit var binding: ActivityMainBinding
 	private val showExitDialog = mutableStateOf(false)
@@ -243,6 +245,9 @@ class MainActivity : FragmentActivity() {
 
 		// Only destroy session if app is finishing, not just temporarily stopping
 		if (isFinishing) {
+			// Release the player backend (ExoPlayer decoders, threads, surfaces) on real teardown.
+			// Safe to release the singleton here because the process is exiting.
+			playbackManager.release()
 			lifecycleScope.launch(Dispatchers.IO) {
 				Timber.i("MainActivity finishing - destroying session")
 				sessionRepository.restoreSession(destroyOnly = true)

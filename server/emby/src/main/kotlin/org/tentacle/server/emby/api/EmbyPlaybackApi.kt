@@ -46,26 +46,26 @@ class EmbyPlaybackApi(private val apiClient: EmbyApiClient) : ServerPlaybackApi 
     override fun getVideoStreamUrl(itemId: String, params: StreamParams): String {
         val base = apiClient.baseUrl.trimEnd('/')
         return buildString {
-            append("$base/Videos/$itemId/stream.${params.container}")
+            append("$base/Videos/${itemId.enc()}/stream.${params.container.enc()}")
             append("?Static=true")
-            append("&MediaSourceId=${params.mediaSourceId}")
-            append("&PlaySessionId=${params.playSessionId}")
-            append("&DeviceId=${params.deviceId}")
+            append("&MediaSourceId=${params.mediaSourceId.enc()}")
+            append("&PlaySessionId=${params.playSessionId.enc()}")
+            append("&DeviceId=${params.deviceId.enc()}")
             params.audioStreamIndex?.let { append("&AudioStreamIndex=$it") }
             params.subtitleStreamIndex?.let { append("&SubtitleStreamIndex=$it") }
-            apiClient.accessToken?.let { append("&api_key=$it") }
+            apiClient.accessToken?.let { append("&api_key=${it.enc()}") }
         }
     }
 
     override fun getAudioStreamUrl(itemId: String, params: StreamParams): String {
         val base = apiClient.baseUrl.trimEnd('/')
         return buildString {
-            append("$base/Audio/$itemId/stream.${params.container}")
+            append("$base/Audio/${itemId.enc()}/stream.${params.container.enc()}")
             append("?Static=true")
-            append("&MediaSourceId=${params.mediaSourceId}")
-            append("&PlaySessionId=${params.playSessionId}")
-            append("&DeviceId=${params.deviceId}")
-            apiClient.accessToken?.let { append("&api_key=$it") }
+            append("&MediaSourceId=${params.mediaSourceId.enc()}")
+            append("&PlaySessionId=${params.playSessionId.enc()}")
+            append("&DeviceId=${params.deviceId.enc()}")
+            apiClient.accessToken?.let { append("&api_key=${it.enc()}") }
         }
     }
 
@@ -117,6 +117,9 @@ class EmbyPlaybackApi(private val apiClient: EmbyApiClient) : ServerPlaybackApi 
         )
     }
 }
+
+/** URL-encodes a value for safe interpolation into stream/image URLs. */
+private fun String.enc(): String = java.net.URLEncoder.encode(this, "UTF-8")
 
 private fun PlayMethod.toEmby(): EmbyPlayMethod = when (this) {
     PlayMethod.DIRECT_PLAY -> EmbyPlayMethod.DIRECT_PLAY

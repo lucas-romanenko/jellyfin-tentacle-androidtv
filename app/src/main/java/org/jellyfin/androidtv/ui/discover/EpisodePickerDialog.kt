@@ -41,6 +41,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
@@ -91,6 +93,10 @@ fun EpisodePickerContent(
 	val expandedSeasons = remember { mutableStateMapOf<Int, Boolean>() }
 	val selectedEpisodes = remember { mutableStateMapOf<String, Boolean>() } // "s:e" -> selected
 	val scope = rememberCoroutineScope()
+	// The submit must outlive this composable: closing the dialog sets the parent's
+	// showEpisodePicker=false, which removes this content and cancels rememberCoroutineScope().
+	// Use the hosting fragment's lifecycle scope so an in-flight Sonarr write isn't cancelled.
+	val submitScope = LocalLifecycleOwner.current.lifecycleScope
 	val listFocusRequester = remember { FocusRequester() }
 
 	// Load all data in parallel
@@ -203,7 +209,7 @@ fun EpisodePickerContent(
 					onClick = {
 						if (!isSubmitting && selectedCount > 0) {
 							isSubmitting = true
-							scope.launch {
+							submitScope.launch {
 								val selected = selectedEpisodes
 									.filter { it.value }
 									.map { entry ->

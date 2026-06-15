@@ -1,5 +1,9 @@
 package org.tentacle.server.emby
 
+import io.ktor.client.engine.HttpClientEngine
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.HttpResponseValidator
+import io.ktor.client.statement.HttpResponse
 import org.emby.client.api.DisplayPreferencesServiceApi
 import org.emby.client.api.InstantMixServiceApi
 import org.emby.client.api.ItemsServiceApi
@@ -67,10 +71,43 @@ class EmbyApiClient(
     var mediaInfoService: MediaInfoServiceApi? = null
         private set
 
+    /**
+     * Single shared Ktor engine for all generated service clients. The generated [org.emby.client.api]
+     * services each build their own [io.ktor.client.HttpClient] but accept a shared
+     * [HttpClientEngine], so passing one engine reuses a single connection/thread pool across all
+     * ~12 services. The engine is recreated on every (re)configure and closed when the client is
+     * reset/reconfigured so engine threads and connections aren't leaked on session switches.
+     */
+    private var engine: HttpClientEngine? = null
+
+    /**
+     * Translates non-2xx responses into a typed [EmbyApiException] instead of letting callers hit
+     * opaque serialization failures when they try to parse an error body as the expected model.
+     */
+    private val clientConfig: io.ktor.client.HttpClientConfig<*>.() -> Unit = {
+        HttpResponseValidator {
+            validateResponse { response: HttpResponse ->
+                val status = response.status.value
+                if (status !in 200..299) {
+                    throw EmbyApiException.fromStatus(status, response.call.request.url.encodedPath)
+                }
+            }
+        }
+    }
+
+    private fun <T : org.emby.client.infrastructure.ApiClient> T.withApiKey(): T = apply {
+        accessToken?.let { setApiKey(it) }
+    }
+
     fun configure(baseUrl: String, accessToken: String?, userId: String?) {
         this.baseUrl = baseUrl
         this.accessToken = accessToken
         this.userId = userId
+
+        // Release the previous engine (and its pools) before discarding the old services.
+        engine?.close()
+        engine = null
+
         if (baseUrl.isEmpty()) {
             userService = null
             sessionsService = null
@@ -86,18 +123,22 @@ class EmbyApiClient(
             mediaInfoService = null
             return
         }
-        userService = UserServiceApi(baseUrl).also { if (accessToken != null) it.setApiKey(accessToken) }
-        sessionsService = SessionsServiceApi(baseUrl).also { if (accessToken != null) it.setApiKey(accessToken) }
-        itemsService = ItemsServiceApi(baseUrl).also { if (accessToken != null) it.setApiKey(accessToken) }
-        userLibraryService = UserLibraryServiceApi(baseUrl).also { if (accessToken != null) it.setApiKey(accessToken) }
-        tvShowsService = TvShowsServiceApi(baseUrl).also { if (accessToken != null) it.setApiKey(accessToken) }
-        libraryService = LibraryServiceApi(baseUrl).also { if (accessToken != null) it.setApiKey(accessToken) }
-        playstateService = PlaystateServiceApi(baseUrl).also { if (accessToken != null) it.setApiKey(accessToken) }
-        userViewsService = UserViewsServiceApi(baseUrl).also { if (accessToken != null) it.setApiKey(accessToken) }
-        liveTvService = LiveTvServiceApi(baseUrl).also { if (accessToken != null) it.setApiKey(accessToken) }
-        instantMixService = InstantMixServiceApi(baseUrl).also { if (accessToken != null) it.setApiKey(accessToken) }
-        displayPreferencesService = DisplayPreferencesServiceApi(baseUrl).also { if (accessToken != null) it.setApiKey(accessToken) }
-        mediaInfoService = MediaInfoServiceApi(baseUrl).also { if (accessToken != null) it.setApiKey(accessToken) }
+
+        val sharedEngine = OkHttp.create()
+        engine = sharedEngine
+
+        userService = UserServiceApi(baseUrl, sharedEngine, clientConfig).withApiKey()
+        sessionsService = SessionsServiceApi(baseUrl, sharedEngine, clientConfig).withApiKey()
+        itemsService = ItemsServiceApi(baseUrl, sharedEngine, clientConfig).withApiKey()
+        userLibraryService = UserLibraryServiceApi(baseUrl, sharedEngine, clientConfig).withApiKey()
+        tvShowsService = TvShowsServiceApi(baseUrl, sharedEngine, clientConfig).withApiKey()
+        libraryService = LibraryServiceApi(baseUrl, sharedEngine, clientConfig).withApiKey()
+        playstateService = PlaystateServiceApi(baseUrl, sharedEngine, clientConfig).withApiKey()
+        userViewsService = UserViewsServiceApi(baseUrl, sharedEngine, clientConfig).withApiKey()
+        liveTvService = LiveTvServiceApi(baseUrl, sharedEngine, clientConfig).withApiKey()
+        instantMixService = InstantMixServiceApi(baseUrl, sharedEngine, clientConfig).withApiKey()
+        displayPreferencesService = DisplayPreferencesServiceApi(baseUrl, sharedEngine, clientConfig).withApiKey()
+        mediaInfoService = MediaInfoServiceApi(baseUrl, sharedEngine, clientConfig).withApiKey()
     }
 
     fun reset() = configure("", null, null)
@@ -136,7 +177,10 @@ class EmbyApiClient(
 
     suspend fun authenticateByName(username: String, password: String): EmbyAuthResult {
         val body = AuthenticateUserByName(username = username, pw = password)
-        val result = UserServiceApi(baseUrl).postUsersAuthenticatebyname(buildAuthHeader(), body).body()
+        // Reuse the shared-engine service when configured; only allocate a transient client
+        // (e.g. pre-configure login probe) when no service exists yet.
+        val service = userService ?: UserServiceApi(baseUrl, engine, clientConfig)
+        val result = service.postUsersAuthenticatebyname(buildAuthHeader(), body).body()
         val userDto = result.user
         return EmbyAuthResult(
             accessToken = result.accessToken,

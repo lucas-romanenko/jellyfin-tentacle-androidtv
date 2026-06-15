@@ -50,19 +50,11 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 
 		/* Toolbar Customization */
 		/**
-		 * Show shuffle button in toolbar
+		 * Show shuffle button in toolbar.
+		 * Note: toolbar button visibility is otherwise driven by Tentacle dashboard config; this
+		 * preference is still read by [org.jellyfin.androidtv.ui.ClockUserView].
 		 */
 		var showShuffleButton = booleanPreference("pref_show_shuffle_button", true)
-
-		/**
-		 * Show genres button in toolbar
-		 */
-		var showGenresButton = booleanPreference("pref_show_genres_button", true)
-
-		/**
-		 * Show favorites button in toolbar
-		 */
-		var showFavoritesButton = booleanPreference("pref_show_favorites_button", true)
 
 		var favoritesPosterSize = enumPreference("pref_favorites_poster_size", org.jellyfin.androidtv.constant.PosterSize.MED)
 

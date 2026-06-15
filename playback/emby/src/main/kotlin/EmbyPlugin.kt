@@ -9,7 +9,8 @@ import org.tentacle.server.emby.EmbyApiClient
 fun embyPlugin(
 	api: EmbyApiClient,
 	deviceProfileBuilder: () -> DeviceProfile,
+	isActive: () -> Boolean = { true },
 ) = playbackPlugin {
 	provide(EmbyMediaStreamResolver(api, deviceProfileBuilder))
-	provide(EmbyPlaySessionService(api))
+	provide(EmbyPlaySessionService(api, isActive))
 }

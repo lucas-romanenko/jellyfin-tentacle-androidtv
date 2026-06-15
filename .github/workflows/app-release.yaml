@@ -24,22 +24,15 @@ jobs:
         uses: gradle/actions/setup-gradle@f29f5a9d7b09a7c6b29859002d29d24e1674c884 # v5.0.1
       - name: Setup signing keystore
         run: |
-          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > ${{ github.workspace }}/release.keystore
-            echo "storeFile=${{ github.workspace }}/release.keystore" > keystore.properties
-            echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> keystore.properties
-            echo "keyAlias=${{ secrets.KEYSTORE_ALIAS }}" >> keystore.properties
-            echo "keyPassword=${{ secrets.KEYSTORE_KEY_PASSWORD }}" >> keystore.properties
-          else
-            keytool -genkey -v -keystore ${{ github.workspace }}/release.keystore \
-              -storepass tentacle -alias release -keypass tentacle \
-              -keyalg RSA -keysize 2048 -validity 36500 \
-              -dname "CN=Tentacle,O=Tentacle,C=US" -noprompt
-            echo "storeFile=${{ github.workspace }}/release.keystore" > keystore.properties
-            echo "storePassword=tentacle" >> keystore.properties
-            echo "keyAlias=release" >> keystore.properties
-            echo "keyPassword=tentacle" >> keystore.properties
+          if [ -z "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "::error::Missing release signing secrets. A tagged release MUST be signed with the stable production keystore so Android allows in-place upgrades (otherwise users hit INSTALL_FAILED_UPDATE_INCOMPATIBLE). Configure the KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEYSTORE_ALIAS, and KEYSTORE_KEY_PASSWORD repository secrets before tagging a release."
+            exit 1
           fi
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > ${{ github.workspace }}/release.keystore
+          echo "storeFile=${{ github.workspace }}/release.keystore" > keystore.properties
+          echo "storePassword=${{ secrets.KEYSTORE_PASSWORD }}" >> keystore.properties
+          echo "keyAlias=${{ secrets.KEYSTORE_ALIAS }}" >> keystore.properties
+          echo "keyPassword=${{ secrets.KEYSTORE_KEY_PASSWORD }}" >> keystore.properties
       - name: Set version from tag
         run: echo "TENTACLE_VERSION=${GITHUB_REF_NAME}" >> $GITHUB_ENV
       - name: Assemble release APK

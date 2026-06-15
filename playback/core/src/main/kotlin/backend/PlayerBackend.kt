@@ -38,5 +38,11 @@ interface PlayerBackend {
 	fun setScrubbing(scrubbing: Boolean)
 
 	fun setSpeed(speed: Float)
+
+	/**
+	 * Release any underlying player resources (decoders, threads, surfaces). After calling this the
+	 * backend must not be reused. Called when switching backends or tearing down playback.
+	 */
+	fun release()
 }
 

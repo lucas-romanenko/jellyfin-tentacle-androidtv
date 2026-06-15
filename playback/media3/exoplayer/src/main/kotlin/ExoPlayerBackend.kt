@@ -62,7 +62,10 @@ class ExoPlayerBackend(
 	private val audioPipeline = ExoPlayerAudioPipeline()
 	private val audioAttributeState = AudioAttributeState()
 
-	private val exoPlayer by lazy {
+	private val playerListener = PlayerListener()
+	private var eventLogger: EventLogger? = null
+
+	private val lazyExoPlayer = lazy {
 		val dataSourceFactory = DefaultDataSource.Factory(
 			context,
 			exoPlayerOptions.baseDataSourceFactory,
@@ -127,13 +130,15 @@ class ExoPlayerBackend(
 		}
 
 		player.also { player ->
-			player.addListener(PlayerListener())
+			player.addListener(playerListener)
 
 			if (exoPlayerOptions.enableDebugLogging()) {
-				player.addAnalyticsListener(EventLogger())
+				eventLogger = EventLogger().also(player::addAnalyticsListener)
 			}
 		}
 	}
+
+	private val exoPlayer by lazyExoPlayer
 
 	inner class PlayerListener : Player.Listener {
 		override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -146,6 +151,7 @@ class ExoPlayerBackend(
 		}
 
 		override fun onPlayerError(error: PlaybackException) {
+			Timber.e(error, "ExoPlayer playback error (code=%s): %s", error.errorCodeName, error.message)
 			listener?.onPlayStateChange(PlayState.ERROR)
 		}
 
@@ -165,7 +171,8 @@ class ExoPlayerBackend(
 
 		override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
 			if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM) {
-				listener?.onMediaStreamEnd(requireNotNull(currentStream))
+				// currentStream may already be null if stop() raced ahead of this callback.
+				currentStream?.let { listener?.onMediaStreamEnd(it) }
 			}
 		}
 
@@ -304,4 +311,18 @@ class ExoPlayerBackend(
 		buffer = exoPlayer.bufferedPosition.milliseconds,
 		duration = if (exoPlayer.duration == C.TIME_UNSET) Duration.ZERO else exoPlayer.duration.milliseconds,
 	)
+
+	override fun release() {
+		// Only release if the player was ever created; touching the lazy delegate otherwise would
+		// needlessly instantiate (and then leak) a player.
+		if (!lazyExoPlayer.isInitialized()) return
+
+		exoPlayer.removeListener(playerListener)
+		eventLogger?.let(exoPlayer::removeAnalyticsListener)
+		eventLogger = null
+		(subtitleView?.parent as? ViewGroup)?.removeView(subtitleView)
+		subtitleView = null
+		currentStream = null
+		exoPlayer.release()
+	}
 }

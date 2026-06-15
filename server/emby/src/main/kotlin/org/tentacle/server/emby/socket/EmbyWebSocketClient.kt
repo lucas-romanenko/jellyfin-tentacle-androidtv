@@ -60,7 +60,10 @@ class EmbyWebSocketClient(
 	private var keepAliveJob: Job? = null
 
 	override suspend fun connect() {
-		disconnect()
+		// Tear down any existing socket WITHOUT resetting the reconnect counter, otherwise the
+		// reconnect path (scheduleReconnect -> connect) would reset it every attempt and the
+		// MAX_RECONNECT_ATTEMPTS cap would never be reached.
+		teardown()
 		if (!api.isConfigured) return
 		val token = api.accessToken ?: return
 
@@ -81,16 +84,26 @@ class EmbyWebSocketClient(
 	}
 
 	override suspend fun disconnect() {
+		// User-initiated disconnect: tear down and reset the reconnect counter so a later
+		// explicit connect starts from a clean slate.
+		reconnectAttempt = 0
+		teardown()
+		_connectionState.value = EmbyConnectionState.Disconnected
+	}
+
+	/**
+	 * Cancels jobs and closes the socket/client without touching [reconnectAttempt]. Used by the
+	 * reconnect path so the max-attempts cap actually bounds retries.
+	 */
+	private fun teardown() {
 		keepAliveJob?.cancel()
 		keepAliveJob = null
 		reconnectJob?.cancel()
 		reconnectJob = null
-		reconnectAttempt = 0
 		webSocket?.close(1000, null)
 		webSocket = null
 		httpClient?.dispatcher?.executorService?.shutdown()
 		httpClient = null
-		_connectionState.value = EmbyConnectionState.Disconnected
 	}
 
 	fun forceDisconnect() {

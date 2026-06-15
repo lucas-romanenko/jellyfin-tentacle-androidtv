@@ -99,4 +99,3 @@
 -keep class org.jellyfin.preference.** { *; }
 -keep class org.jellyfin.design.** { *; }
 -keep class org.tentacle.** { *; }
--keep class org.moonfin.** { *; }

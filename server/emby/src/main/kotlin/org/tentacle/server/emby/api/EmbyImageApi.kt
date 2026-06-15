@@ -43,7 +43,9 @@ class EmbyImageApi(private val apiClient: EmbyApiClient) : ServerImageApi {
             params += key to value
         }
 
-        fun build(): String = params.joinToString("&") { (k, v) -> "$k=$v" }
+        fun build(): String = params.joinToString("&") { (k, v) ->
+            "$k=${java.net.URLEncoder.encode(v.toString(), "UTF-8")}"
+        }
     }
 
     private fun ImageType.toPathSegment(): String = when (this) {

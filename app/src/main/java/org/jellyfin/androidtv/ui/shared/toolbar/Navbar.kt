@@ -98,6 +98,18 @@ enum class NavbarActiveButton {
 	None,
 }
 
+/**
+ * Default toolbar buttons used when the Tentacle toolbar config can't be fetched
+ * (network error / non-200). Avoids rendering a toolbar with only Home + Settings.
+ */
+internal val DEFAULT_TOOLBAR_BUTTONS = listOf(
+	ToolbarButton(id = "search", enabled = true),
+	ToolbarButton(id = "discover", enabled = true),
+	ToolbarButton(id = "activity", enabled = true),
+	ToolbarButton(id = "favorites", enabled = true),
+	ToolbarButton(id = "libraries", enabled = true),
+)
+
 
 @Composable
 fun Navbar(
@@ -115,11 +127,22 @@ fun Navbar(
 	val tentacleRepository = koinInject<TentacleRepository>()
 	val activityDownloadCount by tentacleRepository.activityDownloadCount.collectAsState()
 
-	// Fetch toolbar config from Tentacle plugin (re-fetches when toolbarRefreshKey changes)
-	var toolbarButtons by remember { mutableStateOf<List<ToolbarButton>>(emptyList()) }
+	// Fetch toolbar config from Tentacle plugin (re-fetches when toolbarRefreshKey changes).
+	// Start with the documented defaults so the toolbar is never empty while loading or
+	// if the fetch fails. A successful (even empty) response replaces them.
+	var toolbarButtons by remember { mutableStateOf(DEFAULT_TOOLBAR_BUTTONS) }
 	var toolbarRefreshKey by remember { mutableIntStateOf(0) }
 	LaunchedEffect(toolbarRefreshKey) {
-		toolbarButtons = tentacleRepository.getToolbarConfig()
+		// Retry a few times on failure, then keep showing the defaults.
+		repeat(3) { attempt ->
+			val config = tentacleRepository.getToolbarConfig()
+			if (config != null) {
+				toolbarButtons = config
+				return@LaunchedEffect
+			}
+			if (attempt < 2) kotlinx.coroutines.delay(3_000)
+		}
+		// All attempts failed — leave the default button set in place.
 	}
 
 	// Background polling so badge is populated even before visiting the Activity tab.
@@ -138,17 +161,21 @@ fun Navbar(
 		}
 	}
 
-	// React immediately when Jellyfin library changes — refresh activity badge + toolbar config
-	LaunchedEffect(api) {
-		try {
-			api.webSocket.subscribe<LibraryChangedMessage>().collect { message ->
-				if (message.data?.itemsAdded?.isNotEmpty() == true) {
-					try { tentacleRepository.getActivity() } catch (_: Exception) {}
+	// React immediately when Jellyfin library changes — refresh activity badge + toolbar config.
+	// Gated to the STARTED lifecycle so the WebSocket subscription is torn down when the
+	// navbar isn't visible and re-established on return.
+	LaunchedEffect(api, lifecycleOwner) {
+		lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+			try {
+				api.webSocket.subscribe<LibraryChangedMessage>().collect { message ->
+					if (message.data?.itemsAdded?.isNotEmpty() == true) {
+						try { tentacleRepository.getActivity() } catch (_: Exception) {}
+					}
+					// Re-fetch toolbar config in case it changed
+					toolbarRefreshKey++
 				}
-				// Re-fetch toolbar config in case it changed
-				toolbarRefreshKey++
-			}
-		} catch (_: Exception) {}
+			} catch (_: Exception) {}
+		}
 	}
 
 	val userPreferences = koinInject<UserPreferences>()

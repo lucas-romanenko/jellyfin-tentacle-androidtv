@@ -138,6 +138,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	// Dirty flag: set true when a WebSocket event fires while the fragment is paused.
 	// On resume, only refresh if something actually changed — avoids full re-fetch
 	// every time the user navigates back from Search/Discover/etc.
+	// @Volatile: written from WebSocket coroutines, read/written from onResume (main).
+	@Volatile
 	private var tentacleDirty = false
 
 	// Index in the adapter where content rows start (after notifications + nowPlaying)
@@ -432,7 +434,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			UserPreferences.cardFocusExpansion.key,
 		)
 		val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-			if (key in watchedKeys && isAdded) {
+			if (key in watchedKeys && isAdded && !isStateSaved) {
 				parentFragmentManager.beginTransaction()
 					.replace(R.id.rowsFragment, HomeRowsFragment())
 					.commitNow()
@@ -491,8 +493,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		lifecycleScope.launch {
 			sessionRepository.currentSession
 				.onEach { session ->
-					// When session changes (user switch), clear caches and recreate fragment
-					if (session != null && adapter.size() > 0) {
+					// When session changes (user switch), clear caches and recreate fragment.
+					// Guard against committing after state save (would throw IllegalStateException).
+					if (session != null && adapter.size() > 0 && isAdded && !isStateSaved) {
 						tentacleRepository.resetAvailabilityCache()
 						Timber.i("Session changed to user ${session.userId}, recreating home fragment")
 						parentFragmentManager.beginTransaction()

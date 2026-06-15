@@ -41,7 +41,7 @@ android {
 	productFlavors {
 		create("github") {
 			dimension = "distribution"
-			buildConfigField("boolean", "ENABLE_OTA_UPDATES", "false")
+			buildConfigField("boolean", "ENABLE_OTA_UPDATES", "true")
 		}
 
 		create("playstore") {
@@ -99,8 +99,9 @@ android {
 		debug {
 			// Use different application id to run release and debug at the same time
 			applicationIdSuffix = ".debug"
-			isMinifyEnabled = true
-			isShrinkResources = true
+			// Keep R8 off for debug: faster iteration and unobfuscated stack traces.
+			isMinifyEnabled = false
+			isShrinkResources = false
 			proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
 			
 			// Set package names used in various XML files (must match applicationId for provider authorities)

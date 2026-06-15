@@ -40,13 +40,16 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
+import androidx.lifecycle.repeatOnLifecycle
 import coil3.compose.AsyncImage
+import coil3.request.crossfade
 import kotlinx.coroutines.delay
 import org.jellyfin.androidtv.data.repository.ActivityDownload
 import org.jellyfin.androidtv.data.repository.ActivityRecentlyDownloaded
@@ -73,6 +76,29 @@ private fun buildPosterUrl(path: String?): String? {
 	return "$TMDB_IMAGE_BASE$path"
 }
 
+/**
+ * Poster image for activity cards. Crossfades in, and on load failure leaves the
+ * dark card background visible (set by the parent Box) instead of a blank rect.
+ * Coil sizes the decode to the composable bounds, so the w342 bitmap isn't
+ * decoded oversized for the small (150dp) cards.
+ */
+@Composable
+private fun PosterImage(path: String?, contentDescription: String?) {
+	val context = LocalContext.current
+	val model = remember(path) {
+		coil3.request.ImageRequest.Builder(context)
+			.data(buildPosterUrl(path))
+			.crossfade(true)
+			.build()
+	}
+	AsyncImage(
+		model = model,
+		contentDescription = contentDescription,
+		contentScale = ContentScale.Crop,
+		modifier = Modifier.fillMaxSize(),
+	)
+}
+
 class ActivityFragment : Fragment() {
 	private val tentacleRepository by inject<TentacleRepository>()
 	private val navigationRepository by inject<NavigationRepository>()
@@ -87,12 +113,16 @@ class ActivityFragment : Fragment() {
 			var isLoading by remember { mutableStateOf(true) }
 			val contentFocusRequester = remember { FocusRequester() }
 
-			// Poll for activity updates
-			LaunchedEffect(Unit) {
-				while (true) {
-					activity = tentacleRepository.getActivity()
-					isLoading = false
-					delay(5_000)
+			// Poll for activity updates every 3s while the screen is visible.
+			// repeatOnLifecycle stops polling when the fragment is not STARTED.
+			val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+			LaunchedEffect(lifecycleOwner) {
+				lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+					while (true) {
+						activity = tentacleRepository.getActivity()
+						isLoading = false
+						delay(3_000)
+					}
 				}
 			}
 
@@ -216,12 +246,7 @@ private fun DownloadCard(download: ActivityDownload) {
 				)
 		) {
 			if (download.posterPath != null) {
-				AsyncImage(
-					model = buildPosterUrl(download.posterPath),
-					contentDescription = download.title,
-					contentScale = ContentScale.Crop,
-					modifier = Modifier.fillMaxSize(),
-				)
+				PosterImage(path = download.posterPath, contentDescription = download.title)
 			} else {
 				Box(
 					modifier = Modifier.fillMaxSize(),
@@ -432,12 +457,7 @@ private fun RecentlyDownloadedCard(
 				),
 		) {
 			if (item.posterPath != null) {
-				AsyncImage(
-					model = buildPosterUrl(item.posterPath),
-					contentDescription = item.title,
-					contentScale = ContentScale.Crop,
-					modifier = Modifier.fillMaxSize(),
-				)
+				PosterImage(path = item.posterPath, contentDescription = item.title)
 			} else {
 				Box(
 					modifier = Modifier.fillMaxSize(),
@@ -574,12 +594,7 @@ private fun UnreleasedCard(item: ActivityUnreleased) {
 				)
 		) {
 			if (item.posterPath != null) {
-				AsyncImage(
-					model = buildPosterUrl(item.posterPath),
-					contentDescription = item.title,
-					contentScale = ContentScale.Crop,
-					modifier = Modifier.fillMaxSize(),
-				)
+				PosterImage(path = item.posterPath, contentDescription = item.title)
 			} else {
 				Box(
 					modifier = Modifier.fillMaxSize(),

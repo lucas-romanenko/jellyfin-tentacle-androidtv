@@ -16,12 +16,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.guava.future
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.jellyfin.playback.core.PlaybackManager
 import org.jellyfin.playback.core.model.PlayState
 import org.jellyfin.playback.core.model.PlaybackOrder
 import org.jellyfin.playback.core.model.RepeatMode
+import org.jellyfin.playback.core.queue.QueueEntry
 import org.jellyfin.playback.core.queue.metadata
 import org.jellyfin.playback.core.queue.queue
 import timber.log.Timber
@@ -35,13 +35,31 @@ internal class MediaSessionPlayer(
 	private val state: org.jellyfin.playback.core.PlayerState,
 	private val manager: PlaybackManager,
 ) : SimpleBasePlayer(looper) {
+	/**
+	 * Cached neighbouring queue entries. [getState] runs on the main thread and must not call the
+	 * suspend [org.jellyfin.playback.core.queue.Queue.peekPrevious]/[peekNext] (some queue suppliers
+	 * are network-backed). These are refreshed asynchronously whenever the queue or playback order
+	 * changes, then [invalidateState] is triggered so the cached values are picked up.
+	 */
+	@Volatile
+	private var cachedCurrent: QueueEntry? = null
+
+	@Volatile
+	private var cachedPrevious: QueueEntry? = null
+
+	@Volatile
+	private var cachedNext: QueueEntry? = null
+
 	init {
 		// Invalidate mediasession state when certain player state changes
-		manager.queue.entry.invalidateStateOnEach(scope)
 		state.playState.invalidateStateOnEach(scope)
 		state.videoSize.invalidateStateOnEach(scope)
 		state.speed.invalidateStateOnEach(scope)
-		state.playbackOrder.invalidateStateOnEach(scope)
+
+		// Queue neighbours depend on the current entry and the playback order, so refresh the
+		// cached previous/current/next entries (off the main thread) when either changes.
+		manager.queue.entry.refreshQueueCacheOnEach(scope)
+		state.playbackOrder.refreshQueueCacheOnEach(scope)
 	}
 
 	// Little helper function for the init block
@@ -49,6 +67,20 @@ internal class MediaSessionPlayer(
 		scope: CoroutineScope,
 	) = onEach {
 		withContext(Dispatchers.Main) { invalidateState() }
+	}.launchIn(scope)
+
+	private fun <T> StateFlow<T>.refreshQueueCacheOnEach(
+		scope: CoroutineScope,
+	) = onEach {
+		val current = manager.queue.entry.value
+		val previous = if (current != null) manager.queue.peekPrevious() else null
+		val next = if (current != null) manager.queue.peekNext() else null
+		withContext(Dispatchers.Main) {
+			cachedCurrent = current
+			cachedPrevious = previous
+			cachedNext = next
+			invalidateState()
+		}
 	}.launchIn(scope)
 
 	override fun getState(): State = State.Builder().apply {
@@ -88,35 +120,38 @@ internal class MediaSessionPlayer(
 			// add(COMMAND_GET_TRACKS)
 		}.build())
 
-		runBlocking {
-			val current = manager.queue.entry.value
+		// Read from the asynchronously-maintained cache so getState() never blocks the main thread.
+		// The live current entry is a non-suspend StateFlow read; previous/next come from the cache
+		// (refreshed off-thread and re-invalidated when they change, so any staleness is transient).
+		val current = manager.queue.entry.value
 
-			if (current != null) {
-				val previous = manager.queue.peekPrevious()
-				val next = manager.queue.peekNext()
+		if (current != null) {
+			// Only trust cached neighbours if they were computed for this current entry.
+			val neighboursValid = cachedCurrent === current
+			val previous = if (neighboursValid) cachedPrevious else null
+			val next = if (neighboursValid) cachedNext else null
 
-				val playlist = listOfNotNull(previous, current, next)
-					.distinctBy { it.metadata.mediaId }
-					.map {
-						MediaItemData.Builder(requireNotNull(it.metadata.mediaId)).apply {
-							setMediaItem(it.metadata.toMediaItem())
-							setDurationUs(it.metadata.duration?.inWholeMicroseconds ?: C.TIME_UNSET)
-						}.build()
-					}
-				setPlaylist(playlist)
+			val playlist = listOfNotNull(previous, current, next)
+				.distinctBy { it.metadata.mediaId }
+				.map {
+					MediaItemData.Builder(requireNotNull(it.metadata.mediaId)).apply {
+						setMediaItem(it.metadata.toMediaItem())
+						setDurationUs(it.metadata.duration?.inWholeMicroseconds ?: C.TIME_UNSET)
+					}.build()
+				}
+			setPlaylist(playlist)
 
-				setPlaybackState(when (state.playState.value) {
-					PlayState.STOPPED -> STATE_IDLE
-					PlayState.PLAYING -> STATE_READY
-					PlayState.PAUSED -> STATE_READY
-					PlayState.ERROR -> STATE_ENDED
-				})
+			setPlaybackState(when (state.playState.value) {
+				PlayState.STOPPED -> STATE_IDLE
+				PlayState.PLAYING -> STATE_READY
+				PlayState.PAUSED -> STATE_READY
+				PlayState.ERROR -> STATE_ENDED
+			})
 
-				setCurrentMediaItemIndex(if (previous == null || playlist.size <= 1) 0 else 1)
-			} else {
-				setPlaybackState(STATE_IDLE)
-				setCurrentMediaItemIndex(C.INDEX_UNSET)
-			}
+			setCurrentMediaItemIndex(if (previous == null || playlist.size <= 1) 0 else 1)
+		} else {
+			setPlaybackState(STATE_IDLE)
+			setCurrentMediaItemIndex(C.INDEX_UNSET)
 		}
 
 		setContentPositionMs { state.positionInfo.active.inWholeMilliseconds }

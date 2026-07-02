@@ -46,7 +46,6 @@ import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleMediaB
 import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleMediaBarSourceTypeScreen
 import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleNavbarPositionScreen
 import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleParentalControlsScreen
-import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleSeasonalSurpriseScreen
 import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleShuffleContentTypeScreen
 import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleSyncPlayScreen
 import org.jellyfin.androidtv.ui.settings.screen.tentacle.SettingsTentacleThemeMusicVolumeScreen
@@ -131,7 +130,6 @@ object Routes {
 	const val TENTACLE_MEDIA_BAR_OPACITY = "/tentacle/media-bar-opacity"
 	const val TENTACLE_MEDIA_BAR_COLOR = "/tentacle/media-bar-color"
 	const val TENTACLE_THEME_MUSIC_VOLUME = "/tentacle/theme-music-volume"
-	const val TENTACLE_SEASONAL_SURPRISE = "/tentacle/seasonal-surprise"
 	@Deprecated("Moved to HOME_ROWS_IMAGE_TYPE", replaceWith = ReplaceWith("HOME_ROWS_IMAGE_TYPE"))
 	const val TENTACLE_HOME_ROWS_IMAGE = "/tentacle/home-rows-image"
 	const val TENTACLE_DETAILS_BLUR = "/tentacle/details-blur"
@@ -386,9 +384,6 @@ val routes = mapOf<String, RouteComposable>(
 	},
 	Routes.TENTACLE_THEME_MUSIC_VOLUME to {
 		SettingsTentacleThemeMusicVolumeScreen()
-	},
-	Routes.TENTACLE_SEASONAL_SURPRISE to {
-		SettingsTentacleSeasonalSurpriseScreen()
 	},
 	Routes.TENTACLE_HOME_ROWS_IMAGE to {
 		SettingsTentacleHomeRowsImageScreen()

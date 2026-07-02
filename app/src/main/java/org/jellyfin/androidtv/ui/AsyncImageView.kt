@@ -48,8 +48,10 @@ class AsyncImageView @JvmOverloads constructor(
 	 * The duration of the crossfade when changing switching the images of the url, blurhash and
 	 * placeholder.
 	 */
+	// Default 0 (no crossfade): the 100ms fade added a per-card alpha animation during
+	// fast row scrolling. Views that want a fade set crossfadeDuration explicitly.
 	@Suppress("MagicNumber")
-	var crossFadeDuration = styledAttributes.getInt(R.styleable.AsyncImageView_crossfadeDuration, 100).milliseconds
+	var crossFadeDuration = styledAttributes.getInt(R.styleable.AsyncImageView_crossfadeDuration, 0).milliseconds
 
 	/**
 	 * Shape the image to a circle and remove all corners.

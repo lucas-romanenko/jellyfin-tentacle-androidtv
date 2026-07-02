@@ -855,7 +855,7 @@
     <string name="pref_home_section_settings_description">Continue watching, libraries, folder view</string>
     <string name="pref_media_bar_settings_description">Featured content carousel on home screen</string>
     <string name="pref_theme_music_settings_description">Background music on detail screens</string>
-    <string name="pref_appearance_settings_description">Seasonal effects, background blur</string>
+    <string name="pref_appearance_settings_description">Background blur</string>
     <string name="pref_ratings_title">Ratings</string>
     <string name="pref_ratings_settings_description">External ratings and episode ratings</string>
 
@@ -980,16 +980,6 @@
     <string name="pref_parental_controls_rating_allowed">Allowed</string>
     <string name="pref_parental_controls_category_info">Information</string>
     <string name="pref_parental_controls_info_description">Selected ratings will be hidden from home rows, libraries, search, and media bar across all servers</string>
-
-    <!-- Seasonal Surprise -->
-    <string name="pref_seasonal_surprise">Seasonal Surprise</string>
-    <string name="pref_seasonal_surprise_description">Decorative seasonal animations on home screen. Disable if experiencing lag.</string>
-    <string name="pref_seasonal_none">None</string>
-    <string name="pref_seasonal_winter">Winter ❄️</string>
-    <string name="pref_seasonal_spring">Spring 🌸</string>
-    <string name="pref_seasonal_summer">Summer ☀️</string>
-    <string name="pref_seasonal_halloween">Halloween 🎃</string>
-    <string name="pref_seasonal_fall">Fall 🍁</string>
 
     <!-- SyncPlay Settings -->
     <string name="pref_syncplay">SyncPlay</string>

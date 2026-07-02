@@ -377,10 +377,13 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 				_contentReady.value = true
 
-				// Pre-warm Coil cache for poster images in the first few rows.
+				// Pre-warm Coil cache for poster images in the FIRST row only.
+				// Leanback already binds/loads visible cards, so warming more rows just
+				// competes with the render for network/decode threads right when the
+				// home screen is trying to become interactive.
 				// Collect image URLs on Main thread (adapter access), then load on IO.
 				val imageUrls = mutableListOf<String>()
-				val rowsToPrewarm = 3
+				val rowsToPrewarm = 1
 				var rowCount = 0
 				for (i in contentRowStartIndex until adapter.size()) {
 					if (rowCount >= rowsToPrewarm) break

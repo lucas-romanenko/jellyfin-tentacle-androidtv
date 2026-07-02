@@ -101,11 +101,6 @@ class HomeFragment : Fragment() {
 	private var muteButton: ImageButton? = null
 	private var loadingOverlay: View? = null
 	private lateinit var _isTrailerMuted: kotlinx.coroutines.flow.MutableStateFlow<Boolean>
-	private var snowfallView: SnowfallView? = null
-	private var petalfallView: PetalfallView? = null
-	private var leaffallView: LeaffallView? = null
-	private var summerView: SummerView? = null
-	private var halloweenView: HalloweenView? = null
 
 	override fun onCreateView(
 		inflater: LayoutInflater,
@@ -120,11 +115,6 @@ class HomeFragment : Fragment() {
 		summaryView = view.findViewById(R.id.summary)
 		backgroundImage = view.findViewById(R.id.backgroundImage)
 		trailerWebView = view.findViewById(R.id.trailerWebView)
-		snowfallView = view.findViewById(R.id.snowfallView)
-		petalfallView = view.findViewById(R.id.petalfallView)
-		leaffallView = view.findViewById(R.id.leaffallView)
-		summerView = view.findViewById(R.id.summerView)
-		halloweenView = view.findViewById(R.id.halloweenView)
 		muteButton = view.findViewById(R.id.muteButton)
 		loadingOverlay = view.findViewById(R.id.loadingOverlay)
 
@@ -187,14 +177,12 @@ class HomeFragment : Fragment() {
 	override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
 		super.onViewCreated(view, savedInstanceState)
 
-		setupSeasonalSurprise()
 		setupNotificationToast(view)
 		startNotificationPolling()
 
 		settingsViewModel.settingsClosedCounter
 			.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
 			.onEach {
-				setupSeasonalSurprise()
 				view?.let { setupNavbar(it) }
 			}
 			.launchIn(lifecycleScope)
@@ -462,49 +450,6 @@ class HomeFragment : Fragment() {
 		}
 	}
 
-	/**
-	 * Setup the seasonal surprise effects based on user selection.
-	 * Options: none, winter (❄️), spring (🌸🌼), summer (☀️🏐), fall (🍁🍂)
-	 */
-	private fun setupSeasonalSurprise() {
-		val selection = userPreferences[UserPreferences.seasonalSurprise]
-
-		snowfallView?.isVisible = false
-		snowfallView?.stopSnowing()
-		petalfallView?.isVisible = false
-		petalfallView?.stopFalling()
-		leaffallView?.isVisible = false
-		leaffallView?.stopFalling()
-		summerView?.isVisible = false
-		summerView?.stopEffect()
-		halloweenView?.isVisible = false
-		halloweenView?.stopEffect()
-		
-		when (selection) {
-			"winter" -> {
-				snowfallView?.isVisible = true
-				snowfallView?.startSnowing()
-			}
-			"spring" -> {
-				petalfallView?.isVisible = true
-				petalfallView?.startFalling()
-			}
-			"summer" -> {
-				summerView?.isVisible = true
-				summerView?.startEffect()
-			}
-			"halloween" -> {
-				halloweenView?.isVisible = true
-				halloweenView?.startEffect()
-			}
-			"fall" -> {
-				leaffallView?.isVisible = true
-				leaffallView?.startFalling()
-			}
-			// "none" or any other value - no effect
-		}
-	}
-
 	override fun onPause() {
 		super.onPause()
 		mediaBarViewModel.stopTrailer()
@@ -517,11 +462,6 @@ class HomeFragment : Fragment() {
 
 	override fun onDestroyView() {
 		super.onDestroyView()
-		snowfallView?.stopSnowing()
-		petalfallView?.stopFalling()
-		leaffallView?.stopFalling()
-		summerView?.stopEffect()
-		halloweenView?.stopEffect()
 		titleView = null
 		logoView = null
 		summaryView = null
@@ -529,11 +469,6 @@ class HomeFragment : Fragment() {
 		backgroundImage = null
 		trailerWebView = null
 		rowsFragment = null
-		snowfallView = null
-		petalfallView = null
-		leaffallView = null
-		summerView = null
-		halloweenView = null
 	}
 }
 

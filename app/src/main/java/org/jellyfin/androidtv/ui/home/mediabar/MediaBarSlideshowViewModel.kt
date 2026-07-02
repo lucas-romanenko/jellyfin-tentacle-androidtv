@@ -273,7 +273,7 @@ class MediaBarSlideshowViewModel(
 							itemId = item.id,
 							imageType = ImageType.BACKDROP,
 							tag = tag,
-							maxWidth = 1920,
+							maxWidth = 1280,
 							quality = 90
 						)
 					} ?: return@mapNotNull null
@@ -612,7 +612,7 @@ class MediaBarSlideshowViewModel(
 								itemId = item.id,
 								imageType = ImageType.BACKDROP,
 								tag = tag,
-								maxWidth = 1920,
+								maxWidth = 1280,
 								quality = 90
 							)
 						},

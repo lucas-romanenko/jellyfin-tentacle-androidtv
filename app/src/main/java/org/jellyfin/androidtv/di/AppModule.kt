@@ -138,12 +138,13 @@ val appModule = module {
 			serviceLoaderEnabled(false)
 			logger(CoilTimberLogger(if (BuildConfig.DEBUG) Logger.Level.Warn else Logger.Level.Error))
 
-			// Configure memory cache - use 40% of available memory for images
-			// TV devices have 2-4GB RAM and benefit from a larger cache to avoid
-			// re-fetching images when scrolling through rows
+			// Configure memory cache - use 30% of available memory for images.
+			// 40% with strong references starved low-RAM TV sticks (1-1.5GB, not
+			// flagged isLowRamDevice) and drove GC churn during scroll; 30% is a
+			// safer balance that still avoids re-fetching while scrolling rows.
 			memoryCache {
 				coil3.memory.MemoryCache.Builder()
-					.maxSizePercent(context, percent = 0.40)
+					.maxSizePercent(context, percent = 0.30)
 					.strongReferencesEnabled(true)
 					.build()
 			}

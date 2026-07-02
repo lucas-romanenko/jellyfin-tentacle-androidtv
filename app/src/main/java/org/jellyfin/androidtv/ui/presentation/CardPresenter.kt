@@ -25,6 +25,7 @@ import org.koin.compose.viewmodel.koinActivityViewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.findViewTreeCompositionContext
@@ -124,6 +125,12 @@ class CardPresenter @JvmOverloads constructor(
 			// Focus is managed entirely by the FocusAwareCardContainer wrapper.
 			isFocusable = false
 			setParentCompositionContext(parent.findViewTreeCompositionContext())
+			// Keep the composition alive across Leanback pooling — dispose only when the
+			// row fragment's lifecycle is destroyed. The DEFAULT strategy disposes the
+			// composition when a card is released to the RecycledViewPool, so reused cards
+			// recompose from scratch on every scroll instead of cheaply rebinding via the
+			// _item StateFlow. This is the main reason view recycling wasn't saving work.
+			setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
 		}
 
 		// Set view tree owners on the container so they propagate to ComposeView
@@ -467,7 +474,7 @@ private fun CardViewHolderContent(
 							if (showInfo && title != null) {
 								val focusModifier = if (focused) Modifier.basicMarquee(
 									iterations = Int.MAX_VALUE,
-										initialDelayMillis = 0,
+										initialDelayMillis = 1500,
 									) else Modifier
 
 									Box(
@@ -500,7 +507,7 @@ private fun CardViewHolderContent(
 	if (usePreview) {
 		val focusModifier = if (focused) Modifier.basicMarquee(
 			iterations = Int.MAX_VALUE,
-			initialDelayMillis = 0,
+			initialDelayMillis = 1500,
 		) else Modifier
 
 		ItemPreview(

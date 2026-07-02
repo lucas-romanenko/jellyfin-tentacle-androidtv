@@ -80,11 +80,12 @@ android {
 				signingConfig = signingConfigs.getByName("release")
 			}
 
-			// This is THE single shippable build: full R8 minify + resource shrink, NOT
-			// debuggable. There is no separate debug build to diverge from — you install and
-			// test this exact APK, so the "works in debug, breaks as a release APK" surprise
-			// can't happen. (Trade-off: you can't attach Android Studio's debugger; sideload
-			// the APK and use logcat instead.)
+			// THE single shippable build: full R8 minify + resource shrink, NOT debuggable
+			// (best runtime performance — debuggable disables ART optimizations, which hurts
+			// smooth TV scrolling). There is no separate debug build to trust: validate THIS
+			// exact APK by sideloading it and reading `adb logcat` (that is how we diagnose;
+			// we do not need the Studio debugger). So "works in debug, breaks as a release
+			// APK" can't happen — you only ever test the artifact you ship.
 			isDebuggable = false
 			isMinifyEnabled = true
 			isShrinkResources = true

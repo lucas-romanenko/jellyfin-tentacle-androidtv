@@ -220,6 +220,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// The Tentacle dashboard controls the full row order including built-in sections.
 			val tentacleAvailable = tentacleRepository.checkAvailable()
 
+			// Fetch sections concurrently with the hero-config fetch below — they are
+			// independent round-trips, so overlapping them (instead of getHeroConfig then
+			// getSections serially) shortens how long the loading overlay sits there.
+			val sectionsDeferred = if (tentacleAvailable) async { tentacleRepository.getSections() } else null
+
 			// Only add media bar row if Tentacle hero is actually enabled and configured
 			if (userSettingPreferences[UserSettingPreferences.mediaBarEnabled] && tentacleAvailable) {
 				val heroConfig = tentacleRepository.getHeroConfig()
@@ -241,7 +246,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			var tentacleSections: List<org.jellyfin.androidtv.data.repository.TentacleSection> = emptyList()
 
 			if (tentacleAvailable) {
-				val sectionsResponse = tentacleRepository.getSections()
+				val sectionsResponse = sectionsDeferred?.await()
 				if (sectionsResponse != null) {
 					tentacleSections = sectionsResponse.sections.filter { it.type == "row" || it.type == "builtin" }
 

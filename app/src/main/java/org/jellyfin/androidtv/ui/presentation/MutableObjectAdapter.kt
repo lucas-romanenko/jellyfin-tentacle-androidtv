@@ -36,6 +36,18 @@ open class MutableObjectAdapter<T : Any> : ObjectAdapter, Iterable<T> {
 		notifyItemRangeInserted(index, 1)
 	}
 
+	/**
+	 * Bulk-append with a SINGLE range notification. Much cheaper than calling add()
+	 * per item: building a home row of 20 items goes from 20 notifyItemRangeInserted
+	 * dispatches (each scheduling RecyclerView work) down to one.
+	 */
+	fun addAll(elements: Collection<T>) {
+		if (elements.isEmpty()) return
+		val start = data.size
+		data.addAll(elements)
+		notifyItemRangeInserted(start, elements.size)
+	}
+
 	fun set(index: Int, element: T) {
 		data.set(index, element)
 		notifyItemRangeChanged(index, 1)

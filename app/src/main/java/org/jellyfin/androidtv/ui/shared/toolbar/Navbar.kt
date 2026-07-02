@@ -41,6 +41,7 @@ import coil3.compose.rememberAsyncImagePainter
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -167,7 +168,9 @@ fun Navbar(
 	LaunchedEffect(api, lifecycleOwner) {
 		lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
 			try {
-				api.webSocket.subscribe<LibraryChangedMessage>().collect { message ->
+				// Coalesce bursts: the backend fires LibraryChanged on every playlist
+				// mutation, so debounce to one activity/toolbar refresh after events settle.
+				api.webSocket.subscribe<LibraryChangedMessage>().debounce(1000).collect { message ->
 					if (message.data?.itemsAdded?.isNotEmpty() == true) {
 						try { tentacleRepository.getActivity() } catch (_: Exception) {}
 					}

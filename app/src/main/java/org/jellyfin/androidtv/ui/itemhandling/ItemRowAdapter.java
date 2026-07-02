@@ -786,12 +786,17 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
 
     private void loadStaticItems() {
         if (mItems != null) {
+            // Build all row items first, then insert them with a SINGLE range
+            // notification instead of one notifyItemRangeInserted per item. A home
+            // of 8 rows x 20 items drops from ~160 dispatches to 8 on the UI thread.
+            java.util.List<Object> rowItems = new java.util.ArrayList<>(mItems.size());
             for (org.jellyfin.sdk.model.api.BaseItemDto item : mItems) {
                 if (serverId != null && item.getServerId() == null) {
                     item = JavaCompat.copyWithServerId(item, serverId);
                 }
-                add(new BaseItemDtoBaseRowItem(item, false, false, BaseRowItemSelectAction.ShowDetails, false));
+                rowItems.add(new BaseItemDtoBaseRowItem(item, false, false, BaseRowItemSelectAction.ShowDetails, false));
             }
+            addAll(rowItems);
             itemsLoaded = mItems.size();
         } else {
             removeRow();

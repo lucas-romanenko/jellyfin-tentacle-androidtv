@@ -24,6 +24,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
@@ -342,6 +343,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			// Add sections to layout
 			withContext(Dispatchers.Main) {
+				// The fragment may have been detached while we were loading on IO
+				// (fast navigation, or a user-switch / pref-change recreate). Touching
+				// requireContext()/requireActivity() below would throw
+				// IllegalStateException and crash the app, so bail out cleanly.
+				if (!isActive || !isAdded) return@withContext
 				// Add rows in order — all rows use the shared card presenter
 				// for RecycledViewPool sharing across rows
 				notificationsRow.addToRowsAdapter(requireContext(), sharedCardPresenter, adapter as MutableObjectAdapter<Row>)
@@ -354,6 +360,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				// selection callback fires before HomeFragment's observers are ready,
 				// so the first item's title/summary doesn't show without this.
 				view?.post {
+					if (!isAdded) return@post
 					val firstRow = (0 until adapter.size())
 						.map { adapter[it] }
 						.filterIsInstance<ListRow>()
@@ -469,14 +476,19 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					.launchIn(this)
 
 				api.webSocket.subscribe<LibraryChangedMessage>()
+					// Coalesce bursts of events into a single refresh. The backend fires
+					// LibraryChangedMessage on every playlist mutation (each webhook / sync
+					// / toggle), and the backend playlist refresh clears-and-re-adds items,
+					// so refreshing on every event reads playlists mid-rebuild and makes
+					// rows blank out and reorder. Debouncing waits until events settle
+					// (which also gives Jellyfin time to finish indexing) before refreshing.
+					.debounce(3.seconds)
 					.onEach {
 						try {
 							if (!isAdded) return@onEach
-							Timber.i("LibraryChangedMessage received, refreshing rows + Tentacle home")
+							Timber.i("LibraryChangedMessage settled, refreshing rows + Tentacle home")
 							refreshRows(force = true, delayed = false)
 							if (tentacleRepository.checkAvailable()) {
-								// Small delay to let Jellyfin finish indexing playlist changes
-								delay(2.seconds)
 								if (!isAdded) return@onEach
 								refreshTentacleRowsInPlace()
 							}
@@ -715,6 +727,13 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			withContext(Dispatchers.Main) {
 				for ((playlistId, newItems) in updates) {
 					val rowAdapter = tentacleRowAdapters[playlistId] ?: continue
+					// A transiently-empty fetch (the backend clears-and-re-adds the
+					// Jellyfin playlist during a refresh) would blank the row. Keep the
+					// last-known items instead of flashing an empty row.
+					if (newItems.isEmpty()) {
+						Timber.d("Skipping empty in-place refresh for Tentacle row $playlistId (keeping existing items)")
+						continue
+					}
 					rowAdapter.replaceStaticItems(newItems)
 					Timber.d("Refreshed Tentacle row $playlistId with ${newItems.size} items")
 				}
@@ -830,7 +849,15 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// Build full list and use replaceAll — existing rows matched by reference
 			// dispatch notifyItemMoved, preserving both vertical and horizontal scroll.
 			val prefixRows = (0 until contentRowStartIndex).mapNotNull { rowsAdapter[it] }
-			val fullList = prefixRows + newContentRows
+			// Preserve the media bar / hero row: it lives at contentRowStartIndex, is a
+			// MediaBarRow (not a ListRow) and is not part of `newSections`, so it would
+			// otherwise be dropped by the rebuild (hero disappears after a refresh).
+			val mediaBarRowObj = (contentRowStartIndex until rowsAdapter.size())
+				.map { rowsAdapter[it] }
+				.filterIsInstance<MediaBarRow>()
+				.firstOrNull()
+			hasMediaBarAtPosition0 = mediaBarRowObj != null
+			val fullList = prefixRows + listOfNotNull(mediaBarRowObj) + newContentRows
 
 			rowsAdapter.replaceAll(
 				fullList,

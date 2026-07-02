@@ -800,14 +800,18 @@ class MediaBarSlideshowViewModel(
 		if (!userSettingPreferences[UserSettingPreferences.mediaBarEnabled]) return
 		if (!userSettingPreferences[UserSettingPreferences.mediaBarTrailerPreview]) return
 		if (items.isEmpty()) return
+		// Don't burn NewPipe/SponsorBlock CPU + network speculatively when the media
+		// bar isn't focused (the user is browsing other rows).
+		if (!_isFocused.value) return
 		val userId = currentUserId ?: return
 
 		preResolveJob?.cancel()
 		preResolveJob = viewModelScope.launch(Dispatchers.IO) {
+			// Pre-resolve only the NEXT slide (the common auto-advance direction).
+			// Was +1, -1, and +2 — three YouTube extractions per slide, mostly
+			// speculative. Backward / skip navigation resolves on demand instead.
 			val indicesToPreResolve = mutableSetOf<Int>()
 			indicesToPreResolve.add((currentIndex + 1) % items.size)
-			indicesToPreResolve.add(if (currentIndex == 0) items.size - 1 else currentIndex - 1)
-			indicesToPreResolve.add((currentIndex + 2) % items.size)
 
 			for (idx in indicesToPreResolve) {
 				val item = items.getOrNull(idx) ?: continue

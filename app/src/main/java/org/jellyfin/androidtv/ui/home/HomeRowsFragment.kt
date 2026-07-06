@@ -742,6 +742,16 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						Timber.d("Skipping empty in-place refresh for Tentacle row $playlistId (keeping existing items)")
 						continue
 					}
+					// A drastic shrink (new set less than half the current row) almost
+					// always means we caught the playlist mid-rebuild — the backend had
+					// cleared it and only re-added part of the items. Applying that would
+					// collapse a full 30-item row to a handful. Keep the current items;
+					// the next settled refresh restores the full set.
+					val currentCount = rowAdapter.size()
+					if (currentCount > 0 && newItems.size * 2 < currentCount) {
+						Timber.d("Skipping shrinking in-place refresh for Tentacle row $playlistId (${newItems.size} < $currentCount, likely mid-rebuild)")
+						continue
+					}
 					rowAdapter.replaceStaticItems(newItems)
 					Timber.d("Refreshed Tentacle row $playlistId with ${newItems.size} items")
 				}

@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -170,7 +170,14 @@ class SearchFragment : Fragment() {
 									horizontalArrangement = Arrangement.spacedBy(12.dp),
 									modifier = Modifier.fillMaxWidth(),
 								) {
-									items(tmdbResults, key = { if (it.tmdbId > 0) "tmdb:${it.tmdbId}" else "tvdb:${it.tvdbId}" }) { item ->
+									// Key MUST be unique per item or Compose crashes. Prefixing with the
+									// list index guarantees uniqueness even when results share ids —
+									// e.g. multiple unidentified items (tmdbId=0 && tvdbId=0) or a movie
+									// and series with the same numeric TMDB id.
+									itemsIndexed(
+										tmdbResults,
+										key = { index, it -> "$index:${it.mediaType}:${it.tmdbId}:${it.tvdbId}" },
+									) { _, item ->
 										DiscoverCard(
 											item = item,
 											onClick = {

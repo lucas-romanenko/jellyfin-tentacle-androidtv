@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -171,7 +172,13 @@ private fun DiscoverSectionRow(
 			contentPadding = PaddingValues(horizontal = 48.dp),
 			horizontalArrangement = Arrangement.spacedBy(16.dp),
 		) {
-			items(section.items, key = { if (it.tmdbId > 0) "tmdb:${it.tmdbId}" else "tvdb:${it.tvdbId}" }) { item ->
+			// Index prefix guarantees a unique key even when items share ids (multiple
+			// unidentified items with tmdbId=0 && tvdbId=0, or a movie and series with
+			// the same numeric TMDB id) — a duplicate key crashes Compose.
+			itemsIndexed(
+				section.items,
+				key = { index, it -> "$index:${it.mediaType}:${it.tmdbId}:${it.tvdbId}" },
+			) { _, item ->
 				DiscoverCard(item = item, onClick = { onItemClick(item) })
 			}
 		}

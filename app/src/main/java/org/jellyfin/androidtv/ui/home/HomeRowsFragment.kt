@@ -216,6 +216,63 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// Check for coroutine cancellation
 			if (!isActive) return@launch
 
+			// ── Instant render from on-device cache ─────────────────────────
+			// Rows + hero from the last session render immediately (no network),
+			// then a background refresh revalidates against the plugin and
+			// updates rows in place if anything changed.
+			val cachedSections = tentacleRepository.getCachedSections()
+			if (cachedSections != null) {
+				val sections = cachedSections.sections.filter { it.type == "row" || it.type == "builtin" }
+				if (sections.isNotEmpty()) {
+					if (userSettingPreferences[UserSettingPreferences.mediaBarEnabled]) {
+						val heroConfig = tentacleRepository.getCachedHeroConfig()
+						if (heroConfig != null && heroConfig.enabled && heroConfig.playlistId.isNotEmpty()) {
+							rows.add(mediaBarRow)
+							mediaBarViewModel.loadInitialContent(allowCache = true)
+						}
+					}
+					for (section in sections) {
+						when (section.type) {
+							"row" -> {
+								val playlistId = section.playlistId ?: continue
+								val items = tentacleRepository.getCachedSectionItems(playlistId)
+								if (items.isNotEmpty()) {
+									rows.add(
+										HomeFragmentTentacleRow(
+											listOf(TentacleRowData(title = section.displayText, playlistId = playlistId, items = items)),
+											tentacleRowAdapters,
+										)
+									)
+								}
+							}
+							"builtin" -> addBuiltInSection(rows, section.sectionId ?: continue, includeLiveTvRows, cachedViews)
+						}
+					}
+					if (rows.any { it !is HomeFragmentMediaBarRow }) {
+						currentTentacleSectionKeys = sections.map { section ->
+							when (section.type) {
+								"row" -> "playlist:${section.playlistId}"
+								"builtin" -> "builtin:${section.sectionId}"
+								else -> "unknown:${section.id}"
+							}
+						}
+						currentRows = rows
+						renderInitialRows(rows)
+						Timber.i("Home rendered instantly from cache (${rows.size} rows), revalidating in background")
+
+						// Background revalidation — refreshTentacleRowsInPlace fetches
+						// fresh sections + items and diffs against what's on screen.
+						if (tentacleRepository.checkAvailable()) {
+							refreshTentacleRowsInPlace()
+						}
+						return@launch
+					}
+					// Cache produced no content rows — reset and fall through to the network path
+					rows.clear()
+					tentacleRowAdapters.clear()
+				}
+			}
+
 			// Try to load Tentacle dashboard sections (playlists + built-in Jellyfin sections).
 			// The Tentacle dashboard controls the full row order including built-in sections.
 			val tentacleAvailable = tentacleRepository.checkAvailable()
@@ -347,81 +404,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			currentRows = rows
 
 			// Add sections to layout
-			withContext(Dispatchers.Main) {
-				// The fragment may have been detached while we were loading on IO
-				// (fast navigation, or a user-switch / pref-change recreate). Touching
-				// requireContext()/requireActivity() below would throw
-				// IllegalStateException and crash the app, so bail out cleanly.
-				if (!isActive || !isAdded) return@withContext
-				// Add rows in order — all rows use the shared card presenter
-				// for RecycledViewPool sharing across rows
-				notificationsRow.addToRowsAdapter(requireContext(), sharedCardPresenter, adapter as MutableObjectAdapter<Row>)
-				nowPlaying.addToRowsAdapter(requireContext(), sharedCardPresenter, adapter as MutableObjectAdapter<Row>)
-				contentRowStartIndex = adapter.size() // Mark where content rows begin
-				hasMediaBarAtPosition0 = rows.firstOrNull() is HomeFragmentMediaBarRow
-				for (row in rows) row.addToRowsAdapter(requireContext(), sharedCardPresenter, adapter as MutableObjectAdapter<Row>)
-
-				// Populate info area for the initial selected item — the Leanback
-				// selection callback fires before HomeFragment's observers are ready,
-				// so the first item's title/summary doesn't show without this.
-				view?.post {
-					if (!isAdded) return@post
-					val firstRow = (0 until adapter.size())
-						.map { adapter[it] }
-						.filterIsInstance<ListRow>()
-						.firstOrNull() ?: return@post
-					val firstItem = (firstRow.adapter as? MutableObjectAdapter<*>)
-						?.let { ra -> if (ra.size() > 0) ra[0] else null } as? BaseRowItem
-						?: return@post
-					_selectedItemStateFlow.value = SelectedItemState(
-						title = firstItem.getName(requireContext()) ?: "",
-						summary = firstItem.getSummary(requireContext()) ?: "",
-						baseItem = firstItem.baseItem
-					)
-				}
-
-				_contentReady.value = true
-
-				// Pre-warm Coil cache for poster images in the FIRST row only.
-				// Leanback already binds/loads visible cards, so warming more rows just
-				// competes with the render for network/decode threads right when the
-				// home screen is trying to become interactive.
-				// Collect image URLs on Main thread (adapter access), then load on IO.
-				val imageUrls = mutableListOf<String>()
-				val rowsToPrewarm = 1
-				var rowCount = 0
-				for (i in contentRowStartIndex until adapter.size()) {
-					if (rowCount >= rowsToPrewarm) break
-					val listRow = adapter[i] as? ListRow ?: continue
-					val rowAdapter = listRow.adapter as? MutableObjectAdapter<*> ?: continue
-					rowCount++
-					for (j in 0 until minOf(rowAdapter.size(), 10)) {
-						val item = (rowAdapter[j] as? BaseRowItem)?.baseItem ?: continue
-						val imageTag = item.imageTags?.get(org.jellyfin.sdk.model.api.ImageType.PRIMARY) ?: continue
-						imageUrls += api.imageApi.getItemImageUrl(
-							itemId = item.id,
-							imageType = org.jellyfin.sdk.model.api.ImageType.PRIMARY,
-							tag = imageTag,
-							maxHeight = 150,
-						)
-					}
-				}
-				if (imageUrls.isNotEmpty()) {
-					val ctx = context
-					lifecycleScope.launch(Dispatchers.IO) {
-						val loader = ctx?.let { coil3.SingletonImageLoader.get(it) } ?: return@launch
-						for (url in imageUrls) {
-							try {
-								loader.execute(
-									coil3.request.ImageRequest.Builder(ctx)
-										.data(url)
-										.build()
-								)
-							} catch (_: Exception) { }
-						}
-					}
-				}
-			}
+			renderInitialRows(rows)
 		}
 
 		onItemViewClickedListener = CompositeClickedListener().apply {
@@ -528,6 +511,89 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 		// Subscribe to Audio messages
 		mediaManager.addAudioEventListener(this)
+	}
+
+	/**
+	 * Add built rows to the Leanback adapter, publish the initial selected item,
+	 * flag content ready, and pre-warm poster images. Shared by the instant
+	 * cache render and the fresh network render.
+	 */
+	private suspend fun renderInitialRows(rows: List<HomeFragmentRow>) {
+		withContext(Dispatchers.Main) {
+			// The fragment may have been detached while we were loading on IO
+			// (fast navigation, or a user-switch / pref-change recreate). Touching
+			// requireContext()/requireActivity() below would throw
+			// IllegalStateException and crash the app, so bail out cleanly.
+			if (!isActive || !isAdded) return@withContext
+			// Add rows in order — all rows use the shared card presenter
+			// for RecycledViewPool sharing across rows
+			notificationsRow.addToRowsAdapter(requireContext(), sharedCardPresenter, adapter as MutableObjectAdapter<Row>)
+			nowPlaying.addToRowsAdapter(requireContext(), sharedCardPresenter, adapter as MutableObjectAdapter<Row>)
+			contentRowStartIndex = adapter.size() // Mark where content rows begin
+			hasMediaBarAtPosition0 = rows.firstOrNull() is HomeFragmentMediaBarRow
+			for (row in rows) row.addToRowsAdapter(requireContext(), sharedCardPresenter, adapter as MutableObjectAdapter<Row>)
+
+			// Populate info area for the initial selected item — the Leanback
+			// selection callback fires before HomeFragment's observers are ready,
+			// so the first item's title/summary doesn't show without this.
+			view?.post {
+				if (!isAdded) return@post
+				val firstRow = (0 until adapter.size())
+					.map { adapter[it] }
+					.filterIsInstance<ListRow>()
+					.firstOrNull() ?: return@post
+				val firstItem = (firstRow.adapter as? MutableObjectAdapter<*>)
+					?.let { ra -> if (ra.size() > 0) ra[0] else null } as? BaseRowItem
+					?: return@post
+				_selectedItemStateFlow.value = SelectedItemState(
+					title = firstItem.getName(requireContext()) ?: "",
+					summary = firstItem.getSummary(requireContext()) ?: "",
+					baseItem = firstItem.baseItem
+				)
+			}
+
+			_contentReady.value = true
+
+			// Pre-warm Coil cache for poster images in the FIRST row only.
+			// Leanback already binds/loads visible cards, so warming more rows just
+			// competes with the render for network/decode threads right when the
+			// home screen is trying to become interactive.
+			// Collect image URLs on Main thread (adapter access), then load on IO.
+			val imageUrls = mutableListOf<String>()
+			val rowsToPrewarm = 2
+			var rowCount = 0
+			for (i in contentRowStartIndex until adapter.size()) {
+				if (rowCount >= rowsToPrewarm) break
+				val listRow = adapter[i] as? ListRow ?: continue
+				val rowAdapter = listRow.adapter as? MutableObjectAdapter<*> ?: continue
+				rowCount++
+				for (j in 0 until minOf(rowAdapter.size(), 10)) {
+					val item = (rowAdapter[j] as? BaseRowItem)?.baseItem ?: continue
+					val imageTag = item.imageTags?.get(org.jellyfin.sdk.model.api.ImageType.PRIMARY) ?: continue
+					imageUrls += api.imageApi.getItemImageUrl(
+						itemId = item.id,
+						imageType = org.jellyfin.sdk.model.api.ImageType.PRIMARY,
+						tag = imageTag,
+						maxHeight = 150,
+					)
+				}
+			}
+			if (imageUrls.isNotEmpty()) {
+				val ctx = context
+				lifecycleScope.launch(Dispatchers.IO) {
+					val loader = ctx?.let { coil3.SingletonImageLoader.get(it) } ?: return@launch
+					for (url in imageUrls) {
+						try {
+							loader.execute(
+								coil3.request.ImageRequest.Builder(ctx)
+									.data(url)
+									.build()
+							)
+						} catch (_: Exception) { }
+					}
+				}
+			}
+		}
 	}
 
 	override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -704,8 +770,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private suspend fun refreshTentacleRowsInPlace() {
 		if (!isAdded) return
 
-		// Refresh hero/media bar
-		mediaBarViewModel.loadInitialContent()
+		// Refresh hero/media bar — allowCache means it only tears down and reloads
+		// if the hero content actually changed (no restart flicker on every event)
+		mediaBarViewModel.loadInitialContent(allowCache = true)
 
 		// Re-fetch sections to check for structural changes
 		val sectionsResponse = withContext(Dispatchers.IO) { tentacleRepository.getSections() }

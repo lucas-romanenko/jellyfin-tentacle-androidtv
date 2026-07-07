@@ -196,7 +196,7 @@ val appModule = module {
 	single { MdbListRepository(get<OkHttpFactory>().createClient(get()), get()) }
 	single { TmdbRepository(get<OkHttpFactory>().createClient(get()), get(), get()) }
 	// Tentacle plugin integration
-	single { TentacleRepository(get(), get(), get<OkHttpFactory>().createClient(get<HttpClientOptions>())) }
+	single { TentacleRepository(androidContext(), get(), get(), get<OkHttpFactory>().createClient(get<HttpClientOptions>())) }
 
 	viewModel { StartupViewModel(get(), get(), get(), get()) }
 	viewModel { UserLoginViewModel(get(), get(), get(), get(defaultDeviceInfo)) }

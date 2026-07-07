@@ -251,18 +251,46 @@ class MediaBarSlideshowViewModel(
 	 * - If more than one server is logged in, fetches from all servers
 	 * - If only one server, uses current behavior (default API client)
 	 */
-	private fun loadSlideshowItems() {
+	private fun loadSlideshowItems(allowCache: Boolean = false) {
+		// If the hero is already showing and this is a cache-friendly reload (WS
+		// refresh, resume), don't tear down the playing slideshow/trailer — just
+		// revalidate against the server and only reload if the content changed.
+		if (allowCache) {
+			val currentIds = (_state.value as? MediaBarState.Ready)?.items?.map { it.itemId }
+			if (currentIds != null) {
+				viewModelScope.launch {
+					try {
+						val fresh = tentacleRepository.getHeroItems()
+						if (fresh.isNotEmpty() && fresh.map { it.id } != currentIds) {
+							Timber.i("MediaBar: hero content changed, reloading")
+							loadSlideshowItems(allowCache = false)
+						}
+					} catch (_: Exception) { /* keep showing current hero */ }
+				}
+				return
+			}
+		}
 		loadingJob?.cancel()
 		trailerJob?.cancel()
 		trailerReadyDeferred = null
 		_trailerState.value = TrailerPreviewState.Idle
 		loadingJob = viewModelScope.launch {
 		try {
-			_state.value = MediaBarState.Loading
 			usingTentacleHero = false
 
-			// Fetch hero items from Tentacle plugin
-			val heroItems = tentacleRepository.getHeroItems()
+			// Fast path: render the last session's cached hero instantly, then
+			// revalidate in the background (only reloads if the content changed).
+			var fromCache = false
+			var heroItems: List<BaseItemDto> = emptyList()
+			if (allowCache) {
+				heroItems = tentacleRepository.getCachedHeroItems()
+				fromCache = heroItems.isNotEmpty()
+				if (fromCache) Timber.d("MediaBar: rendering ${heroItems.size} cached hero items")
+			}
+			if (!fromCache) {
+				_state.value = MediaBarState.Loading
+				heroItems = tentacleRepository.getHeroItems()
+			}
 			if (heroItems.isNotEmpty()) {
 				Timber.d("MediaBar: Using ${heroItems.size} Tentacle hero items")
 				usingTentacleHero = true
@@ -330,10 +358,31 @@ class MediaBarSlideshowViewModel(
 					startAutoPlay()
 					startTrailerResolution(0)
 					preResolveAdjacentTrailers(0)
+
+					if (fromCache) {
+						// Background revalidation: fetch fresh hero items and reload
+						// only if the set changed — avoids a restart flicker at launch.
+						val cachedIds = heroItems.map { it.id }
+						viewModelScope.launch {
+							try {
+								val fresh = tentacleRepository.getHeroItems()
+								if (fresh.isNotEmpty() && fresh.map { it.id } != cachedIds) {
+									Timber.i("MediaBar: hero content changed on server, reloading")
+									loadSlideshowItems(allowCache = false)
+								}
+							} catch (_: Exception) { /* keep showing cached hero */ }
+						}
+					}
 					return@launch
 				}
 			} else {
 				Timber.d("MediaBar: Tentacle hero returned empty (hero disabled or no items)")
+			}
+
+			// Cached data produced no renderable slides — retry with a fresh fetch
+			if (fromCache) {
+				loadSlideshowItems(allowCache = false)
+				return@launch
 			}
 
 			// Hero is disabled or empty — hide the media bar
@@ -392,11 +441,13 @@ class MediaBarSlideshowViewModel(
 	}
 
 	/**
-	 * Load content on HomeFragment creation
-	 * Always fetches fresh random items - no caching
+	 * Load content on HomeFragment creation.
+	 *
+	 * With [allowCache] the last session's hero renders instantly from disk and a
+	 * background revalidation reloads only if the server content changed.
 	 */
-	fun loadInitialContent() {
-		loadSlideshowItems()
+	fun loadInitialContent(allowCache: Boolean = false) {
+		loadSlideshowItems(allowCache)
 	}
 
 	/**

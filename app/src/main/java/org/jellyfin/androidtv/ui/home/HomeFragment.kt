@@ -221,9 +221,11 @@ class HomeFragment : Fragment() {
 				.onEach { allReady -> if (allReady) dismissOverlay() }
 				.launchIn(lifecycleScope)
 
-			// Safety timeout — dismiss after 8s no matter what
+			// Safety timeout — dismiss after 5s no matter what. With the on-device
+			// home cache, rows + hero are normally ready well under a second, so a
+			// long ceiling only punishes genuinely-slow cold starts.
 			lifecycleScope.launch {
-				delay(8000)
+				delay(5000)
 				dismissOverlay()
 			}
 		}

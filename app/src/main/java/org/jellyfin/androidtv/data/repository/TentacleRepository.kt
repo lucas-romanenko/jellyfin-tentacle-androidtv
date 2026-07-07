@@ -34,6 +34,7 @@ import timber.log.Timber
  * CardPresenter and item navigation work without modification.
  */
 class TentacleRepository(
+	private val context: android.content.Context,
 	private val api: ApiClient,
 	private val userRepository: UserRepository,
 	private val httpClient: OkHttpClient,
@@ -42,6 +43,96 @@ class TentacleRepository(
 		ignoreUnknownKeys = true
 		isLenient = true
 		coerceInputValues = true
+	}
+
+	// Short-timeout client for the availability probe only. If the plugin is slow
+	// or down, the home screen must fall back fast instead of hanging on the
+	// default (much longer) OkHttp timeouts.
+	private val probeClient: OkHttpClient by lazy {
+		httpClient.newBuilder()
+			.connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+			.readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+			.callTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
+			.build()
+	}
+
+	/** Hard ceiling on items per home row (matches backend/plugin cap). */
+	private val maxRowItems = 30
+
+	// ── On-device home cache ────────────────────────────────────────────────
+	// Raw JSON bodies of the last successful home fetches, persisted per user.
+	// Lets the home screen render instantly at launch (hero + rows) from disk,
+	// then revalidate against the plugin in the background.
+
+	private fun homeCacheDir(): java.io.File? {
+		val userId = userRepository.currentUser.value?.id ?: return null
+		return java.io.File(context.cacheDir, "tentacle-home/${userId.toString().replace("-", "")}")
+	}
+
+	private fun readHomeCache(name: String): String? = try {
+		homeCacheDir()?.resolve(name)?.takeIf { it.isFile }?.readText()?.takeIf { it.isNotBlank() }
+	} catch (e: Exception) {
+		Timber.w(e, "Failed to read home cache $name")
+		null
+	}
+
+	private fun writeHomeCache(name: String, body: String) {
+		try {
+			val dir = homeCacheDir() ?: return
+			dir.mkdirs()
+			dir.resolve(name).writeText(body)
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to write home cache $name")
+		}
+	}
+
+	private fun deleteHomeCache(name: String) {
+		try {
+			homeCacheDir()?.resolve(name)?.delete()
+		} catch (_: Exception) { }
+	}
+
+	/** Last-known home sections from disk (null if never cached or home disabled). */
+	suspend fun getCachedSections(): TentacleSectionsResponse? = withContext(Dispatchers.IO) {
+		try {
+			val body = readHomeCache("sections.json") ?: return@withContext null
+			val result = json.decodeFromString<TentacleSectionsResponse>(body)
+			if (result.enabled) result else null
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to parse cached sections")
+			null
+		}
+	}
+
+	/** Last-known items for a section from disk (empty if never cached). */
+	suspend fun getCachedSectionItems(playlistId: String): List<BaseItemDto> = withContext(Dispatchers.IO) {
+		try {
+			val body = readHomeCache("section-$playlistId.json") ?: return@withContext emptyList()
+			json.decodeFromString<BaseItemDtoQueryResult>(body).items.take(maxRowItems)
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to parse cached section $playlistId")
+			emptyList()
+		}
+	}
+
+	/** Last-known hero config from disk. */
+	suspend fun getCachedHeroConfig(): TentacleHeroConfig? = withContext(Dispatchers.IO) {
+		try {
+			val body = readHomeCache("heroconfig.json") ?: return@withContext null
+			json.decodeFromString<TentacleHeroConfig>(body)
+		} catch (e: Exception) {
+			null
+		}
+	}
+
+	/** Last-known hero items from disk (empty if never cached). */
+	suspend fun getCachedHeroItems(): List<BaseItemDto> = withContext(Dispatchers.IO) {
+		try {
+			val body = readHomeCache("hero.json") ?: return@withContext emptyList()
+			json.decodeFromString<BaseItemDtoQueryResult>(body).items
+		} catch (e: Exception) {
+			emptyList()
+		}
 	}
 
 	/**
@@ -72,7 +163,7 @@ class TentacleRepository(
 			try {
 				val url = buildUrl("/TentacleHome/Sections")
 				val request = Request.Builder().url(url).get().build()
-				httpClient.newCall(request).execute().use { response ->
+				probeClient.newCall(request).execute().use { response ->
 					when {
 						response.isSuccessful -> {
 							// Definitive: plugin present and responding.
@@ -122,8 +213,14 @@ class TentacleRepository(
 			response.close()
 
 			val result = json.decodeFromString<TentacleSectionsResponse>(body)
-			if (!result.enabled) return@withContext null
+			if (!result.enabled) {
+				// Home disabled server-side — drop the cache so the next launch
+				// goes straight to the fallback sections instead of stale rows.
+				deleteHomeCache("sections.json")
+				return@withContext null
+			}
 
+			writeHomeCache("sections.json", body)
 			result
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch Tentacle sections")
@@ -151,7 +248,8 @@ class TentacleRepository(
 
 			val result = json.decodeFromString<BaseItemDtoQueryResult>(body)
 			Timber.d("Tentacle section '$playlistId': ${result.items.size} items, first imageTags=${result.items.firstOrNull()?.imageTags}")
-			result.items
+			if (result.items.isNotEmpty()) writeHomeCache("section-$playlistId.json", body)
+			result.items.take(maxRowItems)
 		} catch (e: Exception) {
 			Timber.e(e, "Failed to fetch Tentacle section items for $playlistId")
 			emptyList()
@@ -177,9 +275,8 @@ class TentacleRepository(
 
 			val result = json.decodeFromString<BaseItemDtoQueryResult>(body)
 			Timber.d("Tentacle hero: ${result.items.size} items")
-			result.items.forEach { item ->
-				Timber.d("Tentacle hero item: '${item.name}' overview=${if (item.overview != null) "${item.overview?.take(30)}..." else "NULL"}")
-			}
+			if (result.items.isNotEmpty()) writeHomeCache("hero.json", body)
+			else deleteHomeCache("hero.json") // Hero disabled/empty — don't render a ghost hero next launch
 			result.items
 		} catch (e: Exception) {
 			Timber.e(e, "Failed to fetch Tentacle hero items")
@@ -234,6 +331,10 @@ class TentacleRepository(
 
 			val result = json.decodeFromString<DiscoverSearchResponse>(body)
 			result.items
+		} catch (e: kotlinx.coroutines.CancellationException) {
+			// A newer keystroke cancelled this request — propagate cancellation
+			// instead of swallowing it and returning an empty list.
+			throw e
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to search discover for '$query'")
 			emptyList()
@@ -468,7 +569,9 @@ class TentacleRepository(
 			val body = response.body?.string() ?: return@withContext null
 			response.close()
 
-			json.decodeFromString<TentacleHeroConfig>(body)
+			val result = json.decodeFromString<TentacleHeroConfig>(body)
+			writeHomeCache("heroconfig.json", body)
+			result
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch hero config")
 			null

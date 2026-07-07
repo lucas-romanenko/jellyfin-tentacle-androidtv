@@ -2,6 +2,7 @@ package org.jellyfin.androidtv.ui.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,6 +58,11 @@ class SearchViewModel(
 
 			try {
 				_tmdbResultsFlow.value = tentacleRepository.searchDiscover(trimmed)
+			} catch (e: CancellationException) {
+				// A newer keystroke cancelled this search (debounce). Let cancellation
+				// propagate — don't log it as an error or blank the results the newer
+				// search is about to populate.
+				throw e
 			} catch (e: Exception) {
 				Timber.e(e, "Failed to search TMDB via Tentacle")
 				_tmdbResultsFlow.value = emptyList()

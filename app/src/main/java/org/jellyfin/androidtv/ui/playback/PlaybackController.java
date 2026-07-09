@@ -425,9 +425,11 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         // guaranteed-playable H.264 transcode actually gets tried (and retried once) before we
         // give up — previously the ceiling of 3 cut it off at its first attempt.
         if (playbackRetries < 4) {
-            if (mFragment != null)
-                Utils.showToast(mFragment.getContext(), mFragment.getString(R.string.player_error));
-            Timber.i("Player error encountered - retrying");
+            // Retry silently — the retry ladder recovers almost every time (direct
+            // play -> direct stream -> H.264 transcode), so flashing a "playback
+            // error" toast right before playback starts is just noise. The user
+            // only needs to hear about it if all retries are exhausted below.
+            Timber.i("Player error encountered - retrying (attempt %d)", playbackRetries);
             stop();
             play(mCurrentPosition);
         } else {

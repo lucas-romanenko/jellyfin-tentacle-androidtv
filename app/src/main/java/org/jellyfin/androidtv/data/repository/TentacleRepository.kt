@@ -924,6 +924,8 @@ class TentacleRepository(
 data class TentacleSectionsResponse(
 	val enabled: Boolean = false,
 	val sections: List<TentacleSection> = emptyList(),
+	// Dashboard setting: combine Continue Watching + Next Up into one row
+	val mergeContinueWatching: Boolean = false,
 )
 
 @Serializable

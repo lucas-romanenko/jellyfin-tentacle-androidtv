@@ -231,6 +231,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 							mediaBarViewModel.loadInitialContent(allowCache = true)
 						}
 					}
+					val cachedMergeCw = cachedSections.mergeContinueWatching
+					val cachedHasResume = sections.any { it.type == "builtin" && (it.sectionId == "resume" || it.sectionId == "resumevideo") }
 					for (section in sections) {
 						when (section.type) {
 							"row" -> {
@@ -245,17 +247,24 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 									)
 								}
 							}
-							"builtin" -> addBuiltInSection(rows, section.sectionId ?: continue, includeLiveTvRows, cachedViews)
+							"builtin" -> {
+								val sectionId = section.sectionId ?: continue
+								// Merge on: Next Up folds into the Continue Watching row
+								if (cachedMergeCw && sectionId == "nextup" && cachedHasResume) continue
+								addBuiltInSection(rows, sectionId, includeLiveTvRows, cachedViews, cachedMergeCw)
+							}
 						}
 					}
 					if (rows.any { it !is HomeFragmentMediaBarRow }) {
+						// merge flag is part of the structure key so toggling it in the
+						// dashboard triggers a structural rebuild on the next refresh
 						currentTentacleSectionKeys = sections.map { section ->
 							when (section.type) {
 								"row" -> "playlist:${section.playlistId}"
 								"builtin" -> "builtin:${section.sectionId}"
 								else -> "unknown:${section.id}"
 							}
-						}
+						} + "merge:$cachedMergeCw"
 						currentRows = rows
 						renderInitialRows(rows)
 						Timber.i("Home rendered instantly from cache (${rows.size} rows), revalidating in background")
@@ -325,6 +334,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					val tentacleMap = tentacleRowData.associateBy { it.playlistId }
 
 					// Render sections in dashboard order
+					val mergeCw = sectionsResponse.mergeContinueWatching
+					val hasResumeRow = tentacleSections.any { it.type == "builtin" && (it.sectionId == "resume" || it.sectionId == "resumevideo") }
 					for (section in tentacleSections) {
 						if (!isActive) return@launch
 						when (section.type) {
@@ -336,19 +347,22 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 							}
 							"builtin" -> {
 								val sectionId = section.sectionId ?: continue
-								addBuiltInSection(rows, sectionId, includeLiveTvRows, cachedViews)
+								// Merge on: Next Up folds into the Continue Watching row
+								if (mergeCw && sectionId == "nextup" && hasResumeRow) continue
+								addBuiltInSection(rows, sectionId, includeLiveTvRows, cachedViews, mergeCw)
 							}
 						}
 					}
 
-					// Store section keys for detecting structural changes later
+					// Store section keys for detecting structural changes later (the
+					// merge flag is included so toggling it rebuilds rows in place)
 					currentTentacleSectionKeys = tentacleSections.map { section ->
 						when (section.type) {
 							"row" -> "playlist:${section.playlistId}"
 							"builtin" -> "builtin:${section.sectionId}"
 							else -> "unknown:${section.id}"
 						}
-					}
+					} + "merge:$mergeCw"
 				}
 			}
 
@@ -779,13 +793,14 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			?: return // Plugin unavailable, skip
 
 		val newSections = sectionsResponse.sections.filter { it.type == "row" || it.type == "builtin" }
+		val mergeCw = sectionsResponse.mergeContinueWatching
 		val newKeys = newSections.map { section ->
 			when (section.type) {
 				"row" -> "playlist:${section.playlistId}"
 				"builtin" -> "builtin:${section.sectionId}"
 				else -> "unknown:${section.id}"
 			}
-		}
+		} + "merge:$mergeCw"
 
 		val structureChanged = newKeys != currentTentacleSectionKeys
 
@@ -854,6 +869,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		val includeLiveTvRows = false // Simplified — live TV state doesn't change mid-session
 		val cachedViews = try { userViewsRepository.views.first() } catch (_: Exception) { null }
 
+		val hasResumeRow = newSections.any { it.type == "builtin" && (it.sectionId == "resume" || it.sectionId == "resumevideo") }
 		for (section in newSections) {
 			when (section.type) {
 				"row" -> {
@@ -864,7 +880,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				}
 				"builtin" -> {
 					val sectionId = section.sectionId ?: continue
-					addBuiltInSection(newRows, sectionId, includeLiveTvRows, cachedViews)
+					// Merge on: Next Up folds into the Continue Watching row
+					if (mergeCw && sectionId == "nextup" && hasResumeRow) continue
+					addBuiltInSection(newRows, sectionId, includeLiveTvRows, cachedViews, mergeCw)
 				}
 			}
 		}
@@ -1002,21 +1020,28 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		sectionId: String,
 		includeLiveTvRows: Boolean,
 		cachedViews: Collection<org.jellyfin.sdk.model.api.BaseItemDto>?,
+		// Dashboard-controlled merge flag (from the Tentacle sections response).
+		// null = fall back to the local device preference (non-Tentacle home).
+		mergeContinueWatching: Boolean? = null,
 	) {
-		val mergeContinueWatching = userPreferences[UserPreferences.mergeContinueWatchingNextUp]
+		val mergeCw = mergeContinueWatching ?: userPreferences[UserPreferences.mergeContinueWatchingNextUp]
 		when (sectionId) {
 			"latestmedia" -> rows.add(helper.loadRecentlyAdded(cachedViews ?: userViewsRepository.views.first()))
 			"recentlyreleased" -> rows.add(helper.loadRecentlyReleased())
 			"smalllibrarytiles" -> rows.add(HomeFragmentViewsRow(small = false))
 			"smalllibrarytiles_small", "librarybuttons" -> rows.add(HomeFragmentViewsRow(small = true))
 			"resume", "resumevideo" -> {
-				if (mergeContinueWatching) rows.add(helper.loadMergedContinueWatching())
+				if (mergeCw) rows.add(helper.loadMergedContinueWatching())
 				else rows.add(helper.loadResumeVideo())
 			}
 			"resumeaudio" -> rows.add(helper.loadResumeAudio())
 			"activerecordings" -> rows.add(helper.loadLatestLiveTvRecordings())
 			"nextup" -> {
-				if (!mergeContinueWatching) rows.add(helper.loadNextUp())
+				// Merge on: this is only reached when there's no resume row in the
+				// sections (callers skip nextup when resume is present) — render
+				// the merged row here so the user still gets their content.
+				if (mergeCw) rows.add(helper.loadMergedContinueWatching())
+				else rows.add(helper.loadNextUp())
 			}
 			"playlists" -> {
 				val row = helper.loadPlaylists()

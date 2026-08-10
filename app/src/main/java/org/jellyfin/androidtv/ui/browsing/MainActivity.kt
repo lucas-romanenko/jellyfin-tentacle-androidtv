@@ -49,6 +49,16 @@ import org.koin.androidx.viewmodel.ext.android.viewModel
 import timber.log.Timber
 
 class MainActivity : FragmentActivity() {
+	companion object {
+		// Session-scoped so the update prompt shows once per app launch, not on every
+		// activity recreation
+		private var updateDialogShown = false
+
+		// Update waiting for the "install unknown apps" grant — resumed in onResume once
+		// the user returns from the settings screen
+		private var pendingUpdateInfo: UpdateCheckerService.UpdateInfo? = null
+	}
+
 	private val navigationRepository by inject<NavigationRepository>()
 	private val sessionRepository by inject<SessionRepository>()
 	private val userRepository by inject<UserRepository>()
@@ -183,6 +193,15 @@ class MainActivity : FragmentActivity() {
 		applyTheme()
 
 		interactionTrackerViewModel.activityPaused = false
+
+		// Resume a pending update install after the user returns from granting the
+		// "install unknown apps" permission
+		pendingUpdateInfo?.let { updateInfo ->
+			if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
+				pendingUpdateInfo = null
+				startUpdateDownload(updateInfo)
+			}
+		}
 	}
 
 	private fun validateAuthentication(): Boolean {
@@ -203,20 +222,21 @@ class MainActivity : FragmentActivity() {
 			return
 		}
 
+		// Only prompt once per app session
+		if (updateDialogShown) return
+
 		lifecycleScope.launch(Dispatchers.IO) {
 			try {
 				val result = updateCheckerService.checkForUpdate()
 				result.onSuccess { updateInfo ->
 					if (updateInfo != null && updateInfo.isNewer) {
-						// Show toast on main thread
-						launch(Dispatchers.Main) {
-							Toast.makeText(
-								this@MainActivity,
-								"Update available: ${updateInfo.version}",
-								Toast.LENGTH_LONG
-							).show()
-						}
 						Timber.i("Update available: ${updateInfo.version}")
+						launch(Dispatchers.Main) {
+							if (!isFinishing && !updateDialogShown) {
+								updateDialogShown = true
+								showUpdateDialog(updateInfo)
+							}
+						}
 					} else {
 						Timber.d("No updates available")
 					}
@@ -225,6 +245,64 @@ class MainActivity : FragmentActivity() {
 				}
 			} catch (e: Exception) {
 				Timber.e(e, "Error checking for updates on launch")
+			}
+		}
+	}
+
+	private fun showUpdateDialog(updateInfo: UpdateCheckerService.UpdateInfo) {
+		android.app.AlertDialog.Builder(this)
+			.setTitle(getString(R.string.update_dialog_title, updateInfo.version))
+			.setMessage(updateInfo.releaseNotes.take(1500))
+			.setPositiveButton(R.string.update_dialog_update_now) { dialog, _ ->
+				dialog.dismiss()
+				startUpdateDownload(updateInfo)
+			}
+			.setNegativeButton(R.string.update_dialog_later) { dialog, _ -> dialog.dismiss() }
+			.show()
+	}
+
+	private fun startUpdateDownload(updateInfo: UpdateCheckerService.UpdateInfo) {
+		// Sideloaded apps need the one-time "install unknown apps" grant before the system
+		// installer will accept our APK. Send the user straight to the right settings screen.
+		if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+			Toast.makeText(this, R.string.update_grant_install_permission, Toast.LENGTH_LONG).show()
+			pendingUpdateInfo = updateInfo
+			startActivity(
+				Intent(
+					android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+					android.net.Uri.parse("package:$packageName")
+				)
+			)
+			return
+		}
+
+		val progressBar = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+			isIndeterminate = false
+			max = 100
+		}
+		val container = android.widget.FrameLayout(this).apply {
+			val padding = (24 * resources.displayMetrics.density).toInt()
+			setPadding(padding, padding, padding, padding)
+			addView(progressBar)
+		}
+		val progressDialog = android.app.AlertDialog.Builder(this)
+			.setTitle(getString(R.string.update_downloading, updateInfo.version))
+			.setView(container)
+			.setCancelable(false)
+			.show()
+
+		lifecycleScope.launch(Dispatchers.IO) {
+			val result = updateCheckerService.downloadUpdate(updateInfo.downloadUrl) { progress ->
+				progressBar.progress = progress
+			}
+			launch(Dispatchers.Main) {
+				progressDialog.dismiss()
+				result.onSuccess { apkUri ->
+					updateCheckerService.installUpdate(apkUri)
+				}.onFailure { error ->
+					Timber.e(error, "Failed to download update")
+					Toast.makeText(this@MainActivity, R.string.update_download_failed, Toast.LENGTH_LONG).show()
+				}
 			}
 		}
 	}

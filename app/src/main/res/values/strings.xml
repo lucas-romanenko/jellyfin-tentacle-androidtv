@@ -348,6 +348,12 @@
     <string name="seek_error">Unable to seek</string>
     <string name="player_error">Player error encountered. Will re-try…</string>
     <string name="too_many_errors">Too many errors. Giving up</string>
+    <string name="update_dialog_title">Update available — Tentacle %1$s</string>
+    <string name="update_dialog_update_now">Update now</string>
+    <string name="update_dialog_later">Later</string>
+    <string name="update_downloading">Downloading Tentacle %1$s…</string>
+    <string name="update_download_failed">Update download failed — check your connection and try again</string>
+    <string name="update_grant_install_permission">Allow Tentacle to install apps, then choose Update again</string>
     <string name="audio_decoder_fallback">Playback stalled — retrying with converted audio (%1$s)</string>
     <string name="too_many_errors_audio">Playback keeps stalling. This device may not support the %1$s audio in this video — try a different audio track.</string>
     <string name="subtitle_error">Unable to select subtitle</string>

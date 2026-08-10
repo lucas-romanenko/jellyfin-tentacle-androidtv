@@ -83,6 +83,10 @@ class HomeFragment : Fragment() {
 		private var overlayShownOnce = false
 	}
 
+	// Flipped by the backdrop ImageView's Coil success listener — the only signal that
+	// the hero is truly on screen (state flows fire seconds earlier on slow TV SoCs)
+	private val heroBackdropDrawn = kotlinx.coroutines.flow.MutableStateFlow(false)
+
 	private val mediaBarViewModel by inject<MediaBarSlideshowViewModel>()
 	private val interactionTrackerViewModel by inject<InteractionTrackerViewModel>()
 	private val userSettingPreferences by inject<UserSettingPreferences>()
@@ -212,15 +216,16 @@ class HomeFragment : Fragment() {
 				fragment.contentReady,
 				mediaBarViewModel.state,
 				mediaBarViewModel.firstSlideReady,
-			) { rowsReady, heroState, firstSlideReady ->
+				heroBackdropDrawn,
+			) { rowsReady, heroState, firstSlideReady, backdropDrawn ->
 				if (!rowsReady) return@combine false
-				// If hero is part of the layout, wait until it is fully presentable: not
-				// just past Loading (the singleton ViewModel may carry a stale Ready from
-				// an earlier fragment), but with the first slide's backdrop pre-warmed —
-				// otherwise the overlay drops onto a text-only skeleton and the hero pops
-				// in seconds later.
+				// If hero is part of the layout, wait until it is ON SCREEN: past Loading,
+				// first slide pre-warmed, AND the backdrop drawable composited into the
+				// view (Coil success listener). The state signals alone fire seconds before
+				// the pixels land on slow TV SoCs, revealing a text-only skeleton.
 				if (fragment.hasMediaBarAtPosition0) {
-					firstSlideReady && heroState !is org.jellyfin.androidtv.ui.home.mediabar.MediaBarState.Loading
+					firstSlideReady && backdropDrawn &&
+						heroState !is org.jellyfin.androidtv.ui.home.mediabar.MediaBarState.Loading
 				} else {
 					true // No hero — rows ready is enough
 				}
@@ -329,9 +334,15 @@ class HomeFragment : Fragment() {
 				backgroundImage?.isVisible = true
 				backgroundImage?.load(backdropUrl) {
 					crossfade(400)
+					// The loading overlay dismisses on this signal: "hero state Ready +
+					// bitmap pre-warmed" still runs seconds ahead of the backdrop actually
+					// compositing on slow TV SoCs, which used to reveal a heroless skeleton.
+					listener(onSuccess = { _, _ -> heroBackdropDrawn.value = true })
 				}
 			} else {
 				backgroundImage?.isVisible = false
+				// No backdrop to wait for on this slide — don't hold the overlay hostage
+				heroBackdropDrawn.value = true
 			}
 
 			if (logoUrl != null) {

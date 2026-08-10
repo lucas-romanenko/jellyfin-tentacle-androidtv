@@ -67,5 +67,12 @@ class SystemPreferences(context: Context) : SharedPreferenceStore(
 		 * Whether to disable the "UI mode" warning that shows when using the app on non TV devices.
 		 */
 		val disableUiModeWarning = booleanPreference("disable_ui_mode_warning", false)
+
+		/**
+		 * Comma-separated audio codecs this device's hardware decoder has wedged on (playback
+		 * stuck with no progress). These are advertised as supported by the device but broken,
+		 * so they are removed from the device profile and the server transcodes them instead.
+		 */
+		val brokenAudioCodecs = stringPreference("broken_audio_codecs", "")
 	}
 }

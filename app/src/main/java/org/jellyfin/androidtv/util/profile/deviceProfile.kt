@@ -82,6 +82,7 @@ fun createDeviceProfile(
 	userPreferences: UserPreferences,
 	serverVersion: ServerVersion,
 	forceH264Transcode: Boolean = false,
+	disabledAudioCodecs: Collection<String> = emptySet(),
 ) = createDeviceProfile(
 	mediaTest = MediaCodecCapabilitiesTest(context),
 	maxBitrate = userPreferences.getMaxBitrate(),
@@ -91,6 +92,7 @@ fun createDeviceProfile(
 	assDirectPlay = userPreferences[UserPreferences.assDirectPlay],
 	pgsDirectPlay = userPreferences[UserPreferences.pgsDirectPlay],
 	forceH264Transcode = forceH264Transcode,
+	disabledAudioCodecs = disabledAudioCodecs,
 )
 
 fun createDeviceProfile(
@@ -102,12 +104,16 @@ fun createDeviceProfile(
 	assDirectPlay: Boolean,
 	pgsDirectPlay: Boolean,
 	forceH264Transcode: Boolean = false,
+	disabledAudioCodecs: Collection<String> = emptySet(),
 ) = buildDeviceProfile {
+	// disabledAudioCodecs: codecs the device's hardware decoder previously wedged on (playback
+	// stuck with no progress) — advertised as supported but broken, so the server must
+	// transcode them.
 	val allowedAudioCodecs = when {
 		downMixAudio -> downmixSupportedAudioCodecs
 		!isAC3Enabled -> supportedAudioCodecs.filterNot { it == Codec.Audio.EAC3 || it == Codec.Audio.AC3 }.toTypedArray()
 		else -> supportedAudioCodecs
-	}
+	}.filterNot { it in disabledAudioCodecs }.toTypedArray()
 
 	val supportsHevc = mediaTest.supportsHevc()
 	val supportsHevcMain10 = mediaTest.supportsHevcMain10()

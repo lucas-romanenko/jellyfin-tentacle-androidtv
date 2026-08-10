@@ -11,6 +11,9 @@ import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.OptIn;
+import androidx.media3.common.util.StuckPlayerException;
+import androidx.media3.common.util.UnstableApi;
 
 import org.jellyfin.androidtv.R;
 import org.jellyfin.androidtv.auth.repository.SessionRepository;
@@ -19,6 +22,7 @@ import org.jellyfin.androidtv.data.compat.StreamInfo;
 import org.jellyfin.androidtv.data.compat.VideoOptions;
 import org.jellyfin.androidtv.data.model.DataRefreshService;
 import org.jellyfin.androidtv.data.syncplay.SyncPlayUtils;
+import org.jellyfin.androidtv.preference.SystemPreferences;
 import org.jellyfin.androidtv.preference.UserPreferences;
 import org.jellyfin.androidtv.preference.UserSettingPreferences;
 import org.jellyfin.androidtv.preference.constant.NextUpBehavior;
@@ -54,7 +58,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 import kotlin.Lazy;
@@ -76,6 +83,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     private Lazy<ReportingHelper> reportingHelper = inject(ReportingHelper.class);
     private final Lazy<InteractionTrackerViewModel> lazyInteractionTracker = inject(InteractionTrackerViewModel.class);
     private Lazy<PrePlaybackTrackSelector> trackSelector = inject(PrePlaybackTrackSelector.class);
+    private Lazy<SystemPreferences> systemPreferences = inject(SystemPreferences.class);
     private Lazy<org.jellyfin.androidtv.data.syncplay.SyncPlayManager> syncPlayManager = inject(org.jellyfin.androidtv.data.syncplay.SyncPlayManager.class);
 
     List<BaseItemDto> mItems;
@@ -410,6 +418,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         return mPlaybackState == PlaybackState.PLAYING && hasInitializedVideoManager() && mVideoManager.isPlaying();
     }
 
+    @OptIn(markerClass = UnstableApi.class)
     public void playerErrorEncountered() {
         // reset the retry count if it's been more than 30s since previous error
         if (playbackRetries > 0 && Instant.now().toEpochMilli() - lastPlaybackError > 30000) {
@@ -419,6 +428,26 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
         playbackRetries++;
         lastPlaybackError = Instant.now().toEpochMilli();
+
+        // Detect the decoder-wedge failure mode: the player is READY with data flowing but makes
+        // zero progress until media3's watchdog kills it. This is almost always a hardware decoder
+        // that advertises support for a codec it can't actually decode (e.g. E-AC3 on some Sony
+        // Bravias), and since audio is ExoPlayer's clock, a wedged audio decoder freezes playback
+        // even though video decodes fine. Blocking the codec removes it from the device profile,
+        // so the retry below gets a server-side audio transcode instead of re-feeding the same
+        // broken decoder — which the normal retry ladder never fixes (it only degrades video).
+        String stuckAudioCodec = null;
+        androidx.media3.common.PlaybackException playerError =
+                hasInitializedVideoManager() ? mVideoManager.getLastPlayerError() : null;
+        if (playerError != null
+                && playerError.getCause() instanceof StuckPlayerException
+                && ((StuckPlayerException) playerError.getCause()).stuckType == StuckPlayerException.STUCK_PLAYING_NO_PROGRESS) {
+            stuckAudioCodec = getCurrentAudioCodec();
+            if (stuckAudioCodec != null && blockAudioCodec(stuckAudioCodec) && mFragment != null) {
+                Utils.showToast(mFragment.getContext(),
+                        mFragment.getString(R.string.audio_decoder_fallback, stuckAudioCodec.toUpperCase(Locale.ROOT)));
+            }
+        }
 
         // Retry ladder (see buildExoPlayerOptions): attempt 1 disables direct play, attempt 2
         // disables direct stream AND forces an H.264 transcode. Allow up to 4 attempts so the
@@ -435,10 +464,57 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         } else {
             mPlaybackState = PlaybackState.ERROR;
             if (mFragment != null) {
-                Utils.showToast(mFragment.getContext(), mFragment.getString(R.string.too_many_errors));
+                String message = stuckAudioCodec != null
+                        ? mFragment.getString(R.string.too_many_errors_audio, stuckAudioCodec.toUpperCase(Locale.ROOT))
+                        : mFragment.getString(R.string.too_many_errors);
+                Utils.showToast(mFragment.getContext(), message);
                 mFragment.closePlayer();
             }
         }
+    }
+
+    /**
+     * Codec of the audio stream the player was fed when the error occurred. Reports the source
+     * stream's codec — correct for direct play and remux, and still the right codec to blame on a
+     * transcode that copies the audio stream (the server only re-encodes audio the profile
+     * disallows).
+     */
+    @Nullable
+    private String getCurrentAudioCodec() {
+        MediaSourceInfo mediaSource = getCurrentMediaSource();
+        if (mediaSource == null || mediaSource.getMediaStreams() == null) return null;
+        Integer index = mCurrentOptions != null ? mCurrentOptions.getAudioStreamIndex() : null;
+        if (index == null) index = mediaSource.getDefaultAudioStreamIndex();
+        MediaStream firstAudioStream = null;
+        for (MediaStream stream : mediaSource.getMediaStreams()) {
+            if (stream.getType() != MediaStreamType.AUDIO) continue;
+            if (firstAudioStream == null) firstAudioStream = stream;
+            if (index != null && index.equals(stream.getIndex())) return stream.getCodec();
+        }
+        return firstAudioStream != null ? firstAudioStream.getCodec() : null;
+    }
+
+    private Set<String> getBlockedAudioCodecs() {
+        String raw = systemPreferences.getValue().get(SystemPreferences.Companion.getBrokenAudioCodecs());
+        Set<String> codecs = new LinkedHashSet<>();
+        for (String codec : raw.split(",")) {
+            if (!codec.isEmpty()) codecs.add(codec);
+        }
+        return codecs;
+    }
+
+    /**
+     * Persistently mark an audio codec as broken on this device so the device profile stops
+     * advertising it. Returns false if it was already blocked (meaning the codec block did not
+     * fix the stall, so the failure lies elsewhere).
+     */
+    private boolean blockAudioCodec(@NonNull String codec) {
+        codec = codec.toLowerCase(Locale.ROOT);
+        Set<String> codecs = getBlockedAudioCodecs();
+        if (!codecs.add(codec)) return false;
+        systemPreferences.getValue().set(SystemPreferences.Companion.getBrokenAudioCodecs(), String.join(",", codecs));
+        Timber.w("Audio codec %s marked broken on this device after stuck playback - the server will transcode it from now on", codec);
+        return true;
     }
 
     private void getDisplayModes() {
@@ -780,7 +856,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 mFragment.getContext(),
                 userPreferences.getValue(),
                 get(ServerVersion.class),
-                forceH264Transcode
+                forceH264Transcode,
+                getBlockedAudioCodecs()
         );
         internalOptions.setProfile(internalProfile);
         return internalOptions;
@@ -1594,6 +1671,14 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     @Override
     public void onError() {
+        // Ignore errors raised after playback already stopped — e.g. the "Player release timed
+        // out" error ExoPlayer fires while a wedged decoder is being torn down. Retrying here
+        // would restart playback the user has already left.
+        if (mPlaybackState == PlaybackState.IDLE || mPlaybackState == PlaybackState.UNDEFINED || mPlaybackState == PlaybackState.ERROR) {
+            Timber.i("Ignoring player error in state %s - playback is not active", mPlaybackState);
+            return;
+        }
+
         if (mFragment == null) {
             playerErrorEncountered();
             return;

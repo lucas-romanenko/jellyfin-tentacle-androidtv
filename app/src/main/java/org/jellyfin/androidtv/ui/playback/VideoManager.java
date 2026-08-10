@@ -80,6 +80,8 @@ public class VideoManager {
     private Handler mHandler = new Handler();
     private AudioDelayProcessor mAudioDelayProcessor;
     private SubtitleDelayHandler mSubtitleDelayHandler;
+    @Nullable
+    private PlaybackException mLastPlayerError;
 
     private long mMetaDuration = -1;
     private long lastExoPlayerPosition = -1;
@@ -189,6 +191,7 @@ public class VideoManager {
                 if (error.getCause() != null) {
                     Timber.e(error.getCause(), "***** Player error cause");
                 }
+                mLastPlayerError = error;
                 if (mPlaybackControllerNotifiable != null) mPlaybackControllerNotifiable.onError();
                 stopProgressLoop();
             }
@@ -456,7 +459,13 @@ public class VideoManager {
         return flags;
     }
 
+    @Nullable
+    public PlaybackException getLastPlayerError() {
+        return mLastPlayerError;
+    }
+
     public void setMediaStreamInfo(ApiClient api, StreamInfo streamInfo) {
+        mLastPlayerError = null;
         String path = streamInfo.getMediaUrl();
         if (path == null) {
             Timber.w("Video path is null cannot continue");

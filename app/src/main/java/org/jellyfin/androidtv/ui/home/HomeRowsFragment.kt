@@ -490,16 +490,24 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		// so onResume only refreshes if actually needed (avoids full re-fetch on every nav back).
 		lifecycleScope.launch {
 			lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+				Timber.w("WS: LibraryChanged dirty-tracker subscription active")
 				api.webSocket.subscribe<LibraryChangedMessage>()
-					.onEach { tentacleDirty = true }
+					.onEach {
+						Timber.w("WS: LibraryChangedMessage received (dirty tracker)")
+						tentacleDirty = true
+					}
 					.launchIn(this)
 			}
 		}
 
 		lifecycleScope.launch {
 			lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+				Timber.w("WS: refresh subscriptions active (RESUMED)")
 				api.webSocket.subscribe<UserDataChangedMessage>()
-					.onEach { refreshRows(force = false, delayed = true) }
+					.onEach {
+						Timber.w("WS: UserDataChangedMessage received")
+						refreshRows(force = false, delayed = true)
+					}
 					.launchIn(this)
 
 				api.webSocket.subscribe<LibraryChangedMessage>()
@@ -513,7 +521,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					.onEach {
 						try {
 							if (!isAdded) return@onEach
-							Timber.i("LibraryChangedMessage settled, refreshing rows + Tentacle home")
+							Timber.w("WS: LibraryChangedMessage settled, refreshing rows + Tentacle home")
 							refreshRows(force = true, delayed = false)
 							if (tentacleRepository.checkAvailable()) {
 								if (!isAdded) return@onEach

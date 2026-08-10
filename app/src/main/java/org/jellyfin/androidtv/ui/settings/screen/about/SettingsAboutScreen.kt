@@ -2,11 +2,20 @@ package org.jellyfin.androidtv.ui.settings.screen.about
 
 import android.content.ClipData
 import android.os.Build
+import android.widget.Toast
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import kotlinx.coroutines.launch
 import org.jellyfin.androidtv.BuildConfig
 import org.jellyfin.androidtv.R
+import org.jellyfin.androidtv.data.service.UpdateCheckerService
 import org.jellyfin.androidtv.ui.base.Icon
 import org.jellyfin.androidtv.ui.base.Text
 import org.jellyfin.androidtv.ui.base.list.ListButton
@@ -15,6 +24,7 @@ import org.jellyfin.androidtv.ui.navigation.LocalRouter
 import org.jellyfin.androidtv.ui.settings.Routes
 import org.jellyfin.androidtv.ui.settings.composable.SettingsColumn
 import org.jellyfin.androidtv.ui.settings.util.copyAction
+import org.koin.compose.koinInject
 
 @Composable
 fun SettingsAboutScreen(launchedFromLogin: Boolean = false) {
@@ -41,6 +51,36 @@ fun SettingsAboutScreen(launchedFromLogin: Boolean = false) {
 				headingContent = { Text(heading) },
 				captionContent = { Text(caption) },
 				onClick = copyAction(ClipData.newPlainText(heading, caption)),
+			)
+		}
+
+		if (BuildConfig.ENABLE_OTA_UPDATES) item {
+			val context = LocalContext.current
+			val updateCheckerService = koinInject<UpdateCheckerService>()
+			val scope = rememberCoroutineScope()
+			var checking by remember { mutableStateOf(false) }
+			ListButton(
+				leadingContent = { Icon(painterResource(R.drawable.ic_refresh), contentDescription = null) },
+				headingContent = { Text("Check for updates") },
+				captionContent = { Text(if (checking) "Checking…" else "Check GitHub for a newer release") },
+				onClick = {
+					if (!checking) {
+						checking = true
+						scope.launch {
+							val updateInfo = updateCheckerService.checkForUpdate().getOrNull()
+							checking = false
+							if (updateInfo?.isNewer == true) {
+								Toast.makeText(
+									context,
+									"Update available: ${updateInfo.version} — open the home screen to install",
+									Toast.LENGTH_LONG,
+								).show()
+							} else {
+								Toast.makeText(context, "You're on the latest version", Toast.LENGTH_SHORT).show()
+							}
+						}
+					}
+				},
 			)
 		}
 

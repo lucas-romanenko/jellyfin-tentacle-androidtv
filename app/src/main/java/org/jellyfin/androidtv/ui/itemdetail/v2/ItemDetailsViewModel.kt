@@ -586,7 +586,9 @@ class ItemDetailsViewModel(
 
 			val container = mediaSource.container?.uppercase()
 			if (container != null) {
-				badges.add(MediaBadge("badgeContainer", container))
+				// Surface .strm sources as "VOD" — "STRM" is internal jargon
+				val label = if (container == "STRM") "VOD" else container
+				badges.add(MediaBadge("badgeContainer", label))
 			}
 
 			if (audio != null) {

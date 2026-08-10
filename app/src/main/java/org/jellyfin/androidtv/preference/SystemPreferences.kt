@@ -74,5 +74,12 @@ class SystemPreferences(context: Context) : SharedPreferenceStore(
 		 * so they are removed from the device profile and the server transcodes them instead.
 		 */
 		val brokenAudioCodecs = stringPreference("broken_audio_codecs", "")
+
+		/**
+		 * Last known result of the Live TV recommended-programs availability check. The check
+		 * scans the whole EPG and can take 10+ seconds, so the home screen's instant cache
+		 * render uses this persisted value and revalidates in the background.
+		 */
+		val liveTvRowsAvailable = booleanPreference("live_tv_rows_available", false)
 	}
 }

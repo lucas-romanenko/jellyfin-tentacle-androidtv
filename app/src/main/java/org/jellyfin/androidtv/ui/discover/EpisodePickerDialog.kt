@@ -277,7 +277,12 @@ fun EpisodePickerContent(
 						add(PickerListItem.SeasonHeader(season, sNum))
 						if (expandedSeasons[sNum] == true) {
 							val eps = seasonEpisodes[sNum] ?: emptyList()
-							eps.forEach { ep -> add(PickerListItem.EpisodeRow(ep, sNum)) }
+							if (eps.isEmpty()) {
+								// TMDB knows the season exists but has no episode data yet
+								add(PickerListItem.UnairedPlaceholder(sNum))
+							} else {
+								eps.forEach { ep -> add(PickerListItem.EpisodeRow(ep, sNum)) }
+							}
 						}
 					}
 				}
@@ -315,6 +320,9 @@ fun EpisodePickerContent(
 								},
 							)
 						}
+						is PickerListItem.UnairedPlaceholder -> {
+							UnairedSeasonRow()
+						}
 						is PickerListItem.EpisodeRow -> {
 							val key = "${listItem.seasonNumber}:${listItem.episode.episodeNumber}"
 							val sonarrEp = sonarrData.episodes.find {
@@ -346,6 +354,7 @@ fun EpisodePickerContent(
 private sealed class PickerListItem(val key: String) {
 	class SeasonHeader(val season: TmdbSeason, val seasonNumber: Int) : PickerListItem("season_$seasonNumber")
 	class EpisodeRow(val episode: TmdbEpisode, val seasonNumber: Int) : PickerListItem("ep_${seasonNumber}_${episode.episodeNumber}")
+	class UnairedPlaceholder(val seasonNumber: Int) : PickerListItem("unaired_$seasonNumber")
 }
 
 @Composable
@@ -419,15 +428,23 @@ private fun SeasonHeaderRow(
 				color = Color.White,
 			)
 
-			// Coverage count
-			Text(
-				text = buildString {
-					append("$coveredCount/$airedEps")
-					if (unairedCount > 0) append(" +$unairedCount upcoming")
-				},
-				fontSize = 13.sp,
-				color = coverageColor,
-			)
+			// Coverage count ("Not aired yet" for seasons with no aired episodes)
+			if (airedEps == 0) {
+				Text(
+					text = "Not aired yet",
+					fontSize = 13.sp,
+					color = Color.White.copy(alpha = 0.4f),
+				)
+			} else {
+				Text(
+					text = buildString {
+						append("$coveredCount/$airedEps")
+						if (unairedCount > 0) append(" +$unairedCount upcoming")
+					},
+					fontSize = 13.sp,
+					color = coverageColor,
+				)
+			}
 
 
 		}
@@ -462,6 +479,23 @@ private fun SeasonHeaderRow(
 				}
 			}
 		}
+	}
+}
+
+@Composable
+private fun UnairedSeasonRow() {
+	// Non-focusable placeholder shown when an expanded season has no episode data yet
+	Row(
+		modifier = Modifier
+			.fillMaxWidth()
+			.padding(horizontal = 40.dp, vertical = 8.dp),
+		verticalAlignment = Alignment.CenterVertically,
+	) {
+		Text(
+			text = "This season hasn't aired yet",
+			fontSize = 14.sp,
+			color = Color.White.copy(alpha = 0.4f),
+		)
 	}
 }
 

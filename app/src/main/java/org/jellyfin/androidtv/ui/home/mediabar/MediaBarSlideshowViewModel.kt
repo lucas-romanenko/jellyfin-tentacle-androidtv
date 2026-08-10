@@ -2,6 +2,7 @@ package org.jellyfin.androidtv.ui.home.mediabar
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -179,6 +180,8 @@ class MediaBarSlideshowViewModel(
 					userId = userId,
 				)
 				viewsResponse.items.orEmpty()
+			} catch (e: CancellationException) {
+				throw e
 			} catch (e: Exception) {
 				if (e is InvalidStatusException && e.status in 500..599) {
 					Timber.w("Failed to get library views: Server error ${e.status} - ${e.message}")
@@ -228,6 +231,8 @@ class MediaBarSlideshowViewModel(
 							enableImageTypes = setOf(ImageType.BACKDROP, ImageType.LOGO),
 						)
 						response.items.orEmpty()
+					} catch (e: CancellationException) {
+						throw e
 					} catch (e: Exception) {
 						if (e is InvalidStatusException && e.status in 500..599) {
 							Timber.w("Failed to fetch from library ${library.name}: Server error ${e.status} - ${e.message}")
@@ -265,6 +270,8 @@ class MediaBarSlideshowViewModel(
 							Timber.i("MediaBar: hero content changed, reloading")
 							loadSlideshowItems(allowCache = false)
 						}
+					} catch (e: CancellationException) {
+						throw e
 					} catch (_: Exception) { /* keep showing current hero */ }
 				}
 				return
@@ -346,9 +353,13 @@ class MediaBarSlideshowViewModel(
 									imageLoader.execute(
 										ImageRequest.Builder(context).data(url).build()
 									)
+								} catch (e: CancellationException) {
+									throw e
 								} catch (_: Exception) { /* non-fatal */ }
 							}
 						} ?: Timber.d("MediaBar: First slide pre-warm timed out, continuing with async load")
+					} catch (e: CancellationException) {
+						throw e
 					} catch (_: Exception) { /* non-fatal */ }
 
 					_state.value = MediaBarState.Ready(items)
@@ -370,6 +381,8 @@ class MediaBarSlideshowViewModel(
 									Timber.i("MediaBar: hero content changed on server, reloading")
 									loadSlideshowItems(allowCache = false)
 								}
+							} catch (e: CancellationException) {
+								throw e
 							} catch (_: Exception) { /* keep showing cached hero */ }
 						}
 					}
@@ -387,6 +400,10 @@ class MediaBarSlideshowViewModel(
 
 			// Hero is disabled or empty — hide the media bar
 			_state.value = MediaBarState.Disabled
+		} catch (e: CancellationException) {
+			// Normal coroutine cancellation — a newer load superseded this one.
+			// Propagate silently instead of marking the slideshow as failed.
+			throw e
 		} catch (e: Exception) {
 				if (e is InvalidStatusException && e.status in 500..599) {
 					// Transient server errors (5xx) should not be treated as critical failures
@@ -616,6 +633,8 @@ class MediaBarSlideshowViewModel(
 										}
 									}
 									serverItems.map { ItemWithApiClient(it, session.apiClient, session.server.id) }
+								} catch (e: CancellationException) {
+									throw e
 								} catch (e: Exception) {
 								if (e is InvalidStatusException && e.status in 500..599) {
 									Timber.w("MediaBar refresh: Failed to fetch from server ${session.server.name}: Server error ${e.status} - ${e.message}")
@@ -734,6 +753,8 @@ class MediaBarSlideshowViewModel(
 				}
 
 				Timber.d("Refreshed ${newItemIndex} background items while keeping ${indicesToKeep.size} adjacent items")
+			} catch (e: CancellationException) {
+				throw e
 			} catch (e: Exception) {
 				Timber.e(e, "Failed to refresh background items: ${e.message}")
 			}
@@ -835,6 +856,10 @@ class MediaBarSlideshowViewModel(
 				if (_isFocused.value && !_playbackState.value.isPaused) {
 					nextSlide()
 				}
+			} catch (e: CancellationException) {
+				// Normal cancellation — a newer slide's trailer job superseded this
+				// one. Don't log or stomp the trailer state the newer job owns.
+				throw e
 			} catch (e: Exception) {
 				Timber.w(e, "MediaBar: Trailer resolution failed for ${item.title}")
 				_trailerState.value = TrailerPreviewState.Unavailable
@@ -872,6 +897,8 @@ class MediaBarSlideshowViewModel(
 					val apiClient = serverApiClients[item.serverId] ?: api
 					val info = TrailerResolver.resolveTrailerPreview(apiClient, item.itemId, userId)
 					trailerCache[item.itemId] = info
+				} catch (e: CancellationException) {
+					throw e
 				} catch (e: Exception) {
 					Timber.d("MediaBar: Pre-resolve failed for ${item.title}: ${e.message}")
 				}

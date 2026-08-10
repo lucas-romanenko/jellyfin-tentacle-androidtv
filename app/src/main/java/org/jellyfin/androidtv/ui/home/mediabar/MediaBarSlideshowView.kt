@@ -54,6 +54,7 @@ import coil3.compose.rememberAsyncImagePainter
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.toBitmap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.R
@@ -423,6 +424,8 @@ private fun MediaBarRating(item: MediaBarSlideItem) {
 					}
 				)
 				apiRatings = mdbListRepository.getRatings(fakeItem)
+			} catch (e: CancellationException) {
+				throw e
 			} catch (e: Exception) {
 			} finally {
 				isLoading = false

@@ -465,21 +465,6 @@ internal fun DiscoverDetailDialog(
 									if (!year.isNullOrBlank()) {
 										Text(text = year, fontSize = 14.sp, color = Color.White.copy(alpha = 0.7f))
 									}
-									if (d?.runtime != null && d.runtime > 0) {
-										Text(
-											text = "${d.runtime} min",
-											fontSize = 14.sp,
-											color = Color.White.copy(alpha = 0.7f),
-										)
-									}
-									if (d != null && d.rating > 0) {
-										Text(
-											text = "${d.rating}/10",
-											fontSize = 14.sp,
-											color = Color(0xFFFFC107),
-											fontWeight = FontWeight.Bold,
-										)
-									}
 									// Media type badge
 									Box(
 										modifier = Modifier
@@ -506,13 +491,42 @@ internal fun DiscoverDetailDialog(
 								.verticalScroll(rememberScrollState())
 								.padding(horizontal = 32.dp, vertical = 16.dp),
 						) {
-							// Genres
-							if (d != null && d.genres.isNotEmpty()) {
-								Text(
-									text = d.genres.joinToString(" • "),
-									fontSize = 13.sp,
-									color = Color.White.copy(alpha = 0.6f),
-								)
+							// Metadata line: rating, runtime (movies), genres
+							val rating = d?.rating?.takeIf { it > 0 } ?: item.rating.takeIf { it > 0 }
+							val runtimeText = if (item.mediaType == "movie") {
+								d?.runtime?.takeIf { it > 0 }?.let { formatRuntime(it) }
+							} else null
+							val genresText = d?.genres?.takeIf { it.isNotEmpty() }?.joinToString(" • ")
+							if (rating != null || runtimeText != null || genresText != null) {
+								Row(
+									verticalAlignment = Alignment.CenterVertically,
+									horizontalArrangement = Arrangement.spacedBy(12.dp),
+								) {
+									if (rating != null) {
+										Text(
+											text = "★ $rating",
+											fontSize = 13.sp,
+											color = Color(0xFFFFC107),
+											fontWeight = FontWeight.Bold,
+										)
+									}
+									if (runtimeText != null) {
+										Text(
+											text = runtimeText,
+											fontSize = 13.sp,
+											color = Color.White.copy(alpha = 0.7f),
+										)
+									}
+									if (genresText != null) {
+										Text(
+											text = genresText,
+											fontSize = 13.sp,
+											color = Color.White.copy(alpha = 0.6f),
+											maxLines = 1,
+											overflow = TextOverflow.Ellipsis,
+										)
+									}
+								}
 								Spacer(modifier = Modifier.height(12.dp))
 							}
 
@@ -529,10 +543,12 @@ internal fun DiscoverDetailDialog(
 
 							// Overview
 							Text(
-								text = d?.overview ?: item.overview,
+								text = d?.overview?.takeIf { it.isNotBlank() } ?: item.overview,
 								fontSize = 14.sp,
 								color = Color.White.copy(alpha = 0.8f),
 								lineHeight = 22.sp,
+								maxLines = 5,
+								overflow = TextOverflow.Ellipsis,
 							)
 
 							Spacer(modifier = Modifier.height(16.dp))
@@ -817,6 +833,15 @@ internal fun DiscoverDetailDialog(
 			}
 		}
 	}
+}
+
+/**
+ * Formats a runtime in minutes as "1h 56m" (or "45m" when under an hour).
+ */
+internal fun formatRuntime(minutes: Int): String {
+	val hours = minutes / 60
+	val mins = minutes % 60
+	return if (hours > 0) "${hours}h ${mins}m" else "${mins}m"
 }
 
 /**

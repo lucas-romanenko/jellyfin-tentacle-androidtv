@@ -472,8 +472,11 @@ private fun CardViewHolderContent(
 						showServerBadge = showServerBadge,
 						footer = {
 							if (showInfo && title != null) {
+								// Finite iterations: an infinite marquee invalidates the frame
+								// continuously for as long as a card is focused, which visibly
+								// janks weak TV GPUs even when nothing else is happening.
 								val focusModifier = if (focused) Modifier.basicMarquee(
-									iterations = Int.MAX_VALUE,
+									iterations = 3,
 										initialDelayMillis = 1500,
 									) else Modifier
 
@@ -506,7 +509,7 @@ private fun CardViewHolderContent(
 
 	if (usePreview) {
 		val focusModifier = if (focused) Modifier.basicMarquee(
-			iterations = Int.MAX_VALUE,
+			iterations = 3,
 			initialDelayMillis = 1500,
 		) else Modifier
 

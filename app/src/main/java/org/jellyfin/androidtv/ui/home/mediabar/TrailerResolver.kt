@@ -1,6 +1,7 @@
 package org.jellyfin.androidtv.ui.home.mediabar
 
 import androidx.core.net.toUri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jellyfin.sdk.api.client.ApiClient
@@ -71,6 +72,10 @@ object TrailerResolver {
 
 			resolveLocalTrailer(apiClient, item)
 				?: resolveYouTubeTrailerFromItem(item)
+		} catch (e: CancellationException) {
+			// Normal coroutine cancellation (a newer resolve superseded this one) —
+			// propagate silently instead of logging it as a failure.
+			throw e
 		} catch (e: Throwable) {
 			Timber.w(e, "TrailerResolver: Failed to fetch item $itemId for trailer resolution")
 			null
@@ -107,6 +112,8 @@ object TrailerResolver {
 				),
 				isLocal = true,
 			)
+		} catch (e: CancellationException) {
+			throw e
 		} catch (e: Exception) {
 			null
 		}

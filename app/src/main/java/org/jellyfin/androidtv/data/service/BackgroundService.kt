@@ -204,6 +204,11 @@ class BackgroundService(
 			BlurContext.NONE -> 0
 		}
 
+		// Legacy devices (API < 31) blur on the CPU. Decode at quarter size there — the
+		// heavy blur hides the resolution loss and it cuts decode + blur + GPU upload
+		// cost ~4x, which matters while these loads race D-pad scrolling.
+		val decodeSize = if (!useComposeBlur && blurAmount > 0) Size(480, 270) else Size(960, 540)
+
 		loadBackgroundsJob?.cancel()
 		loadBackgroundsJob = scope.launch(Dispatchers.IO) {
 			_backgrounds = backdropUrls.mapNotNull { url ->
@@ -211,7 +216,7 @@ class BackgroundService(
 					request = ImageRequest.Builder(context).data(url)
 						// Downscale for background use — full resolution is unnecessary
 						// and significantly slows blur processing on TV hardware
-						.size(Size(960, 540))
+						.size(decodeSize)
 						.build()
 				).image?.toBitmap()
 				

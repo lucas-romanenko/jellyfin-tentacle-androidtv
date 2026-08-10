@@ -45,6 +45,7 @@ fun SearchTextInput(
 	onQueryChange: (query: String) -> Unit,
 	onQuerySubmit: () -> Unit,
 	modifier: Modifier = Modifier,
+	onNavigateDown: (() -> Unit)? = null,
 ) {
 	val interactionSource = remember { MutableInteractionSource() }
 	val focused by interactionSource.collectIsFocusedAsState()
@@ -77,6 +78,12 @@ fun SearchTextInput(
 					if (focused && !isEditing && event.type == KeyEventType.KeyDown &&
 						(event.key == Key.Enter || event.key == Key.DirectionCenter)) {
 						isEditing = true
+						true
+					} else if (focused && !isEditing && onNavigateDown != null &&
+						event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
+						// Explicit hop into the results row — default Compose focus search
+						// does not reliably cross from the text field into the LazyRow below
+						onNavigateDown.invoke()
 						true
 					} else false
 				}

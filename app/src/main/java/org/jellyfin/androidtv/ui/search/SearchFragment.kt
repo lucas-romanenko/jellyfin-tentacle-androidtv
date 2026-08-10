@@ -139,6 +139,17 @@ class SearchFragment : Fragment() {
 							},
 							onQuerySubmit = {
 								viewModel.searchImmediately(query.text)
+								// Delay the focus move past the submit key's KeyUp — moving
+								// focus during KeyDown lets the KeyUp land on the freshly
+								// focused first result card and instantly "click" it.
+								scope.launch {
+									kotlinx.coroutines.delay(150)
+									try {
+										resultsFocusRequester.requestFocus()
+									} catch (_: Exception) {}
+								}
+							},
+							onNavigateDown = {
 								try {
 									resultsFocusRequester.requestFocus()
 								} catch (_: Exception) {}

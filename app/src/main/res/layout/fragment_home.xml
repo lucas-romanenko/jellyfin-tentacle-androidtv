@@ -43,14 +43,15 @@
             android:layout_height="wrap_content" />
     </FrameLayout>
 
-    <!-- Logo -->
+    <!-- Logo. Fixed frame + fitStart so low-resolution logo images scale UP to the
+         same height as high-resolution ones (adjustViewBounds only ever shrinks,
+         which left small logos rendering tiny). -->
     <ImageView
         android:id="@+id/logo"
-        android:layout_width="wrap_content"
+        android:layout_width="360dp"
         android:layout_height="60dp"
         android:layout_marginStart="50dp"
         android:layout_marginTop="80dp"
-        android:adjustViewBounds="true"
         android:scaleType="fitStart"
         android:visibility="gone"
         app:layout_constraintStart_toStartOf="parent"

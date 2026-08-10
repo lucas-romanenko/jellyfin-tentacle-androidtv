@@ -45,6 +45,7 @@ import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.data.repository.UserViewsRepository
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.data.service.BlurContext
+import org.jellyfin.androidtv.preference.SystemPreferences
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.UserSettingPreferences
 import org.jellyfin.androidtv.ui.browsing.CompositeClickedListener
@@ -88,6 +89,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val userRepository by inject<UserRepository>()
 	private val userPreferences by inject<UserPreferences>()
 	private val userSettingPreferences by inject<UserSettingPreferences>()
+	private val systemPreferences by inject<SystemPreferences>()
 	private val userViewsRepository by inject<UserViewsRepository>()
 	private val dataRefreshService by inject<DataRefreshService>()
 	private val customMessageRepository by inject<CustomMessageRepository>()
@@ -207,8 +209,13 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				}
 			} else null
 
-			includeLiveTvRows = liveTvDeferred?.await() ?: false
+			// Await views (fast /UserViews call) but NOT the Live TV recommended-programs
+			// check — that query scans the whole EPG and can take 10+ seconds on large
+			// setups, and awaiting it here used to block the instant cache render below,
+			// leaving the home screen blank. Use the persisted result from the previous
+			// run for the cache render; the real check revalidates in the background.
 			val cachedViews = viewsDeferred?.await()
+			includeLiveTvRows = liveTvDeferred != null && systemPreferences[SystemPreferences.liveTvRowsAvailable]
 
 			// Make sure the rows are empty
 			val rows = mutableListOf<HomeFragmentRow>()
@@ -269,6 +276,16 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						renderInitialRows(rows)
 						Timber.i("Home rendered instantly from cache (${rows.size} rows), revalidating in background")
 
+						// Revalidate Live TV availability in the background and persist it
+						// for the next launch's cache render (the check itself is too slow
+						// to block on — it scans the EPG).
+						liveTvDeferred?.let { deferred ->
+							launch {
+								val available = runCatching { deferred.await() }.getOrDefault(false)
+								systemPreferences[SystemPreferences.liveTvRowsAvailable] = available
+							}
+						}
+
 						// Background revalidation — refreshTentacleRowsInPlace fetches
 						// fresh sections + items and diffs against what's on screen.
 						if (tentacleRepository.checkAvailable()) {
@@ -281,6 +298,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					tentacleRowAdapters.clear()
 				}
 			}
+
+			// Cache miss — we're building fresh rows anyway, so wait for the real
+			// Live TV availability and persist it for future cache renders.
+			includeLiveTvRows = liveTvDeferred?.await() ?: false
+			systemPreferences[SystemPreferences.liveTvRowsAvailable] = includeLiveTvRows
 
 			// Try to load Tentacle dashboard sections (playlists + built-in Jellyfin sections).
 			// The Tentacle dashboard controls the full row order including built-in sections.

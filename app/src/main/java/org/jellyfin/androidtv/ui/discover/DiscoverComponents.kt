@@ -105,11 +105,12 @@ internal val MONITOR_OPTIONS = listOf(
 internal fun DiscoverCard(
 	item: DiscoverItem,
 	onClick: () -> Unit,
+	modifier: Modifier = Modifier,
 ) {
 	var isFocused by remember { mutableStateOf(false) }
 
 	Column(
-		modifier = Modifier
+		modifier = modifier
 			.width(150.dp)
 			.onFocusChanged { isFocused = it.isFocused }
 			.focusable()

@@ -165,7 +165,6 @@ class SearchFragment : Fragment() {
 						Column(
 							modifier = Modifier
 								.focusGroup()
-								.focusRequester(resultsFocusRequester)
 								.padding(top = 8.dp),
 						) {
 							if (isTmdbSearching) {
@@ -188,9 +187,13 @@ class SearchFragment : Fragment() {
 									itemsIndexed(
 										tmdbResults,
 										key = { index, it -> "$index:${it.mediaType}:${it.tmdbId}:${it.tvdbId}" },
-									) { _, item ->
+									) { index, item ->
 										DiscoverCard(
 											item = item,
+											// The focus hop from the search input targets the first
+											// card directly — requesting focus on the container
+											// Column throws (it isn't focusable) and lands nowhere.
+											modifier = if (index == 0) Modifier.focusRequester(resultsFocusRequester) else Modifier,
 											onClick = {
 												if (item.inLibrary) {
 													scope.launch {

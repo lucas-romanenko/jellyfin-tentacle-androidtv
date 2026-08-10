@@ -273,13 +273,19 @@ class MediaBarSlideshowViewModel(
 			if (currentIds != null) {
 				viewModelScope.launch {
 					try {
-						val fresh = tentacleRepository.getHeroItems()
-						// Compare as SETS — the hero playlist is typically random-sorted, so
-						// every fetch returns a new order. An ordered comparison reloaded (and
-						// visibly restarted) the playing hero on every revalidation even when
-						// nothing actually changed.
-						if (fresh.isNotEmpty() && fresh.map { it.id }.toSet() != currentIds) {
-							Timber.i("MediaBar: hero content changed, reloading")
+						// Revalidate the hero CONFIG, not the sampled items: the hero endpoint
+						// returns a random selection on every call, so any item comparison
+						// always looks "changed" and used to visibly tear down the playing
+						// hero. Only a real config change (playlist swapped, toggled, resized)
+						// warrants a reload. Read the cached config BEFORE the fresh fetch —
+						// fetching overwrites the disk cache.
+						val cached = tentacleRepository.getCachedHeroConfig()
+						val fresh = tentacleRepository.getHeroConfig()
+						if (fresh != null && (cached == null ||
+								fresh.enabled != cached.enabled ||
+								fresh.playlistId != cached.playlistId ||
+								fresh.itemCount != cached.itemCount)) {
+							Timber.i("MediaBar: hero config changed, reloading")
 							loadSlideshowItems(allowCache = false)
 						}
 					} catch (e: CancellationException) {
@@ -360,7 +366,10 @@ class MediaBarSlideshowViewModel(
 					// the home screen from becoming interactive.
 					val firstItem = items.first()
 					try {
-						withTimeoutOrNull(3000) {
+						// Generous cap (under the loading overlay's 8s ceiling): if this expires
+						// before the backdrop is cached, firstSlideReady flips true with the
+						// image still in flight and the reveal shows a heroless skeleton.
+						withTimeoutOrNull(6500) {
 							listOfNotNull(firstItem.backdropUrl, firstItem.logoUrl).forEach { url ->
 								try {
 									imageLoader.execute(
@@ -387,15 +396,24 @@ class MediaBarSlideshowViewModel(
 					if (fromCache) {
 						// Background revalidation: fetch fresh hero items and reload
 						// only if the set changed — avoids a restart flicker at launch.
-						val cachedIds = heroItems.map { it.id }.toSet()
 						viewModelScope.launch {
 							try {
-								val fresh = tentacleRepository.getHeroItems()
-								// Set comparison — random hero sort means the order always
-								// differs; only a real membership change warrants a reload
-								if (fresh.isNotEmpty() && fresh.map { it.id }.toSet() != cachedIds) {
-									Timber.i("MediaBar: hero content changed on server, reloading")
+								// Config-based revalidation (items are a random sample every
+								// fetch — comparing them tears the hero down for no reason).
+								// Cached config must be read before the fresh fetch overwrites it.
+								val cachedConfig = tentacleRepository.getCachedHeroConfig()
+								val freshConfig = tentacleRepository.getHeroConfig()
+								if (freshConfig != null && (cachedConfig == null ||
+										freshConfig.enabled != cachedConfig.enabled ||
+										freshConfig.playlistId != cachedConfig.playlistId ||
+										freshConfig.itemCount != cachedConfig.itemCount)) {
+									Timber.i("MediaBar: hero config changed on server, reloading")
 									loadSlideshowItems(allowCache = false)
+								} else {
+									// Config unchanged — keep the on-screen hero untouched, but
+									// refresh the on-disk item cache (getHeroItems side effect)
+									// so the NEXT launch renders a fresh random selection.
+									tentacleRepository.getHeroItems()
 								}
 							} catch (e: CancellationException) {
 								throw e

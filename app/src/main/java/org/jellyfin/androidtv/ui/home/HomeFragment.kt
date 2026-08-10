@@ -77,11 +77,12 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 
 class HomeFragment : Fragment() {
-	companion object {
-		// Track whether the loading overlay has been shown at least once this session.
-		// Prevents the Tentacle logo from re-appearing when navigating back to Home.
-		private var overlayShownOnce = false
-	}
+	// INSTANCE property, deliberately not process-static: a new HomeFragment means a new
+	// home build (app relaunch, session switch), and the loading overlay must cover that
+	// build — a static flag suppressed the overlay on every warm relaunch and the whole
+	// home rebuilt in full view. Back-navigation only recreates the VIEW of the same
+	// instance, so the flag still prevents the logo flashing when returning to Home.
+	private var overlayShownOnce = false
 
 	// Flipped by the backdrop ImageView's Coil success listener — the only signal that
 	// the hero is truly on screen (state flows fire seconds earlier on slow TV SoCs)
@@ -122,11 +123,10 @@ class HomeFragment : Fragment() {
 		muteButton = view.findViewById(R.id.muteButton)
 		loadingOverlay = view.findViewById(R.id.loadingOverlay)
 
-		// Only skip the loading overlay when returning to a home whose hero is genuinely
-		// warm. overlayShownOnce alone is not enough: a short-lived fragment instance
-		// during cold-start session restore can burn the flag before the user ever sees
-		// the overlay, dropping them onto the unfinished skeleton.
-		if (overlayShownOnce && mediaBarViewModel.firstSlideReady.value) {
+		// Skip only when THIS fragment instance already revealed the home once (view
+		// recreation on back-navigation). New instances always show the overlay — their
+		// home is about to build from scratch.
+		if (overlayShownOnce) {
 			loadingOverlay?.isVisible = false
 		}
 

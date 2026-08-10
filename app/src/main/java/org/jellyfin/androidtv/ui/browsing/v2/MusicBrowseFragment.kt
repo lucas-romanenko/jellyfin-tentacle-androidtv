@@ -51,7 +51,6 @@ import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.constant.Extras
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.data.service.BlurContext
-import org.jellyfin.androidtv.ui.background.AppBackground
 import org.jellyfin.androidtv.ui.base.CircularProgressIndicator
 import org.jellyfin.androidtv.ui.base.Icon
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
@@ -129,8 +128,8 @@ class MusicBrowseFragment : Fragment() {
 		}
 
 		Box(modifier = Modifier.fillMaxSize()) {
-			// Activity background
-			AppBackground()
+			// Backdrop is drawn once at the activity level (MainActivity binding.background)
+			// behind all fragments — drawing it again here doubled the fullscreen GPU cost.
 
 			// Dark overlay
 			val currentBg by backgroundService.currentBackground.collectAsState()

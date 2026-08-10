@@ -52,7 +52,6 @@ import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.constant.Extras
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.data.service.BlurContext
-import org.jellyfin.androidtv.ui.background.AppBackground
 import org.jellyfin.androidtv.ui.base.CircularProgressIndicator
 import org.jellyfin.androidtv.ui.base.Icon
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
@@ -121,7 +120,8 @@ class LiveTvBrowseFragment : Fragment() {
 		val uiState by viewModel.uiState.collectAsState()
 
 		Box(modifier = Modifier.fillMaxSize()) {
-			AppBackground()
+			// Backdrop is drawn once at the activity level (MainActivity binding.background)
+			// behind all fragments — drawing it again here doubled the fullscreen GPU cost.
 
 			val currentBg by backgroundService.currentBackground.collectAsState()
 			val overlayAlpha = if (currentBg != null) 0.45f else 0.75f

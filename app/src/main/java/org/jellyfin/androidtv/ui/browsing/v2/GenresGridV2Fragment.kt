@@ -67,7 +67,6 @@ import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.constant.Extras
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.data.service.BlurContext
-import org.jellyfin.androidtv.ui.background.AppBackground
 import org.jellyfin.androidtv.ui.base.CircularProgressIndicator
 import org.jellyfin.androidtv.ui.base.Icon
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
@@ -137,8 +136,8 @@ class GenresGridV2Fragment : Fragment() {
 		val uiState by viewModel.uiState.collectAsState()
 
 		Box(modifier = Modifier.fillMaxSize()) {
-			// Activity background (backdrop from BackgroundService)
-			AppBackground()
+			// Backdrop is drawn once at the activity level (MainActivity binding.background)
+			// behind all fragments — drawing it again here doubled the fullscreen GPU cost.
 
 			// Semi-transparent dark overlay for readability
 			val currentBg by backgroundService.currentBackground.collectAsState()

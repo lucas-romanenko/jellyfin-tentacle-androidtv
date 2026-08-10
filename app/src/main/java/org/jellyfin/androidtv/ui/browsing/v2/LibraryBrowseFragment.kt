@@ -57,7 +57,6 @@ import org.jellyfin.androidtv.constant.ImageType
 import org.jellyfin.androidtv.constant.PosterSize
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.data.service.BlurContext
-import org.jellyfin.androidtv.ui.background.AppBackground
 import org.jellyfin.androidtv.ui.base.CircularProgressIndicator
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
@@ -163,8 +162,8 @@ class LibraryBrowseFragment : Fragment() {
 		}
 
 		Box(modifier = Modifier.fillMaxSize()) {
-			// Activity background (backdrop from BackgroundService)
-			AppBackground()
+			// Backdrop is drawn once at the activity level (MainActivity binding.background)
+			// behind all fragments — drawing it again here doubled the fullscreen GPU cost.
 
 			// Semi-transparent dark overlay for readability
 			val currentBg by backgroundService.currentBackground.collectAsState()

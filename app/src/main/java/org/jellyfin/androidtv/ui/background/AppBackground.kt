@@ -63,17 +63,22 @@ private fun AppThemeBackground() {
 	}
 }
 
+/**
+ * @param showThemeFallback Draw the theme background image/color when no backdrop is set. Pass
+ * false when the hosting window already paints an equivalent solid background — skipping the
+ * fallback saves a fullscreen GPU pass per frame, which weak TV GPUs cannot spare.
+ */
 @Composable
-fun AppBackground() {
+fun AppBackground(showThemeFallback: Boolean = true) {
 	val backgroundService = koinInject<BackgroundService>()
 	val userSettingPreferences = koinInject<UserSettingPreferences>()
 	val currentBackground by backgroundService.currentBackground.collectAsState()
 	val blurContext by backgroundService.blurContext.collectAsState()
 	val enabled by backgroundService.enabled.collectAsState()
-	
+
 	val detailsBlurAmount by rememberPreference(userSettingPreferences, UserSettingPreferences.detailsBackgroundBlurAmount)
 	val browsingBlurAmount by rememberPreference(userSettingPreferences, UserSettingPreferences.browsingBackgroundBlurAmount)
-	
+
 	val blurAmount = if (backgroundService.useComposeBlur) {
 		when (blurContext) {
 			BlurContext.DETAILS -> detailsBlurAmount
@@ -88,7 +93,12 @@ fun AppBackground() {
 		AnimatedContent(
 			targetState = currentBackground,
 			transitionSpec = {
-				val duration = (BackgroundService.TRANSITION_DURATION.inWholeMilliseconds / 2).toInt()
+				// While the crossfade runs, BOTH backdrops draw fullscreen every frame.
+				// Browsing changes fire constantly during D-pad scrolling, so keep that
+				// window short; details screens keep the slower cinematic fade.
+				val totalMs = if (blurContext == BlurContext.BROWSING) 250
+				else BackgroundService.TRANSITION_DURATION.inWholeMilliseconds.toInt()
+				val duration = totalMs / 2
 				fadeIn(tween(durationMillis = duration)) togetherWith fadeOut(snap(delayMillis = duration))
 			},
 			label = "BackgroundTransition",
@@ -104,7 +114,7 @@ fun AppBackground() {
 						.fillMaxSize()
 						.then(if (blurAmount > 0) Modifier.blur(blurAmount.dp) else Modifier)
 				)
-			} else {
+			} else if (showThemeFallback) {
 				AppThemeBackground()
 			}
 		}

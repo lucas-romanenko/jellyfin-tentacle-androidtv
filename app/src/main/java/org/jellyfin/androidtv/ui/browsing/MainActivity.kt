@@ -100,8 +100,16 @@ class MainActivity : FragmentActivity() {
 		// Inflate layout immediately so the window has content during activity
 		// transition — prevents black flash while waiting for session validation.
 		binding = ActivityMainBinding.inflate(layoutInflater)
-		binding.background.setContent { AppBackground() }
+		// No theme fallback: the window background below provides the same solid color,
+		// so skipping the fallback saves a fullscreen GPU pass per frame.
+		binding.background.setContent { AppBackground(showThemeFallback = false) }
 		setContentView(binding.root)
+
+		// Replace the splash-image windowBackground (inherited from the theme for cold
+		// start) with a flat color. The window background is redrawn under everything on
+		// every frame — sampling the splash bitmap there was a permanent fullscreen GPU
+		// pass that the MediaTek-class GPUs in TVs cannot spare.
+		window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(androidx.core.content.ContextCompat.getColor(this, R.color.not_quite_black)))
 
 		// Wait for session restoration before validating authentication
 		// This prevents race condition where activity recreates before session is restored

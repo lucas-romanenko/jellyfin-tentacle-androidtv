@@ -488,51 +488,90 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		// Track events at STARTED level so we know if something changed while paused.
 		// This sets tentacleDirty=true for events arriving between onPause and onResume,
 		// so onResume only refreshes if actually needed (avoids full re-fetch on every nav back).
+		// SELF-HEALING SUBSCRIPTIONS: when the underlying WebSocket drops (Jellyfin
+		// restart, network blip, idle timeout), the SDK's subscribe flow COMPLETES
+		// silently. A TV app stays RESUMED for days, so repeatOnLifecycle never
+		// re-subscribes and live updates die permanently — dashboard changes stop
+		// reaching the open app. Each subscription therefore runs in a retry loop
+		// that detects the flow ending and resubscribes (which reconnects the socket).
 		lifecycleScope.launch {
 			lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-				Timber.w("WS: LibraryChanged dirty-tracker subscription active")
-				api.webSocket.subscribe<LibraryChangedMessage>()
-					.onEach {
-						Timber.w("WS: LibraryChangedMessage received (dirty tracker)")
-						tentacleDirty = true
+				while (isActive) {
+					Timber.w("WS: LibraryChanged dirty-tracker subscription active")
+					try {
+						api.webSocket.subscribe<LibraryChangedMessage>()
+							.collect {
+								Timber.w("WS: LibraryChangedMessage received (dirty tracker)")
+								tentacleDirty = true
+							}
+					} catch (e: kotlinx.coroutines.CancellationException) {
+						throw e
+					} catch (e: Exception) {
+						Timber.w(e, "WS: dirty-tracker subscription error")
 					}
-					.launchIn(this)
+					Timber.w("WS: dirty-tracker subscription ended — resubscribing in 5s")
+					delay(5.seconds)
+				}
 			}
 		}
 
 		lifecycleScope.launch {
 			lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-				Timber.w("WS: refresh subscriptions active (RESUMED)")
-				api.webSocket.subscribe<UserDataChangedMessage>()
-					.onEach {
-						Timber.w("WS: UserDataChangedMessage received")
-						refreshRows(force = false, delayed = true)
-					}
-					.launchIn(this)
-
-				api.webSocket.subscribe<LibraryChangedMessage>()
-					// Coalesce bursts of events into a single refresh. The backend fires
-					// LibraryChangedMessage on every playlist mutation (each webhook / sync
-					// / toggle), and the backend playlist refresh clears-and-re-adds items,
-					// so refreshing on every event reads playlists mid-rebuild and makes
-					// rows blank out and reorder. Debouncing waits until events settle
-					// (which also gives Jellyfin time to finish indexing) before refreshing.
-					.debounce(3.seconds)
-					.onEach {
+				launch {
+					while (isActive) {
 						try {
-							if (!isAdded) return@onEach
-							Timber.w("WS: LibraryChangedMessage settled, refreshing rows + Tentacle home")
-							refreshRows(force = true, delayed = false)
-							if (tentacleRepository.checkAvailable()) {
-								if (!isAdded) return@onEach
-								refreshTentacleRowsInPlace()
-							}
-							tentacleDirty = false
+							api.webSocket.subscribe<UserDataChangedMessage>()
+								.collect {
+									Timber.w("WS: UserDataChangedMessage received")
+									refreshRows(force = false, delayed = true)
+								}
+						} catch (e: kotlinx.coroutines.CancellationException) {
+							throw e
 						} catch (e: Exception) {
-							Timber.w(e, "Error handling LibraryChangedMessage refresh")
+							Timber.w(e, "WS: userdata subscription error")
 						}
+						Timber.w("WS: userdata subscription ended — resubscribing in 5s")
+						delay(5.seconds)
 					}
-					.launchIn(this)
+				}
+
+				launch {
+					while (isActive) {
+						Timber.w("WS: refresh subscription active (RESUMED)")
+						try {
+							api.webSocket.subscribe<LibraryChangedMessage>()
+								// Coalesce bursts of events into a single refresh. The backend fires
+								// LibraryChangedMessage on every playlist mutation (each webhook / sync
+								// / toggle), and the backend playlist refresh clears-and-re-adds items,
+								// so refreshing on every event reads playlists mid-rebuild and makes
+								// rows blank out and reorder. Debouncing waits until events settle
+								// (which also gives Jellyfin time to finish indexing) before refreshing.
+								.debounce(3.seconds)
+								.collect {
+									try {
+										if (!isAdded) return@collect
+										Timber.w("WS: LibraryChangedMessage settled, refreshing rows + Tentacle home")
+										refreshRows(force = true, delayed = false)
+										if (tentacleRepository.checkAvailable()) {
+											if (!isAdded) return@collect
+											refreshTentacleRowsInPlace()
+										}
+										tentacleDirty = false
+									} catch (e: kotlinx.coroutines.CancellationException) {
+										throw e
+									} catch (e: Exception) {
+										Timber.w(e, "Error handling LibraryChangedMessage refresh")
+									}
+								}
+						} catch (e: kotlinx.coroutines.CancellationException) {
+							throw e
+						} catch (e: Exception) {
+							Timber.w(e, "WS: refresh subscription error")
+						}
+						Timber.w("WS: refresh subscription ended — resubscribing in 5s")
+						delay(5.seconds)
+					}
+				}
 			}
 		}
 		

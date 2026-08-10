@@ -33,6 +33,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.constant.CustomMessage
@@ -217,17 +218,35 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			val cachedViews = viewsDeferred?.await()
 			includeLiveTvRows = liveTvDeferred != null && systemPreferences[SystemPreferences.liveTvRowsAvailable]
 
+			// Revalidate Live TV availability in the background and persist for the
+			// next launch — the check scans the whole EPG and must never block a render.
+			liveTvDeferred?.let { deferred ->
+				launch {
+					val available = runCatching { deferred.await() }.getOrDefault(false)
+					systemPreferences[SystemPreferences.liveTvRowsAvailable] = available
+				}
+			}
+
 			// Make sure the rows are empty
 			val rows = mutableListOf<HomeFragmentRow>()
 
 			// Check for coroutine cancellation
 			if (!isActive) return@launch
 
-			// ── Instant render from on-device cache ─────────────────────────
-			// Rows + hero from the last session render immediately (no network),
-			// then a background refresh revalidates against the plugin and
-			// updates rows in place if anything changed.
-			val cachedSections = tentacleRepository.getCachedSections()
+			// ── Fresh-first load ────────────────────────────────────────────
+			// While the loading overlay holds, fetch the authoritative home config
+			// from Tentacle and build everything ONCE — rows, hero, order — so the
+			// reveal is final with no post-launch restructure. The on-device cache
+			// below is only the fallback for an unreachable/slow server.
+			val tentacleAvailable = tentacleRepository.checkAvailable()
+			val freshSections = if (tentacleAvailable) {
+				withTimeoutOrNull(8_000) { tentacleRepository.getSections() }
+			} else null
+
+			// ── Fallback: render from on-device cache ───────────────────────
+			// Only when the fresh fetch failed. Renders the last session's layout,
+			// then a background refresh revalidates and updates rows in place.
+			val cachedSections = if (freshSections == null) tentacleRepository.getCachedSections() else null
 			if (cachedSections != null) {
 				val sections = cachedSections.sections.filter { it.type == "row" || it.type == "builtin" }
 				if (sections.isNotEmpty()) {
@@ -274,17 +293,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						} + "merge:$cachedMergeCw"
 						currentRows = rows
 						renderInitialRows(rows)
-						Timber.i("Home rendered instantly from cache (${rows.size} rows), revalidating in background")
-
-						// Revalidate Live TV availability in the background and persist it
-						// for the next launch's cache render (the check itself is too slow
-						// to block on — it scans the EPG).
-						liveTvDeferred?.let { deferred ->
-							launch {
-								val available = runCatching { deferred.await() }.getOrDefault(false)
-								systemPreferences[SystemPreferences.liveTvRowsAvailable] = available
-							}
-						}
+						Timber.i("Home rendered from cache fallback (${rows.size} rows), revalidating in background")
 
 						// Background revalidation — refreshTentacleRowsInPlace fetches
 						// fresh sections + items and diffs against what's on screen.
@@ -299,22 +308,13 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				}
 			}
 
-			// Cache miss — we're building fresh rows anyway, so wait for the real
-			// Live TV availability and persist it for future cache renders.
-			includeLiveTvRows = liveTvDeferred?.await() ?: false
-			systemPreferences[SystemPreferences.liveTvRowsAvailable] = includeLiveTvRows
-
-			// Try to load Tentacle dashboard sections (playlists + built-in Jellyfin sections).
-			// The Tentacle dashboard controls the full row order including built-in sections.
-			val tentacleAvailable = tentacleRepository.checkAvailable()
-
-			// Fetch sections concurrently with the hero-config fetch below — they are
-			// independent round-trips, so overlapping them (instead of getHeroConfig then
-			// getSections serially) shortens how long the loading overlay sits there.
-			val sectionsDeferred = if (tentacleAvailable) async { tentacleRepository.getSections() } else null
+			// ── Fresh render path ───────────────────────────────────────────
+			// freshSections was fetched above while the loading overlay holds. Build
+			// the final layout in one pass; no post-render revalidation needed.
+			val tentacleFresh = freshSections != null
 
 			// Only add media bar row if Tentacle hero is actually enabled and configured
-			if (userSettingPreferences[UserSettingPreferences.mediaBarEnabled] && tentacleAvailable) {
+			if (userSettingPreferences[UserSettingPreferences.mediaBarEnabled] && tentacleFresh) {
 				val heroConfig = tentacleRepository.getHeroConfig()
 				Timber.d("Hero config check: config=$heroConfig, enabled=${heroConfig?.enabled}, playlistId=${heroConfig?.playlistId}")
 				if (heroConfig != null && heroConfig.enabled && heroConfig.playlistId.isNotEmpty()) {
@@ -329,12 +329,12 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					Timber.d("MediaBar row skipped (hero disabled or no config)")
 				}
 			} else {
-				Timber.d("MediaBar row skipped (mediaBarEnabled=${userSettingPreferences[UserSettingPreferences.mediaBarEnabled]}, tentacleAvailable=$tentacleAvailable)")
+				Timber.d("MediaBar row skipped (mediaBarEnabled=${userSettingPreferences[UserSettingPreferences.mediaBarEnabled]}, tentacleFresh=$tentacleFresh)")
 			}
 			var tentacleSections: List<org.jellyfin.androidtv.data.repository.TentacleSection> = emptyList()
 
-			if (tentacleAvailable) {
-				val sectionsResponse = sectionsDeferred?.await()
+			if (tentacleFresh) {
+				val sectionsResponse = freshSections
 				if (sectionsResponse != null) {
 					tentacleSections = sectionsResponse.sections.filter { it.type == "row" || it.type == "builtin" }
 

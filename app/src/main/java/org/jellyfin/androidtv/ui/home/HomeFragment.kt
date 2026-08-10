@@ -341,8 +341,11 @@ class HomeFragment : Fragment() {
 				}
 			} else {
 				backgroundImage?.isVisible = false
-				// No backdrop to wait for on this slide — don't hold the overlay hostage
-				heroBackdropDrawn.value = true
+				// Only release the overlay when the current SLIDE genuinely has no
+				// backdrop. currentItem can be transiently null right as the state
+				// flips Ready (index reset racing the items list) — treating that as
+				// "nothing to load" opened the loading overlay onto a heroless skeleton.
+				if (currentItem != null) heroBackdropDrawn.value = true
 			}
 
 			if (logoUrl != null) {

@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+	Plain-View poster card used by CardPresenter. Mirrors the visuals of the previous
+	Compose ItemCard/ItemCardBaseItemOverlay/ItemPreview stack without any per-card
+	composition cost. Inflated into ItemCardView (vertical LinearLayout).
+-->
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:parentTag="android.widget.LinearLayout"
+    tools:orientation="vertical">
+
+    <FrameLayout
+        android:id="@+id/card_box"
+        android:layout_width="150dp"
+        android:layout_height="225dp"
+        android:background="#FF1C2026">
+
+        <org.jellyfin.androidtv.ui.AsyncImageView
+            android:id="@+id/card_image"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            tools:ignore="ContentDescription" />
+
+        <ImageView
+            android:id="@+id/card_fallback_image"
+            android:layout_width="60dp"
+            android:layout_height="90dp"
+            android:layout_gravity="center"
+            android:scaleType="fitCenter"
+            android:visibility="gone"
+            tools:ignore="ContentDescription" />
+
+        <!-- Lazily hosts a ComposeView for episode/trailer preview while the card is focused -->
+        <FrameLayout
+            android:id="@+id/card_preview_container"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <LinearLayout
+            android:id="@+id/card_state_indicators"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|start"
+            android:layout_margin="4dp"
+            android:orientation="vertical">
+
+            <ImageView
+                android:id="@+id/card_record_indicator"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginBottom="4dp"
+                android:src="@drawable/ic_record_series"
+                android:visibility="gone"
+                tools:ignore="ContentDescription" />
+
+            <ImageView
+                android:id="@+id/card_favorite_indicator"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@drawable/ic_heart"
+                android:tint="#FFDF2222"
+                android:visibility="gone"
+                tools:ignore="ContentDescription,UseAppTint" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/card_server_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_margin="4dp"
+            android:background="@drawable/shape_card_server_badge"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:paddingStart="4dp"
+            android:paddingTop="2dp"
+            android:paddingEnd="4dp"
+            android:paddingBottom="2dp"
+            android:textColor="#FFFFFFFF"
+            android:textSize="9sp"
+            android:visibility="gone" />
+
+        <FrameLayout
+            android:id="@+id/card_watched_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:layout_margin="4dp"
+            android:background="@drawable/shape_card_badge"
+            android:minWidth="24dp"
+            android:minHeight="24dp"
+            android:padding="4dp"
+            android:visibility="gone">
+
+            <ImageView
+                android:id="@+id/card_watched_icon"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_gravity="center"
+                android:src="@drawable/ic_watch"
+                android:tint="#FFE8EAED"
+                android:visibility="gone"
+                tools:ignore="ContentDescription,UseAppTint" />
+
+            <TextView
+                android:id="@+id/card_unwatched_count"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:textColor="#FFE8EAED"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:id="@+id/card_bottom_overlay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:layout_margin="4dp"
+            android:orientation="vertical">
+
+            <org.jellyfin.androidtv.ui.card.CardProgressBarView
+                android:id="@+id/card_progress"
+                android:layout_width="match_parent"
+                android:layout_height="4dp"
+                android:layout_marginStart="4dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginEnd="4dp"
+                android:layout_marginBottom="4dp"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/card_footer_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:background="@drawable/shape_card_footer"
+                android:ellipsize="end"
+                android:gravity="center"
+                android:marqueeRepeatLimit="3"
+                android:padding="4dp"
+                android:singleLine="true"
+                android:textColor="#FFFFFFFF"
+                android:textSize="14sp"
+                android:visibility="gone"
+                tools:ignore="Deprecated" />
+        </LinearLayout>
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/card_meta_title"
+        android:layout_width="150dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:marqueeRepeatLimit="3"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:singleLine="true"
+        android:textColor="#FFEEEEEE"
+        android:textSize="12sp"
+        android:visibility="gone"
+        tools:ignore="Deprecated" />
+
+    <TextView
+        android:id="@+id/card_meta_subtitle"
+        android:layout_width="150dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="4dp"
+        android:ellipsize="end"
+        android:gravity="center"
+        android:marqueeRepeatLimit="3"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:singleLine="true"
+        android:textColor="#FFB8B8B8"
+        android:textSize="10sp"
+        android:visibility="gone"
+        tools:ignore="Deprecated" />
+</merge>

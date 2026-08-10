@@ -118,8 +118,11 @@ class HomeFragment : Fragment() {
 		muteButton = view.findViewById(R.id.muteButton)
 		loadingOverlay = view.findViewById(R.id.loadingOverlay)
 
-		// Only show loading overlay on first visit — hide immediately on subsequent navigations
-		if (overlayShownOnce) {
+		// Only skip the loading overlay when returning to a home whose hero is genuinely
+		// warm. overlayShownOnce alone is not enough: a short-lived fragment instance
+		// during cold-start session restore can burn the flag before the user ever sees
+		// the overlay, dropping them onto the unfinished skeleton.
+		if (overlayShownOnce && mediaBarViewModel.firstSlideReady.value) {
 			loadingOverlay?.isVisible = false
 		}
 
@@ -208,11 +211,16 @@ class HomeFragment : Fragment() {
 			kotlinx.coroutines.flow.combine(
 				fragment.contentReady,
 				mediaBarViewModel.state,
-			) { rowsReady, heroState ->
+				mediaBarViewModel.firstSlideReady,
+			) { rowsReady, heroState, firstSlideReady ->
 				if (!rowsReady) return@combine false
-				// If hero is part of the layout, wait for it to finish loading
+				// If hero is part of the layout, wait until it is fully presentable: not
+				// just past Loading (the singleton ViewModel may carry a stale Ready from
+				// an earlier fragment), but with the first slide's backdrop pre-warmed —
+				// otherwise the overlay drops onto a text-only skeleton and the hero pops
+				// in seconds later.
 				if (fragment.hasMediaBarAtPosition0) {
-					heroState !is org.jellyfin.androidtv.ui.home.mediabar.MediaBarState.Loading
+					firstSlideReady && heroState !is org.jellyfin.androidtv.ui.home.mediabar.MediaBarState.Loading
 				} else {
 					true // No hero — rows ready is enough
 				}
@@ -221,11 +229,12 @@ class HomeFragment : Fragment() {
 				.onEach { allReady -> if (allReady) dismissOverlay() }
 				.launchIn(lifecycleScope)
 
-			// Safety timeout — dismiss after 5s no matter what. With the on-device
-			// home cache, rows + hero are normally ready well under a second, so a
-			// long ceiling only punishes genuinely-slow cold starts.
+			// Safety timeout — dismiss no matter what so the overlay can never trap the
+			// user. Generous ceiling: the user explicitly prefers the branded loading
+			// screen to hold until the hero is genuinely presentable over an early
+			// reveal of the half-loaded skeleton.
 			lifecycleScope.launch {
-				delay(5000)
+				delay(8000)
 				dismissOverlay()
 			}
 		}

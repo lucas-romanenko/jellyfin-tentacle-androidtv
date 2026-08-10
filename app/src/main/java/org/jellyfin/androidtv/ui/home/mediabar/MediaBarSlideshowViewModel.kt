@@ -76,6 +76,14 @@ class MediaBarSlideshowViewModel(
 	private val _state = MutableStateFlow<MediaBarState>(MediaBarState.Loading)
 	val state: StateFlow<MediaBarState> = _state.asStateFlow()
 
+	// True once the first slide's backdrop is pre-warmed into Coil's cache (or there is
+	// no hero to wait for: disabled/empty/error). The home loading overlay gates its
+	// dismissal on this — Ready alone fires before the image is decodable, revealing a
+	// skeleton that the hero then pops into. This ViewModel is a process-wide singleton,
+	// so the flag also guards against a stale Ready state satisfying a fresh overlay.
+	private val _firstSlideReady = MutableStateFlow(false)
+	val firstSlideReady: StateFlow<Boolean> = _firstSlideReady.asStateFlow()
+
 	private val _playbackState = MutableStateFlow(SlideshowPlaybackState())
 	val playbackState: StateFlow<SlideshowPlaybackState> = _playbackState.asStateFlow()
 
@@ -285,6 +293,7 @@ class MediaBarSlideshowViewModel(
 		trailerJob?.cancel()
 		trailerReadyDeferred = null
 		_trailerState.value = TrailerPreviewState.Idle
+		_firstSlideReady.value = false
 		loadingJob = viewModelScope.launch {
 		try {
 			usingTentacleHero = false
@@ -366,6 +375,7 @@ class MediaBarSlideshowViewModel(
 						throw e
 					} catch (_: Exception) { /* non-fatal */ }
 
+					_firstSlideReady.value = true
 					_state.value = MediaBarState.Ready(items)
 
 					// Continue pre-loading remaining images in background
@@ -405,12 +415,15 @@ class MediaBarSlideshowViewModel(
 			}
 
 			// Hero is disabled or empty — hide the media bar
+			_firstSlideReady.value = true
 			_state.value = MediaBarState.Disabled
 		} catch (e: CancellationException) {
 			// Normal coroutine cancellation — a newer load superseded this one.
 			// Propagate silently instead of marking the slideshow as failed.
 			throw e
 		} catch (e: Exception) {
+				// Nothing further to wait for — let the loading overlay dismiss
+				_firstSlideReady.value = true
 				if (e is InvalidStatusException && e.status in 500..599) {
 					// Transient server errors (5xx) should not be treated as critical failures
 					Timber.w("Failed to load slideshow items: Server error ${e.status} - ${e.message}")
@@ -725,6 +738,7 @@ class MediaBarSlideshowViewModel(
 
 				// Update items list
 				items = updatedItems
+				_firstSlideReady.value = true
 				_state.value = MediaBarState.Ready(items)
 
 				// Preload the newly added items in the background

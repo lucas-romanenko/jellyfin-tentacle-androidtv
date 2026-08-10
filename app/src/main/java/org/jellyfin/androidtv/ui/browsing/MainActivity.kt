@@ -108,8 +108,12 @@ class MainActivity : FragmentActivity() {
 		// Replace the splash-image windowBackground (inherited from the theme for cold
 		// start) with a flat color. The window background is redrawn under everything on
 		// every frame — sampling the splash bitmap there was a permanent fullscreen GPU
-		// pass that the MediaTek-class GPUs in TVs cannot spare.
-		window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(androidx.core.content.ContextCompat.getColor(this, R.color.not_quite_black)))
+		// pass that the MediaTek-class GPUs in TVs cannot spare. Deferred past the first
+		// draw so the StartupActivity splash hands off seamlessly instead of flashing a
+		// dark frame between the splash and the home loading overlay.
+		window.decorView.post {
+			window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(androidx.core.content.ContextCompat.getColor(this, R.color.not_quite_black)))
+		}
 
 		// Wait for session restoration before validating authentication
 		// This prevents race condition where activity recreates before session is restored

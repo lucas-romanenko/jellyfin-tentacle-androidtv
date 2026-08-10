@@ -261,12 +261,16 @@ class MediaBarSlideshowViewModel(
 		// refresh, resume), don't tear down the playing slideshow/trailer — just
 		// revalidate against the server and only reload if the content changed.
 		if (allowCache) {
-			val currentIds = (_state.value as? MediaBarState.Ready)?.items?.map { it.itemId }
+			val currentIds = (_state.value as? MediaBarState.Ready)?.items?.map { it.itemId }?.toSet()
 			if (currentIds != null) {
 				viewModelScope.launch {
 					try {
 						val fresh = tentacleRepository.getHeroItems()
-						if (fresh.isNotEmpty() && fresh.map { it.id } != currentIds) {
+						// Compare as SETS — the hero playlist is typically random-sorted, so
+						// every fetch returns a new order. An ordered comparison reloaded (and
+						// visibly restarted) the playing hero on every revalidation even when
+						// nothing actually changed.
+						if (fresh.isNotEmpty() && fresh.map { it.id }.toSet() != currentIds) {
 							Timber.i("MediaBar: hero content changed, reloading")
 							loadSlideshowItems(allowCache = false)
 						}
@@ -373,11 +377,13 @@ class MediaBarSlideshowViewModel(
 					if (fromCache) {
 						// Background revalidation: fetch fresh hero items and reload
 						// only if the set changed — avoids a restart flicker at launch.
-						val cachedIds = heroItems.map { it.id }
+						val cachedIds = heroItems.map { it.id }.toSet()
 						viewModelScope.launch {
 							try {
 								val fresh = tentacleRepository.getHeroItems()
-								if (fresh.isNotEmpty() && fresh.map { it.id } != cachedIds) {
+								// Set comparison — random hero sort means the order always
+								// differs; only a real membership change warrants a reload
+								if (fresh.isNotEmpty() && fresh.map { it.id }.toSet() != cachedIds) {
 									Timber.i("MediaBar: hero content changed on server, reloading")
 									loadSlideshowItems(allowCache = false)
 								}

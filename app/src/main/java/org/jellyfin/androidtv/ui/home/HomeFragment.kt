@@ -231,7 +231,16 @@ class HomeFragment : Fragment() {
 				}
 			}
 				.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
-				.onEach { allReady -> if (allReady) dismissOverlay() }
+				.onEach { allReady ->
+					if (allReady) {
+						// Short grace hold: the gate confirms the hero backdrop is set,
+						// but row cards are still binding/painting for a few frames —
+						// without this, the reveal briefly shows a row title over an
+						// empty row. dismissOverlay self-guards against repeat calls.
+						delay(600)
+						dismissOverlay()
+					}
+				}
 				.launchIn(lifecycleScope)
 
 			// Safety timeout — dismiss no matter what so the overlay can never trap the
@@ -333,7 +342,10 @@ class HomeFragment : Fragment() {
 			if (backdropUrl != null) {
 				backgroundImage?.isVisible = true
 				backgroundImage?.load(backdropUrl) {
-					crossfade(400)
+					// First composition happens behind the loading overlay — render it
+					// instantly so the reveal shows a finished hero. Later slide changes
+					// keep the crossfade for the pleasant transition.
+					if (heroBackdropDrawn.value) crossfade(400) else crossfade(false)
 					// The loading overlay dismisses on this signal: "hero state Ready +
 					// bitmap pre-warmed" still runs seconds ahead of the backdrop actually
 					// compositing on slow TV SoCs, which used to reveal a heroless skeleton.

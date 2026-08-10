@@ -44,11 +44,6 @@ class AsyncImageView @JvmOverloads constructor(
 	private val imageLoader by inject<ImageLoader>()
 	private var loadJob: Job? = null
 
-	// Incremented on every load()/clear() so a load deferred by doOnAttach (view was detached,
-	// e.g. sitting in a RecycledViewPool) can detect it has been superseded and bail out
-	// instead of loading a stale image into a recycled view.
-	private var loadGeneration = 0
-
 	/**
 	 * The duration of the crossfade when changing switching the images of the url, blurhash and
 	 * placeholder.
@@ -74,63 +69,46 @@ class AsyncImageView @JvmOverloads constructor(
 		placeholder: Drawable? = null,
 		aspectRatio: Double = 1.0,
 		blurHashResolution: Int = 32,
-	) {
-		val generation = ++loadGeneration
-		doOnAttach {
-			// A newer load() or clear() superseded this deferred load while detached
-			if (generation != loadGeneration) return@doOnAttach
-
-			// Cancel the previous load if still running
-			loadJob?.cancel()
-
-			loadJob = lifeCycleOwner?.lifecycleScope?.launch(Dispatchers.IO) {
-				var placeholderOrBlurHash = placeholder
-
-				// Only show blurhash if an image is going to be loaded from the network
-				val isLowRamDevice = context.getSystemService<ActivityManager>()?.isLowRamDevice == true
-				if (url != null && blurHash != null && !isLowRamDevice) withContext(Dispatchers.IO) {
-					val blurHashBitmap = BlurHashDecoder.decode(
-						blurHash,
-						if (aspectRatio > 1) round(blurHashResolution * aspectRatio).toInt() else blurHashResolution,
-						if (aspectRatio >= 1) blurHashResolution else round(blurHashResolution / aspectRatio).toInt(),
-					)
-					if (blurHashBitmap != null) placeholderOrBlurHash = blurHashBitmap.toDrawable(resources)
-				}
-
-				// Start loading image or placeholder
-				val request = if (url == null) {
-					ImageRequest.Builder(context).apply {
-						target(this@AsyncImageView)
-						data(placeholder)
-						if (circleCrop) transformations(CircleCropTransformation())
-					}.build()
-				} else {
-					ImageRequest.Builder(context).apply {
-						val crossFadeDurationMs = crossFadeDuration.inWholeMilliseconds.toInt()
-						if (crossFadeDurationMs > 0) crossfade(crossFadeDurationMs)
-						else crossfade(false)
-
-						target(this@AsyncImageView)
-						data(url)
-						placeholder(placeholderOrBlurHash?.asImage())
-						if (circleCrop) transformations(CircleCropTransformation())
-						error(placeholder?.asImage())
-					}.build()
-				}
-
-				imageLoader.enqueue(request).job.await()
-			}
-		}
-	}
-
-	/**
-	 * Cancels any in-flight or deferred load and clears the current image. Used by recycled
-	 * card views to guarantee no stale image ghosts into the next bind.
-	 */
-	fun clear() {
-		loadGeneration++
+	) = doOnAttach {
+		// Cancel the previous load if still running
 		loadJob?.cancel()
-		loadJob = null
-		setImageDrawable(null)
+
+		loadJob = lifeCycleOwner?.lifecycleScope?.launch(Dispatchers.IO) {
+			var placeholderOrBlurHash = placeholder
+
+			// Only show blurhash if an image is going to be loaded from the network
+			val isLowRamDevice = context.getSystemService<ActivityManager>()?.isLowRamDevice == true
+			if (url != null && blurHash != null && !isLowRamDevice) withContext(Dispatchers.IO) {
+				val blurHashBitmap = BlurHashDecoder.decode(
+					blurHash,
+					if (aspectRatio > 1) round(blurHashResolution * aspectRatio).toInt() else blurHashResolution,
+					if (aspectRatio >= 1) blurHashResolution else round(blurHashResolution / aspectRatio).toInt(),
+				)
+				if (blurHashBitmap != null) placeholderOrBlurHash = blurHashBitmap.toDrawable(resources)
+			}
+
+			// Start loading image or placeholder
+			val request = if (url == null) {
+				ImageRequest.Builder(context).apply {
+					target(this@AsyncImageView)
+					data(placeholder)
+					if (circleCrop) transformations(CircleCropTransformation())
+				}.build()
+			} else {
+				ImageRequest.Builder(context).apply {
+					val crossFadeDurationMs = crossFadeDuration.inWholeMilliseconds.toInt()
+					if (crossFadeDurationMs > 0) crossfade(crossFadeDurationMs)
+					else crossfade(false)
+
+					target(this@AsyncImageView)
+					data(url)
+					placeholder(placeholderOrBlurHash?.asImage())
+					if (circleCrop) transformations(CircleCropTransformation())
+					error(placeholder?.asImage())
+				}.build()
+			}
+
+			imageLoader.enqueue(request).job.await()
+		}
 	}
 }

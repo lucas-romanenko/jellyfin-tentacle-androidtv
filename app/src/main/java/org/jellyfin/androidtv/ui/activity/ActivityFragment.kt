@@ -57,6 +57,7 @@ import org.jellyfin.androidtv.data.repository.ActivityRecentlyDownloaded
 import org.jellyfin.androidtv.data.repository.ActivityResponse
 import org.jellyfin.androidtv.data.repository.ActivityUnreleased
 import org.jellyfin.androidtv.data.repository.TentacleRepository
+import org.jellyfin.androidtv.util.pollDelay
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
 import org.jellyfin.androidtv.ui.navigation.Destinations
@@ -100,6 +101,9 @@ private fun PosterImage(path: String?, contentDescription: String?) {
 	)
 }
 
+private const val ACTIVITY_POLL_INTERVAL_MS = 3_000L
+private const val ACTIVITY_POLL_MAX_INTERVAL_MS = 60_000L
+
 class ActivityFragment : Fragment() {
 	private val tentacleRepository by inject<TentacleRepository>()
 	private val navigationRepository by inject<NavigationRepository>()
@@ -116,13 +120,22 @@ class ActivityFragment : Fragment() {
 
 			// Poll for activity updates every 3s while the screen is visible.
 			// repeatOnLifecycle stops polling when the fragment is not STARTED.
+			// While the server is unreachable the interval backs off (to at most a minute)
+			// instead of retrying every 3s through the whole outage.
 			val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 			LaunchedEffect(lifecycleOwner) {
 				lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+					var failures = 0
 					while (true) {
-						activity = tentacleRepository.getActivity()
+						val response = tentacleRepository.getActivity()
+						if (response != null) {
+							activity = response
+							failures = 0
+						} else {
+							failures++
+						}
 						isLoading = false
-						delay(3_000)
+						delay(pollDelay(ACTIVITY_POLL_INTERVAL_MS, failures, ACTIVITY_POLL_MAX_INTERVAL_MS))
 					}
 				}
 			}

@@ -148,16 +148,22 @@ fun Navbar(
 
 	// Background polling so badge is populated even before visiting the Activity tab.
 	// Polls every 10s while downloads are active (so badge clears promptly), 30s when idle.
-	// Pauses when the app is not in the foreground.
+	// Pauses when the app is not in the foreground, and backs off to at most 5 minutes while
+	// the server is unreachable.
 	val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 	LaunchedEffect(lifecycleOwner) {
 		lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+			var failures = 0
 			while (true) {
-				try {
+				val response = try {
 					tentacleRepository.getActivity()
-				} catch (_: Exception) {}
-				val delay = if (tentacleRepository.activityDownloadCount.value > 0) 10_000L else 30_000L
-				kotlinx.coroutines.delay(delay)
+				} catch (_: Exception) {
+					null
+				}
+				failures = if (response != null) 0 else failures + 1
+				val base = if (tentacleRepository.activityDownloadCount.value > 0) 10_000L else 30_000L
+				// Back off while the server is unreachable rather than polling through the outage.
+				kotlinx.coroutines.delay(org.jellyfin.androidtv.util.pollDelay(base, failures, 300_000L))
 			}
 		}
 	}

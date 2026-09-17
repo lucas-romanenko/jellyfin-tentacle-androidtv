@@ -1039,6 +1039,10 @@ data class AddResult(
 	val alreadyExists: Int = 0,
 	val failed: Int = 0,
 	val error: String? = null,
+	/** Plain-english reason the backend attaches to a failure, deduplicated
+	 *  across titles. Shown instead of a bare "Failed to add", which left the
+	 *  user with nothing to act on. */
+	val detail: String? = null,
 )
 
 @Serializable

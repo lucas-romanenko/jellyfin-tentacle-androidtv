@@ -82,4 +82,32 @@ class SystemPreferences(context: Context) : SharedPreferenceStore(
 		 */
 		val liveTvRowsAvailable = booleanPreference("live_tv_rows_available", false)
 	}
+
+	/**
+	 * Audio codecs known to wedge this device's hardware decoder, lower-cased.
+	 *
+	 * Both playback engines build their device profile from this, so a codec blocked from one
+	 * stays blocked everywhere.
+	 */
+	val blockedAudioCodecs: Set<String>
+		get() = this[brokenAudioCodecs]
+			.split(",")
+			.filter { it.isNotBlank() }
+			.map { it.trim().lowercase() }
+			.toCollection(LinkedHashSet())
+
+	/**
+	 * Persistently mark an audio codec as broken on this device.
+	 *
+	 * @return false when it was already blocked — meaning blocking it did not fix the stall, so
+	 * the failure lies elsewhere and the caller should not claim it has been handled.
+	 */
+	fun blockAudioCodec(codec: String): Boolean {
+		val normalized = codec.trim().lowercase()
+		if (normalized.isEmpty()) return false
+		val codecs = LinkedHashSet(blockedAudioCodecs)
+		if (!codecs.add(normalized)) return false
+		this[brokenAudioCodecs] = codecs.joinToString(",")
+		return true
+	}
 }

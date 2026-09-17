@@ -58,7 +58,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -495,12 +494,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     private Set<String> getBlockedAudioCodecs() {
-        String raw = systemPreferences.getValue().get(SystemPreferences.Companion.getBrokenAudioCodecs());
-        Set<String> codecs = new LinkedHashSet<>();
-        for (String codec : raw.split(",")) {
-            if (!codec.isEmpty()) codecs.add(codec);
-        }
-        return codecs;
+        return systemPreferences.getValue().getBlockedAudioCodecs();
     }
 
     /**
@@ -509,11 +503,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
      * fix the stall, so the failure lies elsewhere).
      */
     private boolean blockAudioCodec(@NonNull String codec) {
-        codec = codec.toLowerCase(Locale.ROOT);
-        Set<String> codecs = getBlockedAudioCodecs();
-        if (!codecs.add(codec)) return false;
-        systemPreferences.getValue().set(SystemPreferences.Companion.getBrokenAudioCodecs(), String.join(",", codecs));
-        Timber.w("Audio codec %s marked broken on this device after stuck playback - the server will transcode it from now on", codec);
+        if (!systemPreferences.getValue().blockAudioCodec(codec)) return false;
+        Timber.w("Audio codec %s marked broken on this device after stuck playback - the server will transcode it from now on", codec.toLowerCase(Locale.ROOT));
         return true;
     }
 

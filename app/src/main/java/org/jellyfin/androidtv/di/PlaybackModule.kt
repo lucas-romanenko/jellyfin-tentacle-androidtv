@@ -11,6 +11,7 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.auth.repository.ServerRepository
+import org.jellyfin.androidtv.preference.SystemPreferences
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.UserSettingPreferences
 import org.jellyfin.androidtv.ui.browsing.MainActivity
@@ -94,7 +95,20 @@ fun Scope.createPlaybackManager() = playbackManager(androidContext()) {
 	)
 	install(media3SessionPlugin(get(), mediaSessionOptions))
 
-	val deviceProfileBuilder = { createDeviceProfile(androidContext(), userPreferences, get()) }
+	// The blocked-codec list is read per profile build, not captured, so a codec blocked during
+	// one session applies to the next without a restart. The legacy PlaybackController path
+	// passes the same set; without it here, turning on the playback rewrite for video would
+	// silently lose the protection against a hardware decoder that wedges on a codec it claims
+	// to support.
+	val systemPreferences = get<SystemPreferences>()
+	val deviceProfileBuilder = {
+		createDeviceProfile(
+			context = androidContext(),
+			userPreferences = userPreferences,
+			serverVersion = get(),
+			disabledAudioCodecs = systemPreferences.blockedAudioCodecs,
+		)
+	}
 	
 	val apiClientFactory = get<ApiClientFactory>()
 	val apiClientResolver: (UUID?) -> ApiClient? = { serverId ->

@@ -1,13 +1,14 @@
 /*
  * Shadow of org.schabi.newpipe.extractor.utils.Utils from NewPipe Extractor.
  *
- * NewPipe Extractor v0.26.0 uses URLDecoder.decode(String, Charset),
+ * NewPipe Extractor v0.26.5 uses URLDecoder.decode(String, Charset),
  * URLEncoder.encode(String, Charset), and String.isBlank() which all require
  * API 33+.  This shadow replaces those calls with their API 23-compatible
  * equivalents so trailer resolution works on all supported devices.
  *
  * This file MUST be kept in sync with the upstream Utils class whenever
- * the NewPipe Extractor dependency is updated.
+ * the NewPipe Extractor dependency is updated. Verified identical upstream
+ * between v0.26.0 and v0.26.5, so the bump to 0.26.5 needed no re-sync.
  */
 package org.schabi.newpipe.extractor.utils;
 

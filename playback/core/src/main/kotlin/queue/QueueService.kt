@@ -223,3 +223,13 @@ class QueueService internal constructor() : PlayerService(), Queue {
 }
 
 val PlaybackManager.queue: Queue get() = requireNotNull(getService<QueueService>())
+
+/**
+ * The queue, or null when there is no [QueueService] registered.
+ *
+ * [queue] throws IllegalArgumentException in that case, which is fatal for callers that can run
+ * after [PlaybackManager.release] has cleared the service list — the manager is a singleton, and
+ * the process can outlive the Activity teardown that released it. Callers driven by UI lifecycle
+ * (rather than by playback itself) should use this and degrade instead of crashing.
+ */
+val PlaybackManager.queueOrNull: Queue? get() = getService<QueueService>()

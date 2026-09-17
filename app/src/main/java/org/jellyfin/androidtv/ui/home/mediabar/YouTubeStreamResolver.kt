@@ -15,13 +15,23 @@ import timber.log.Timber
  * descrambling to avoid CDN throttling / HTTP 403 errors.
  *
  * This resolver picks:
- *  1. The best H.264 (avc1) video-only stream ≤ 720p (widest device compatibility)
+ *  1. The best H.264 (avc1) video-only stream up to [MAX_TRAILER_HEIGHT]
  *  2. Falls back to VP9 or AV1 if no avc1 is available
  *  3. The best AAC (mp4a) audio stream for the audio track
  */
 object YouTubeStreamResolver {
 
 	private const val TAG = "YouTubeStream"
+
+	/**
+	 * Tallest trailer stream to accept.
+	 *
+	 * YouTube's muxed (progressive) streams stop at 720p; 1080p exists only as a separate
+	 * video-only track plus an audio track, which this resolver already prefers and ExoPlayer
+	 * merges. The cap used to be 720p, which threw away the 1080p renditions the device is
+	 * perfectly able to decode — H.264 at 1080p is within reach of any Android TV device.
+	 */
+	private const val MAX_TRAILER_HEIGHT = 1080
 
 	@Volatile
 	private var initialized = false
@@ -104,7 +114,7 @@ object YouTubeStreamResolver {
 
 	private fun pickBestVideo(streams: List<VideoStream>): VideoStream? {
 		val preferred = streams
-			.filter { it.height in 1..720 }
+			.filter { it.height in 1..MAX_TRAILER_HEIGHT }
 			.sortedWith(compareBy<VideoStream> { codecPriority(it.codec) }.thenByDescending { it.height })
 			.firstOrNull()
 		if (preferred != null) return preferred

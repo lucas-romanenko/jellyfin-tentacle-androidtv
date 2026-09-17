@@ -78,7 +78,7 @@ fun showShuffleDialog(
 							},
 							onShuffle = { libraryId, serverId, genreName, contentType, libraryCollectionType ->
 							// Use a non-compose scope so the shuffle survives dialog dismissal
-							kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+							org.jellyfin.androidtv.util.appScope.launch {
 								shuffleManager.libraryShuffle(
 									context = context,
 									libraryId = libraryId,

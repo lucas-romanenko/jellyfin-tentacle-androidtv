@@ -1,10 +1,10 @@
 package org.jellyfin.androidtv.ui.home
 
+import org.jellyfin.androidtv.util.appScope
 import android.content.Context
 import androidx.leanback.widget.HeaderItem
 import androidx.leanback.widget.ListRow
 import androidx.leanback.widget.Row
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -35,14 +35,14 @@ class HomeFragmentWatchlistRow(
 		row = ListRow(header, listRowAdapter!!)
 		rowsAdapter.add(row!!)
 
-		CoroutineScope(Dispatchers.Main).launch {
+		appScope.launch {
 			loadWatchlistItems(listRowAdapter!!)
 		}
 	}
 
 	fun refresh() {
 		listRowAdapter?.let { adapter ->
-			CoroutineScope(Dispatchers.Main).launch {
+			appScope.launch {
 				adapter.clear()
 				loadWatchlistItems(adapter)
 			}

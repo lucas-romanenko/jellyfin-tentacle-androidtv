@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.ui.playlist
 
+import org.jellyfin.androidtv.util.appScope
 import android.app.Dialog
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -16,7 +17,6 @@ import android.widget.EditText
 import android.widget.Switch
 import android.widget.Toast
 import androidx.fragment.app.DialogFragment
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -171,7 +171,7 @@ class CreatePlaylistDialogFragment : DialogFragment() {
 		val api = apiClient ?: return
 		val id = itemId ?: return
 
-		CoroutineScope(Dispatchers.Main).launch {
+		appScope.launch {
 			try {
 				withContext(Dispatchers.IO) {
 					val createRequest = CreatePlaylistDto(

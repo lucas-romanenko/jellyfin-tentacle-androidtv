@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.ui.playlist
 
+import org.jellyfin.androidtv.util.appScope
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -48,7 +49,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -267,7 +267,7 @@ fun CreatePlaylistDialog(
 								return@GlassDialogRow
 							}
 							isCreating = true
-							CoroutineScope(Dispatchers.Main).launch {
+							appScope.launch {
 								try {
 									withContext(Dispatchers.IO) {
 										val createRequest = CreatePlaylistDto(

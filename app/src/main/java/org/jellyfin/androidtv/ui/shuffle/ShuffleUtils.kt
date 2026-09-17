@@ -1,8 +1,7 @@
 package org.jellyfin.androidtv.ui.shuffle
 
+import org.jellyfin.androidtv.util.appScope
 import android.content.Context
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
@@ -20,7 +19,7 @@ fun executeQuickShuffle(
 	navigationRepository: NavigationRepository
 ) {
 	val shuffleManager = GlobalContext.get().get<ShuffleManager>()
-	CoroutineScope(Dispatchers.Main).launch {
+	appScope.launch {
 		shuffleManager.quickShuffle(context)
 	}
 }
@@ -38,7 +37,7 @@ fun executeGenreShuffle(
 	navigationRepository: NavigationRepository
 ) {
 	val shuffleManager = GlobalContext.get().get<ShuffleManager>()
-	CoroutineScope(Dispatchers.Main).launch {
+	appScope.launch {
 		if (genreName.isNullOrBlank()) {
 			shuffleManager.quickShuffle(context)
 		} else {

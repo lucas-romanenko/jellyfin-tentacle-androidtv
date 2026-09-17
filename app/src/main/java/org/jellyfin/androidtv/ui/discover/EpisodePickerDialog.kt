@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -291,7 +292,9 @@ fun EpisodePickerContent(
 				modifier = Modifier.fillMaxSize().focusRequester(listFocusRequester),
 				contentPadding = PaddingValues(vertical = 8.dp),
 			) {
-				items(listItems, key = { it.key }) { listItem ->
+				// Index-prefixed: TMDB occasionally lists the same episode number
+				// twice in a season, and a duplicate key crashes the app.
+				itemsIndexed(listItems, key = { index, it -> "$index:${it.key}" }) { _, listItem ->
 					when (listItem) {
 						is PickerListItem.SeasonHeader -> {
 							SeasonHeaderRow(

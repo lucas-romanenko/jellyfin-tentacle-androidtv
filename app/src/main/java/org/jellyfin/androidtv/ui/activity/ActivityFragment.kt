@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -217,7 +218,11 @@ private fun DownloadsRow(downloads: List<ActivityDownload>) {
 			contentPadding = PaddingValues(horizontal = 48.dp),
 			horizontalArrangement = Arrangement.spacedBy(16.dp),
 		) {
-			items(downloads, key = { "${it.tmdbId}_${it.episode}" }) { download ->
+			// Keys must be unique or Compose throws and takes the app down. The
+			// index guarantees that: tmdbId is not unique across this list (TMDB
+			// uses separate id spaces for movies and series, so the two can
+			// collide) and neither is tmdbId+episode.
+			itemsIndexed(downloads, key = { index, it -> "$index:${it.tmdbId}:${it.episode}" }) { _, download ->
 				DownloadCard(download)
 			}
 		}
@@ -409,7 +414,7 @@ private fun RecentlyDownloadedRow(
 			contentPadding = PaddingValues(horizontal = 48.dp),
 			horizontalArrangement = Arrangement.spacedBy(16.dp),
 		) {
-			items(items, key = { it.tmdbId }) { item ->
+			itemsIndexed(items, key = { index, it -> "$index:${it.tmdbId}" }) { _, item ->
 				RecentlyDownloadedCard(item, onNavigate)
 			}
 		}
@@ -549,7 +554,7 @@ private fun UnreleasedRow(unreleased: List<ActivityUnreleased>) {
 			contentPadding = PaddingValues(horizontal = 48.dp),
 			horizontalArrangement = Arrangement.spacedBy(16.dp),
 		) {
-			items(unreleased, key = { if (it.tmdbId > 0) "tmdb:${it.tmdbId}" else "unreleased:${it.title}" }) { item ->
+			itemsIndexed(unreleased, key = { index, it -> "$index:${it.tmdbId}:${it.title}" }) { _, item ->
 				UnreleasedCard(item)
 			}
 		}

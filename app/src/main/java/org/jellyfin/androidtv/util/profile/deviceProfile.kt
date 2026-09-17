@@ -15,6 +15,7 @@ import org.jellyfin.sdk.model.api.MediaStreamProtocol
 import org.jellyfin.sdk.model.api.ProfileConditionValue
 import org.jellyfin.sdk.model.api.SubtitleDeliveryMethod
 import org.jellyfin.sdk.model.api.VideoRangeType
+import org.jellyfin.sdk.model.api.DeviceProfile
 import org.jellyfin.sdk.model.deviceprofile.DeviceProfileBuilder
 import org.jellyfin.sdk.model.deviceprofile.buildDeviceProfile
 import kotlin.math.roundToInt
@@ -47,24 +48,42 @@ private val supportedAudioCodecs = arrayOf(
 	Codec.Audio.VORBIS,
 )
 
+// Transcode targets, most preferred first. MP3 is deliberately absent: the server picked
+// libmp3lame for an EAC3 5.1 source and the resulting MP3-in-mpegts track played as video with
+// completely silent audio. AAC is mandatory on every Android device (CDD), so offering MP3 as a
+// transcode target can only ever be a downgrade. MP3 remains a direct-play source codec below.
 private val hlsMpegTsAudioCodecs = arrayOf(
 	Codec.Audio.AAC,
 	Codec.Audio.AC3,
-	Codec.Audio.EAC3,
-	Codec.Audio.MP3
+	Codec.Audio.EAC3
 )
 
 private val hlsFmp4AudioCodecs = arrayOf(
 	Codec.Audio.AAC,
 	Codec.Audio.AC3,
 	Codec.Audio.EAC3,
-	Codec.Audio.MP3,
 	Codec.Audio.ALAC,
 	Codec.Audio.FLAC,
 	Codec.Audio.OPUS,
 	Codec.Audio.DTS,
 	Codec.Audio.TRUEHD
 )
+
+/**
+ * Transcode audio targets for a container, in preference order.
+ *
+ * Falls back to AAC when the user's settings would leave nothing: an empty list lets the server
+ * choose its own target, which is how silent MP3 audio happened in the first place. AAC is
+ * mandatory on Android, so it is always a safe floor.
+ */
+private fun transcodeAudioCodecs(
+	containerCodecs: Array<String>,
+	allowedAudioCodecs: Array<String>,
+): Array<String> = containerCodecs
+	.filter(allowedAudioCodecs::contains)
+	.ifEmpty { listOf(Codec.Audio.AAC) }
+	.toTypedArray()
+
 
 private fun UserPreferences.getMaxBitrate(): Int {
 	var maxBitrate = this[UserPreferences.maxBitrate].toFloatOrNull()
@@ -83,17 +102,26 @@ fun createDeviceProfile(
 	serverVersion: ServerVersion,
 	forceH264Transcode: Boolean = false,
 	disabledAudioCodecs: Collection<String> = emptySet(),
-) = createDeviceProfile(
-	mediaTest = MediaCodecCapabilitiesTest(context),
-	maxBitrate = userPreferences.getMaxBitrate(),
-	maxVideoResolution = userPreferences[UserPreferences.maxVideoResolution],
-	isAC3Enabled = userPreferences[UserPreferences.ac3Enabled],
-	downMixAudio = userPreferences[UserPreferences.audioBehaviour] == AudioBehavior.DOWNMIX_TO_STEREO,
-	assDirectPlay = userPreferences[UserPreferences.assDirectPlay],
-	pgsDirectPlay = userPreferences[UserPreferences.pgsDirectPlay],
-	forceH264Transcode = forceH264Transcode,
-	disabledAudioCodecs = disabledAudioCodecs,
-)
+): DeviceProfile {
+	// A stereo-only sink (Bluetooth headphones, a wired headset) cannot take a 5.1 track, and the
+	// device keeps advertising the HDMI sink's surround formats while routed to one. Without this
+	// the capability check passes, AudioTrack creation then throws, and every 5.1/E-AC3 title is
+	// unplayable with a bare "Failed to load video". Downmix for the session instead.
+	val stereoOnlyRoute = isStereoOnlyAudioRoute(context)
+
+	return createDeviceProfile(
+		mediaTest = MediaCodecCapabilitiesTest(context),
+		maxBitrate = userPreferences.getMaxBitrate(),
+		maxVideoResolution = userPreferences[UserPreferences.maxVideoResolution],
+		isAC3Enabled = userPreferences[UserPreferences.ac3Enabled] && !stereoOnlyRoute,
+		downMixAudio = userPreferences[UserPreferences.audioBehaviour] == AudioBehavior.DOWNMIX_TO_STEREO ||
+			stereoOnlyRoute,
+		assDirectPlay = userPreferences[UserPreferences.assDirectPlay],
+		pgsDirectPlay = userPreferences[UserPreferences.pgsDirectPlay],
+		forceH264Transcode = forceH264Transcode,
+		disabledAudioCodecs = disabledAudioCodecs,
+	)
+}
 
 fun createDeviceProfile(
 	mediaTest: MediaCodecCapabilitiesTest,
@@ -183,7 +211,7 @@ fun createDeviceProfile(
 		protocol = MediaStreamProtocol.HLS
 
 		videoCodec(*hlsVideoCodecs)
-		audioCodec(*hlsMpegTsAudioCodecs.filter(allowedAudioCodecs::contains).toTypedArray())
+		audioCodec(*transcodeAudioCodecs(hlsMpegTsAudioCodecs, allowedAudioCodecs))
 
 		copyTimestamps = false
 		enableSubtitlesInManifest = true
@@ -197,7 +225,7 @@ fun createDeviceProfile(
 		protocol = MediaStreamProtocol.HLS
 
 		videoCodec(*hlsVideoCodecs)
-		audioCodec(*hlsFmp4AudioCodecs.filter(allowedAudioCodecs::contains).toTypedArray())
+		audioCodec(*transcodeAudioCodecs(hlsFmp4AudioCodecs, allowedAudioCodecs))
 
 		copyTimestamps = false
 		enableSubtitlesInManifest = true

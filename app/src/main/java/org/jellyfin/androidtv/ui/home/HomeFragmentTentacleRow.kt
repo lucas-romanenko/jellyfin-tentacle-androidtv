@@ -22,6 +22,15 @@ class HomeFragmentTentacleRow(
 	private val adapterRegistry: MutableMap<String, ItemRowAdapter>? = null,
 ) : HomeFragmentRow {
 
+	private companion object {
+		// THUMB is the 16:9 image type; CardPresenter maps it to
+		// ASPECT_RATIO_16_9. Built once and shared for the same reason the
+		// poster presenter is: view recycling across rows.
+		val widePresenter by lazy {
+			CardPresenter(true, org.jellyfin.androidtv.constant.ImageType.THUMB, 150, true)
+		}
+	}
+
 	override fun addToRowsAdapter(
 		context: Context,
 		cardPresenter: CardPresenter,
@@ -30,11 +39,13 @@ class HomeFragmentTentacleRow(
 		for (rowData in rowDataList) {
 			if (rowData.items.isEmpty()) continue
 
-			// Use the shared cardPresenter for RecycledViewPool sharing across rows
+			// Share a presenter per shape, so the RecycledViewPool is still shared
+			// across rows of the same shape rather than one per row.
+			val presenter = if (rowData.wide) widePresenter else cardPresenter
 			val rowAdapter = ItemRowAdapter(
 				context,
 				rowData.items,
-				cardPresenter,
+				presenter,
 				rowsAdapter,
 				true, // staticItems flag
 			)
@@ -60,4 +71,6 @@ data class TentacleRowData(
 	val title: String,
 	val playlistId: String,
 	val items: List<BaseItemDto>,
+	/** 16:9 cards instead of 2:3. Set from the row's shape in the dashboard. */
+	val wide: Boolean = false,
 )

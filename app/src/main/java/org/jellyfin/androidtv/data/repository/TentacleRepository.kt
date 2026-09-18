@@ -935,6 +935,10 @@ data class TentacleSection(
 	val displayText: String = "",
 	val playlistId: String? = null,
 	val sectionId: String? = null,
+	// "poster" (2:3) or "wide" (16:9), chosen per row in the dashboard. Some
+	// content has no portrait artwork at all — a YouTube thumbnail in a poster
+	// slot is cropped to a strip of its middle — so the row says which it wants.
+	val shape: String = "poster",
 )
 
 @Serializable

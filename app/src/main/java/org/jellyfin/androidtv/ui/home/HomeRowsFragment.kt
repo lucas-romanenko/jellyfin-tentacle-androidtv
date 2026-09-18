@@ -267,7 +267,14 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 								if (items.isNotEmpty()) {
 									rows.add(
 										HomeFragmentTentacleRow(
-											listOf(TentacleRowData(title = section.displayText, playlistId = playlistId, items = items)),
+											listOf(
+												TentacleRowData(
+													title = section.displayText,
+													playlistId = playlistId,
+													items = items,
+													wide = section.shape == "wide",
+												)
+											),
 											tentacleRowAdapters,
 										)
 									)
@@ -347,6 +354,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 									title = section.displayText,
 									playlistId = section.playlistId!!,
 									items = tentacleRepository.getSectionItems(section.playlistId),
+									wide = section.shape == "wide",
 								)
 							}
 						}
@@ -925,6 +933,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 							title = section.displayText,
 							playlistId = section.playlistId!!,
 							items = tentacleRepository.getSectionItems(section.playlistId),
+							wide = section.shape == "wide",
 						)
 					}
 				}.awaitAll()

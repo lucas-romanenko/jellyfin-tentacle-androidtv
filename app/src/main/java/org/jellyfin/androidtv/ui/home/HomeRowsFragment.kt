@@ -293,7 +293,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						// dashboard triggers a structural rebuild on the next refresh
 						currentTentacleSectionKeys = sections.map { section ->
 							when (section.type) {
-								"row" -> "playlist:${section.playlistId}"
+								"row" -> "playlist:${section.playlistId}:${section.shape}"
 								"builtin" -> "builtin:${section.sectionId}"
 								else -> "unknown:${section.id}"
 							}
@@ -388,7 +388,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					// merge flag is included so toggling it rebuilds rows in place)
 					currentTentacleSectionKeys = tentacleSections.map { section ->
 						when (section.type) {
-							"row" -> "playlist:${section.playlistId}"
+							"row" -> "playlist:${section.playlistId}:${section.shape}"
 							"builtin" -> "builtin:${section.sectionId}"
 							else -> "unknown:${section.id}"
 						}
@@ -873,7 +873,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		val mergeCw = sectionsResponse.mergeContinueWatching
 		val newKeys = newSections.map { section ->
 			when (section.type) {
-				"row" -> "playlist:${section.playlistId}"
+				"row" -> "playlist:${section.playlistId}:${section.shape}"
 				"builtin" -> "builtin:${section.sectionId}"
 				else -> "unknown:${section.id}"
 			}

@@ -825,7 +825,13 @@ class ItemDetailsFragment : Fragment() {
 						if (posterUrl != null) {
 							PosterImage(
 								imageUrl = posterUrl,
-								isLandscape = isEpisode,
+								// Judged by the artwork rather than the kind of
+								// item, so 16:9 content — a YouTube video, a
+								// home video — is framed correctly without this
+								// screen knowing where it came from. A 16:9
+								// image in a 2:3 frame is letterboxed into a
+								// strip with dead space above and below.
+								isLandscape = isEpisode || item.hasLandscapeArtwork(),
 								isSquare = isMusicAlbum || isMusicArtist || isPlaylist,
 								item = item,
 							)
@@ -2080,9 +2086,11 @@ class ItemDetailsFragment : Fragment() {
 
 	private fun getPosterUrl(item: BaseItemDto): String? {
 		return when {
-			item.type == BaseItemKind.EPISODE -> {
+			item.type == BaseItemKind.EPISODE || item.hasLandscapeArtwork() -> {
 				val thumbImage = item.itemImages[ImageType.THUMB]
 				val primaryImage = item.itemImages[ImageType.PRIMARY]
+				// Sized by width, not height: this artwork is wider than it is
+				// tall, so maxHeight would ask for a needlessly large image.
 				(thumbImage ?: primaryImage)?.getUrl(viewModel.effectiveApi, maxWidth = 500)
 			}
 			item.type == BaseItemKind.SEASON -> {
@@ -2095,6 +2103,16 @@ class ItemDetailsFragment : Fragment() {
 			}
 		}
 	}
+
+	/**
+	 * Whether this item's own artwork is wider than it is tall.
+	 *
+	 * Jellyfin reports the Primary image's aspect ratio, so 16:9 content is
+	 * recognised from the image itself rather than from a list of item types
+	 * that happen to have landscape art.
+	 */
+	private fun BaseItemDto.hasLandscapeArtwork(): Boolean =
+		(primaryImageAspectRatio ?: 0.0) > 1.2
 
 	private fun getLogoUrl(item: BaseItemDto): String? {
 		val logoImage = item.getLogoImage()

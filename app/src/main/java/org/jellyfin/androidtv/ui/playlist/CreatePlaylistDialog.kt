@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -43,7 +45,14 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,6 +83,8 @@ fun CreatePlaylistDialog(
 	var isCreating by remember { mutableStateOf(false) }
 	val context = LocalContext.current
 	val nameInputFocusRequester = remember { FocusRequester() }
+	val publicRowFocusRequester = remember { FocusRequester() }
+	val keyboardController = LocalSoftwareKeyboardController.current
 
 	Dialog(
 		onDismissRequest = onBack,
@@ -162,7 +173,23 @@ fun CreatePlaylistDialog(
 					cursorBrush = SolidColor(Color(0xFF00A4DC)),
 					singleLine = true,
 					interactionSource = nameInteraction,
+					// A focused text field keeps D-pad Up/Down for itself, so with a remote there
+					// was no way to leave it and reach "Public playlist" or "Create & Add".
+					keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+					// focusManager.moveFocus(Down) finds nothing from inside the field (measured on
+					// a Google TV Streamer), so hand focus to the next row explicitly.
+					keyboardActions = KeyboardActions(onNext = {
+						keyboardController?.hide()
+						publicRowFocusRequester.requestFocus()
+					}),
 					modifier = Modifier
+						.onPreviewKeyEvent { event ->
+							if (event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
+								keyboardController?.hide()
+								publicRowFocusRequester.requestFocus()
+								true
+							} else false
+						}
 						.fillMaxWidth()
 						.padding(horizontal = 24.dp)
 						.clip(RoundedCornerShape(12.dp))
@@ -196,6 +223,7 @@ fun CreatePlaylistDialog(
 				Row(
 					modifier = Modifier
 						.fillMaxWidth()
+						.focusRequester(publicRowFocusRequester)
 						.clickable(
 							interactionSource = switchInteraction,
 							indication = null,

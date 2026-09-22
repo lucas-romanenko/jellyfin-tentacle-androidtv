@@ -14,7 +14,9 @@ import kotlinx.coroutines.delay
 import org.jellyfin.playback.core.PlaybackManager
 import org.jellyfin.playback.core.model.PlayState
 import org.jellyfin.playback.core.model.PositionInfo
-import org.jellyfin.playback.core.queue.queue
+import kotlinx.coroutines.flow.MutableStateFlow
+import org.jellyfin.playback.core.queue.QueueEntry
+import org.jellyfin.playback.core.queue.queueOrNull
 import org.koin.compose.koinInject
 import kotlin.math.roundToInt
 import kotlin.time.Duration
@@ -24,7 +26,8 @@ import kotlin.time.Duration.Companion.seconds
 fun rememberQueueEntry(
 	playbackManager: PlaybackManager = koinInject(),
 ) = remember(playbackManager) {
-	playbackManager.queue.entry
+	// UI-driven, so it must not assume a QueueService is registered (see queueOrNull).
+	playbackManager.queueOrNull?.entry ?: MutableStateFlow<QueueEntry?>(null)
 }.collectAsState()
 
 @Composable

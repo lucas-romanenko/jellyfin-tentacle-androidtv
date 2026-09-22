@@ -72,6 +72,20 @@ class TrailerPlayerFragment : Fragment() {
 					goBack()
 					return true
 				}
+				// There is no on-screen controller, so give the remote the basics: OK / Play-Pause
+				// toggles playback and Left / Right skip 10 s (previously every key but Back was
+				// ignored, so a trailer could not even be paused).
+				val p = player
+				if (p != null && event.action == KeyEvent.ACTION_DOWN) {
+					when (event.keyCode) {
+						KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+						KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { p.playWhenReady = !p.playWhenReady; return true }
+						KeyEvent.KEYCODE_MEDIA_PLAY -> { p.playWhenReady = true; return true }
+						KeyEvent.KEYCODE_MEDIA_PAUSE -> { p.playWhenReady = false; return true }
+						KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { p.seekTo(p.currentPosition + 10_000); return true }
+						KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> { p.seekTo((p.currentPosition - 10_000).coerceAtLeast(0)); return true }
+					}
+				}
 				return super.dispatchKeyEvent(event)
 			}
 		}.apply {

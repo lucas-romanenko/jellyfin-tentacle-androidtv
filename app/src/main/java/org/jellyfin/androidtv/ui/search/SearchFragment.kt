@@ -197,11 +197,13 @@ class SearchFragment : Fragment() {
 											onClick = {
 												if (item.inLibrary) {
 													scope.launch {
-														val itemId = tentacleRepository.findJellyfinItem(
-															item.title, item.year, item.mediaType
+														val itemId = tentacleRepository.resolveOwnedItem(
+															item.mediaType, item.tmdbId, item.title, item.year
 														)
 														if (itemId != null) {
 															navigationRepository.navigate(Destinations.itemDetails(itemId))
+														} else {
+															selectedItem = item // open the detail dialog instead of doing nothing
 														}
 													}
 												} else {

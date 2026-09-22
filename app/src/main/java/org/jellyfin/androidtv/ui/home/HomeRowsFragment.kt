@@ -1012,15 +1012,32 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				val existingRow = if (name != null) existingRowsByName[name] else null
 
 				if (existingRow != null && freshRow != null) {
-					// Reuse existing row as-is — preserves horizontal scroll position.
-					// Don't touch the ItemRowAdapter's items here. Item content updates
-					// are handled by the content-only refresh path (structureChanged=false).
 					val existingAdapter = existingRow.adapter as? ItemRowAdapter
-					val playlistId = nameToPlaylistId[name]
-					if (playlistId != null && existingAdapter != null) {
-						tentacleRowAdapters[playlistId] = existingAdapter
+					val freshAdapter = freshRow.adapter as? ItemRowAdapter
+					// A row's card shape (poster 2:3 vs wide 16:9) is bound to its presenter
+					// when the ItemRowAdapter is built. Both shapes use one shared
+					// CardPresenter instance each, so identity tells us if the shape changed.
+					// Reusing the old ListRow would keep the old presenter and silently
+					// discard the dashboard's shape change — it only ever "took" on rows
+					// that had no existing match. Rebuild that one row instead; losing its
+					// scroll position is correct when every card just changed size.
+					val shapeChanged = freshAdapter != null && existingAdapter != null &&
+						freshAdapter.cardPresenter !== existingAdapter.cardPresenter
+					if (shapeChanged) {
+						// Fresh row is already registered in tentacleRowAdapters by
+						// addToRowsAdapter, so in-place item refreshes reach the new adapter.
+						Timber.i("Tentacle row '$name' changed card shape, rebuilding it")
+						newContentRows.add(freshRow)
+					} else {
+						// Reuse existing row as-is — preserves horizontal scroll position.
+						// Don't touch the ItemRowAdapter's items here. Item content updates
+						// are handled by the content-only refresh path (structureChanged=false).
+						val playlistId = nameToPlaylistId[name]
+						if (playlistId != null && existingAdapter != null) {
+							tentacleRowAdapters[playlistId] = existingAdapter
+						}
+						newContentRows.add(existingRow)
 					}
-					newContentRows.add(existingRow)
 				} else {
 					// Genuinely new row — use as-is (already registered in tentacleRowAdapters)
 					newContentRows.add(freshRow ?: continue)

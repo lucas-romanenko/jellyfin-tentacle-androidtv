@@ -1650,7 +1650,18 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             }
             // Clear pre-set index so switchAudioStream queries ExoPlayer's actual track
             mCurrentOptions.setAudioStreamIndex(null);
-            switchAudioStream(eligibleAudioTrack);
+            if (!isTranscoding() && hasInitializedVideoManager() && getAudioStreamIndex() < 0) {
+                // The player can't map what it is playing back to a Jellyfin stream index (e.g. an
+                // HLS stream with a separate audio rendition, as Tentacle's YouTube items are).
+                // switchAudioStream() would then fail to switch in place and restart playback to
+                // "apply" the track, and the restarted stream reports -1 again: it restarted every
+                // few seconds and never played. Switch in place if possible, otherwise keep playing.
+                MediaSourceInfo source = getCurrentMediaSource();
+                if (source != null) mVideoManager.setExoPlayerTrack(eligibleAudioTrack, MediaStreamType.AUDIO, source.getMediaStreams());
+                mCurrentOptions.setAudioStreamIndex(eligibleAudioTrack);
+            } else {
+                switchAudioStream(eligibleAudioTrack);
+            }
         }
 
         // Force disable subtitles if preference is enabled and default is None

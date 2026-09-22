@@ -26,6 +26,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.vectorResource
@@ -74,16 +75,25 @@ fun SearchTextInput(
 	) {
 		BasicTextField(
 			modifier = modifier
+				.onPreviewKeyEvent { event ->
+					// Preview, and not only when !isEditing: after typing, a TV user usually hides
+					// the keyboard with Back, which leaves isEditing true — the field then swallowed
+					// DirectionDown and the results could not be reached with the remote. Down has
+					// no meaning in a single-line field, so it always hops into the results.
+					if (focused && onNavigateDown != null &&
+						event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
+						isEditing = false
+						keyboardController?.hide()
+						// Explicit hop into the results row — default Compose focus search
+						// does not reliably cross from the text field into the LazyRow below
+						onNavigateDown.invoke()
+						true
+					} else false
+				}
 				.onKeyEvent { event ->
 					if (focused && !isEditing && event.type == KeyEventType.KeyDown &&
 						(event.key == Key.Enter || event.key == Key.DirectionCenter)) {
 						isEditing = true
-						true
-					} else if (focused && !isEditing && onNavigateDown != null &&
-						event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown) {
-						// Explicit hop into the results row — default Compose focus search
-						// does not reliably cross from the text field into the LazyRow below
-						onNavigateDown.invoke()
 						true
 					} else false
 				}

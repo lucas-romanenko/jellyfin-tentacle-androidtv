@@ -310,6 +310,99 @@ class TentacleRepository(
 		}
 	}
 
+	// ── Discover browse: New on Streaming, Genres, From My Lists ─────────────
+	// These mirror the Jellyfin-web/plugin Discover pickers. Each returns the
+	// same DiscoverItem shape as the base sections, so DiscoverCard/detail reuse.
+
+	/** GET a Discover endpoint shaped {"items": [...]} and return the items. */
+	private suspend fun fetchDiscoverItems(path: String, extraQuery: String = ""): List<DiscoverItem> =
+		withContext(Dispatchers.IO) {
+			try {
+				val url = buildUrl(path) + extraQuery
+				val request = Request.Builder().url(url).get().build()
+				val response = httpClient.newCall(request).execute()
+				if (!response.isSuccessful) {
+					response.close()
+					return@withContext emptyList()
+				}
+				val body = response.body?.string() ?: return@withContext emptyList()
+				response.close()
+				json.decodeFromString<DiscoverSearchResponse>(body).items
+			} catch (e: Exception) {
+				Timber.w(e, "Failed to fetch discover items from $path")
+				emptyList()
+			}
+		}
+
+	/** Streaming services offered on the "New on Streaming" picker. */
+	suspend fun getStreamingProviders(): List<StreamingProvider> = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/Providers")
+			val request = Request.Builder().url(url).get().build()
+			val response = httpClient.newCall(request).execute()
+			if (!response.isSuccessful) {
+				response.close()
+				return@withContext emptyList()
+			}
+			val body = response.body?.string() ?: return@withContext emptyList()
+			response.close()
+			json.decodeFromString<ProvidersResponse>(body).providers
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to fetch streaming providers")
+			emptyList()
+		}
+	}
+
+	/** Recently released titles on a streaming service, newest first. */
+	suspend fun getNewOnStreaming(providerSlug: String, type: String): List<DiscoverItem> =
+		fetchDiscoverItems("/TentacleDiscover/Streaming", "&provider=$providerSlug&type=$type")
+
+	/** TMDB genre list for the genre picker. */
+	suspend fun getDiscoverGenres(type: String): List<DiscoverGenre> = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/Genres") + "&type=$type"
+			val request = Request.Builder().url(url).get().build()
+			val response = httpClient.newCall(request).execute()
+			if (!response.isSuccessful) {
+				response.close()
+				return@withContext emptyList()
+			}
+			val body = response.body?.string() ?: return@withContext emptyList()
+			response.close()
+			json.decodeFromString<GenresResponse>(body).genres
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to fetch discover genres")
+			emptyList()
+		}
+	}
+
+	/** Titles in a genre. mode = "top_rated" (all-time best) or "new" (recent). */
+	suspend fun getByGenre(genreId: Int, type: String, mode: String): List<DiscoverItem> =
+		fetchDiscoverItems("/TentacleDiscover/Genre", "&genre_id=$genreId&type=$type&mode=$mode")
+
+	/** Active list subscriptions for the "From My Lists" picker. */
+	suspend fun getDiscoverLists(type: String): List<DiscoverList> = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/Lists") + "&type=$type"
+			val request = Request.Builder().url(url).get().build()
+			val response = httpClient.newCall(request).execute()
+			if (!response.isSuccessful) {
+				response.close()
+				return@withContext emptyList()
+			}
+			val body = response.body?.string() ?: return@withContext emptyList()
+			response.close()
+			json.decodeFromString<ListsResponse>(body).lists
+		} catch (e: Exception) {
+			Timber.w(e, "Failed to fetch discover lists")
+			emptyList()
+		}
+	}
+
+	/** Missing (not-in-library) items from one list, or "all" lists mixed. */
+	suspend fun getListMissing(listId: String, type: String): List<DiscoverItem> =
+		fetchDiscoverItems("/TentacleDiscover/ListMissing", "&list_id=$listId&type=$type")
+
 	/**
 	 * Search TMDB for movies/series via Tentacle.
 	 */
@@ -1028,6 +1121,40 @@ data class CastMember(
 @Serializable
 data class DiscoverSearchResponse(
 	val items: List<DiscoverItem> = emptyList(),
+)
+
+@Serializable
+data class StreamingProvider(
+	val slug: String = "",
+	val name: String = "",
+)
+
+@Serializable
+data class ProvidersResponse(
+	val region: String = "",
+	val providers: List<StreamingProvider> = emptyList(),
+)
+
+@Serializable
+data class DiscoverGenre(
+	val id: Int = 0,
+	val name: String = "",
+)
+
+@Serializable
+data class GenresResponse(
+	val genres: List<DiscoverGenre> = emptyList(),
+)
+
+@Serializable
+data class DiscoverList(
+	val id: Int = 0,
+	val name: String = "",
+)
+
+@Serializable
+data class ListsResponse(
+	val lists: List<DiscoverList> = emptyList(),
 )
 
 @Serializable

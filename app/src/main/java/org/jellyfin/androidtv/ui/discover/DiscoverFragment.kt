@@ -122,9 +122,34 @@ class DiscoverFragment : Fragment() {
 						contentPadding = PaddingValues(top = 12.dp, bottom = 48.dp),
 						verticalArrangement = Arrangement.spacedBy(24.dp),
 					) {
-						items(sections, key = { it.id }) { section ->
+						// Base sections (Popular, Now Playing, Upcoming). The base
+						// "From My Lists" row is dropped here — the richer From My
+						// Lists picker below supersedes it (All + per-list tabs).
+						items(
+							sections.filter { it.id != "missing" },
+							key = { it.id },
+						) { section ->
 							DiscoverSectionRow(
 								section = section,
+								onItemClick = { selectedItem = it },
+							)
+						}
+						// Browse pickers — parity with the Jellyfin-web/plugin Discover.
+						item(key = "browse:streaming") {
+							StreamingBrowseSection(
+								repository = tentacleRepository,
+								onItemClick = { selectedItem = it },
+							)
+						}
+						item(key = "browse:genres") {
+							GenresBrowseSection(
+								repository = tentacleRepository,
+								onItemClick = { selectedItem = it },
+							)
+						}
+						item(key = "browse:lists") {
+							ListsBrowseSection(
+								repository = tentacleRepository,
 								onItemClick = { selectedItem = it },
 							)
 						}

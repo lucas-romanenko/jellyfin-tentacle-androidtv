@@ -552,6 +552,21 @@ class ItemDetailsFragment : Fragment() {
 		var tentacleCanReportWrong by remember { mutableStateOf(false) }
 		var tentacleTmdbId by remember { mutableStateOf<Int?>(null) }
 		var tentacleInSonarr by remember { mutableStateOf(false) }
+		// "Bad copy? Get another one": (media type, tmdb id) when this viewer may replace it.
+		var tentacleReplaceTarget by remember { mutableStateOf<Pair<String, Int>?>(null) }
+		if (item.type == BaseItemKind.EPISODE && item.seriesId != null
+			&& !(item.path ?: item.mediaSources?.firstOrNull()?.path ?: "").endsWith(".strm", ignoreCase = true)) {
+			LaunchedEffect(item.id) {
+				val seriesTmdb = try {
+					viewModel.effectiveApi.userLibraryApi.getItem(item.seriesId!!).content.providerIds?.get("Tmdb")?.toIntOrNull()
+				} catch (e: Exception) {
+					null
+				}
+				if (seriesTmdb != null && tentacleRepository.getDiscoverDetail("series", seriesTmdb)?.canReplace == true) {
+					tentacleReplaceTarget = "series" to seriesTmdb
+				}
+			}
+		}
 		if (item.type == BaseItemKind.MOVIE || item.type == BaseItemKind.SERIES) {
 			LaunchedEffect(item.id) {
 				val tmdbId = item.providerIds?.get("Tmdb")?.toIntOrNull()
@@ -560,6 +575,7 @@ class ItemDetailsFragment : Fragment() {
 					val detail = tentacleRepository.getDiscoverDetail(mediaType, tmdbId)
 					tentacleCanDelete = detail?.canDelete == true
 					tentacleCanReportWrong = detail?.canReportWrong == true
+					if (item.type == BaseItemKind.MOVIE && detail?.canReplace == true) tentacleReplaceTarget = "movie" to tmdbId
 					if (item.type == BaseItemKind.SERIES) {
 						tentacleTmdbId = tmdbId
 						val sonarrInfo = tentacleRepository.getSonarrEpisodes(tmdbId)
@@ -873,7 +889,7 @@ class ItemDetailsFragment : Fragment() {
 								},
 							horizontalArrangement = Arrangement.Center,
 						) {
-							ActionButtonsRow(item, uiState, playButtonFocusRequester, tentacleCanDelete, tentacleTmdbId, tentacleInSonarr, tentacleCanReportWrong)
+							ActionButtonsRow(item, uiState, playButtonFocusRequester, tentacleCanDelete, tentacleTmdbId, tentacleInSonarr, tentacleCanReportWrong, tentacleReplaceTarget)
 						}
 					}
 				}
@@ -1188,6 +1204,7 @@ class ItemDetailsFragment : Fragment() {
 		tentacleTmdbId: Int? = null,
 		tentacleInSonarr: Boolean = false,
 		tentacleCanReportWrong: Boolean = false,
+		tentacleReplaceTarget: Pair<String, Int>? = null,
 	) {
 		val hasPlaybackPosition = item.canResume
 		val mediaSources = item.mediaSources
@@ -1343,6 +1360,16 @@ class ItemDetailsFragment : Fragment() {
 						label = stringResource(R.string.lbl_delete),
 						icon = ImageVector.vectorResource(R.drawable.ic_delete),
 						onClick = { confirmDeleteItem(item) },
+					)
+				}
+
+				// A downloaded movie or episode that is a dud (wrong language, burned-in
+				// subtitles, broken audio, fake): blocklist its release, get another.
+				tentacleReplaceTarget?.let { target ->
+					DetailActionButton(
+						label = "Bad copy?",
+						icon = ImageVector.vectorResource(R.drawable.ic_refresh),
+						onClick = { confirmReplaceCopy(item, target) },
 					)
 				}
 
@@ -2508,6 +2535,33 @@ class ItemDetailsFragment : Fragment() {
 		val bytes = android.util.Base64.decode(uri.substringAfter("base64,"), android.util.Base64.DEFAULT)
 		android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
 	}.getOrNull()
+
+	private fun confirmReplaceCopy(item: BaseItemDto, target: Pair<String, Int>) {
+		val isEpisode = item.type == BaseItemKind.EPISODE
+		val label = if (isEpisode) {
+			"${item.seriesName.orEmpty()} S%02dE%02d".format(item.parentIndexNumber ?: 0, item.indexNumber ?: 0)
+		} else item.name.orEmpty()
+		android.app.AlertDialog.Builder(requireContext())
+			.setTitle("Get another copy?")
+			.setMessage("For a bad copy of $label: wrong language, burned-in subtitles, broken audio or a fake.\n\n" +
+				"The current file is deleted, the release it came from is blocked so it isn't downloaded again, " +
+				"and a different one is searched for.")
+			.setNegativeButton(R.string.lbl_cancel, null)
+			.setPositiveButton("Get another copy") { _, _ ->
+				lifecycleScope.launch {
+					val r = tentacleRepository.replaceCopy(target.first, target.second,
+						if (isEpisode) item.parentIndexNumber else null, if (isEpisode) item.indexNumber else null)
+					Toast.makeText(requireContext(), r.message ?: r.detail ?: if (r.ok) "Getting another copy" else "Failed",
+						Toast.LENGTH_LONG).show()
+					if (r.ok) {
+						dataRefreshService.lastDeletedItemId = item.id
+						if (navigationRepository.canGoBack) navigationRepository.goBack()
+						else navigationRepository.navigate(Destinations.home)
+					}
+				}
+			}
+			.show()
+	}
 
 	private fun confirmDeleteItem(item: BaseItemDto) {
 		android.app.AlertDialog.Builder(requireContext())

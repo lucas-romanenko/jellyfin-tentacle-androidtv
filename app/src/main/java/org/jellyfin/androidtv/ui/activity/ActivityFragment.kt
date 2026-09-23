@@ -60,6 +60,10 @@ import kotlinx.coroutines.delay
 import org.jellyfin.androidtv.ui.base.button.ButtonDefaults
 import org.jellyfin.androidtv.ui.base.button.Button
 import org.jellyfin.androidtv.data.repository.ArrActionResult
+import org.jellyfin.androidtv.data.repository.ArrProblem
+import org.jellyfin.androidtv.data.repository.ActivityComingUp
+import org.jellyfin.androidtv.data.repository.ReleaseCheck
+import org.jellyfin.androidtv.data.repository.ReleaseEntry
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.window.Dialog
@@ -190,11 +194,14 @@ class ActivityFragment : Fragment() {
 					val searching = activity?.searching.orEmpty()
 					val recentlyDownloaded = activity?.recentlyDownloaded.orEmpty()
 					val unreleased = activity?.unreleased.orEmpty()
+					val comingUp = activity?.comingUp.orEmpty()
+					val problems = activity?.problems.orEmpty()
 					// Set when the server could not ask Tentacle (busy, not set up) —
 					// an empty list then means "unknown", not "nothing happening".
 					val unavailable = activity?.message?.takeIf { !activity?.error.isNullOrBlank() }
 
-					if (downloads.isEmpty() && searching.isEmpty() && recentlyDownloaded.isEmpty() && unreleased.isEmpty()) {
+					if (downloads.isEmpty() && searching.isEmpty() && recentlyDownloaded.isEmpty() && unreleased.isEmpty()
+						&& comingUp.isEmpty() && problems.isEmpty()) {
 						Box(
 							modifier = Modifier
 								.fillMaxSize()
@@ -216,6 +223,9 @@ class ActivityFragment : Fragment() {
 							contentPadding = PaddingValues(vertical = 16.dp),
 							verticalArrangement = Arrangement.spacedBy(24.dp),
 						) {
+							if (problems.isNotEmpty()) {
+								item(key = "problems") { ProblemsBanner(problems) }
+							}
 							if (downloads.isNotEmpty()) {
 								item(key = "downloads") {
 									DownloadsRow(downloads)
@@ -232,6 +242,9 @@ class ActivityFragment : Fragment() {
 										navigationRepository.navigate(Destinations.itemDetails(jellyfinId))
 									}
 								}
+							}
+							if (comingUp.isNotEmpty()) {
+								item(key = "coming_up") { ComingUpRow(comingUp) }
 							}
 							if (unreleased.isNotEmpty()) {
 								item(key = "unreleased") {
@@ -250,6 +263,16 @@ class ActivityFragment : Fragment() {
 					onRemove = {
 						val r = tentacleRepository.arrRemove(item, deleteDownloaded = item.episodesOnDisk > 0)
 						if (r.ok) tentacleRepository.getActivity()?.let { fresh -> activity = fresh }
+						r
+					},
+					onCheck = { fresh -> tentacleRepository.arrCheck(item, fresh) },
+					onGrab = { release ->
+						val r = tentacleRepository.arrGrab(item, release)
+						if (r.ok) {
+							android.widget.Toast.makeText(requireContext(), r.message ?: "Sent to your download client",
+								android.widget.Toast.LENGTH_LONG).show()
+							tentacleRepository.getActivity()?.let { fresh -> activity = fresh }
+						}
 						r
 					},
 					onStopMissing = { episodes ->
@@ -719,6 +742,16 @@ private fun SearchingCard(item: ActivitySearching, onClick: () -> Unit) {
 			overflow = TextOverflow.Ellipsis,
 		)
 
+		item.check?.let { check ->
+			Text(
+				text = check.short,
+				fontSize = 11.sp,
+				color = if (check.state == "usable" || check.state == "delayed") Color(0xFF4ADE80) else Color(0xFFFBBF24),
+				maxLines = 1,
+				overflow = TextOverflow.Ellipsis,
+			)
+		}
+
 		val sub = listOf(item.episode, item.year).firstOrNull { it.isNotBlank() }.orEmpty()
 		val requester = item.requestedBy?.takeIf { it.isNotBlank() }
 		val line = listOfNotNull(sub.takeIf { it.isNotBlank() }, requester).joinToString(" \u00b7 ")
@@ -731,6 +764,112 @@ private fun SearchingCard(item: ActivitySearching, onClick: () -> Unit) {
 				overflow = TextOverflow.Ellipsis,
 			)
 		}
+	}
+}
+
+/** What in Radarr/Sonarr is stopping downloads — indexers, download client, disk. */
+@Composable
+private fun ProblemsBanner(problems: List<ArrProblem>) {
+	val error = problems.any { it.level == "error" }
+	Column(
+		modifier = Modifier
+			.padding(horizontal = 48.dp)
+			.fillMaxWidth()
+			.clip(RoundedCornerShape(10.dp))
+			.background(if (error) Color(0x33EF4444) else Color(0x33F59E0B))
+			.border(1.dp, if (error) Color(0x80EF4444) else Color(0x80F59E0B), RoundedCornerShape(10.dp))
+			.padding(horizontal = 16.dp, vertical = 12.dp),
+	) {
+		Text("\u26A0 Searches may not work right now", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
+		problems.take(4).forEach {
+			Text("${it.app}: ${it.message}", fontSize = 13.sp, color = Color.White.copy(alpha = 0.8f),
+				maxLines = 2, overflow = TextOverflow.Ellipsis)
+		}
+	}
+}
+
+/** "Today 9:00 PM" / "Tomorrow 9:00 PM" / "Thu 9:00 PM" in the TV's time zone. */
+private fun airDay(iso: String?): String = try {
+	val local = java.time.Instant.parse(iso).atZone(java.time.ZoneId.systemDefault())
+	val days = ChronoUnit.DAYS.between(LocalDate.now(), local.toLocalDate())
+	val time = local.format(java.time.format.DateTimeFormatter.ofPattern("h:mm a"))
+	when {
+		days <= 0L -> "Today $time"
+		days == 1L -> "Tomorrow $time"
+		else -> local.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault()) + " $time"
+	}
+} catch (_: Exception) {
+	""
+}
+
+@Composable
+private fun ComingUpRow(items: List<ActivityComingUp>) {
+	Column(modifier = Modifier.focusGroup()) {
+		Text(
+			text = "Coming up this week",
+			fontSize = 20.sp,
+			fontWeight = FontWeight.Bold,
+			color = Color.White,
+			modifier = Modifier.padding(start = 48.dp, bottom = 12.dp),
+		)
+		LazyRow(
+			contentPadding = PaddingValues(horizontal = 48.dp),
+			horizontalArrangement = Arrangement.spacedBy(16.dp),
+		) {
+			itemsIndexed(items, key = { index, it -> "$index:${it.tmdbId}:${it.episode}" }) { _, item ->
+				ComingUpCard(item)
+			}
+		}
+	}
+}
+
+@Composable
+private fun ComingUpCard(item: ActivityComingUp) {
+	var isFocused by remember { mutableStateOf(false) }
+	val day = remember(item.airDateUtc) { airDay(item.airDateUtc) }
+	Column(
+		modifier = Modifier
+			.width(150.dp)
+			.onFocusChanged { isFocused = it.isFocused }
+			.focusable(),
+	) {
+		Box(
+			modifier = Modifier
+				.fillMaxWidth()
+				.aspectRatio(2f / 3f)
+				.clip(RoundedCornerShape(8.dp))
+				.background(Color(0xFF1a1a2e))
+				.then(if (isFocused) Modifier.border(3.dp, Color.White, RoundedCornerShape(8.dp)) else Modifier)
+		) {
+			if (item.posterPath != null) PosterImage(path = item.posterPath, contentDescription = item.title)
+			if (day.isNotBlank()) {
+				Box(
+					modifier = Modifier
+						.align(Alignment.BottomStart)
+						.padding(6.dp)
+						.background(color = Color(0xCC4F46E5), shape = RoundedCornerShape(4.dp))
+						.padding(horizontal = 6.dp, vertical = 2.dp),
+				) {
+					Text(text = day, fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+				}
+			}
+		}
+		Spacer(modifier = Modifier.height(6.dp))
+		Text(
+			text = item.title,
+			fontSize = 13.sp,
+			fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Normal,
+			color = if (isFocused) Color.White else Color.White.copy(alpha = 0.8f),
+			maxLines = 1,
+			overflow = TextOverflow.Ellipsis,
+		)
+		Text(
+			text = listOf(item.episode, item.episodeTitle).filter { it.isNotBlank() }.joinToString(" \u00b7 "),
+			fontSize = 11.sp,
+			color = Color.White.copy(alpha = 0.5f),
+			maxLines = 1,
+			overflow = TextOverflow.Ellipsis,
+		)
 	}
 }
 
@@ -899,6 +1038,8 @@ private fun SearchingActionsPanel(
 	onSearch: suspend () -> ArrActionResult,
 	onRemove: suspend () -> ArrActionResult,
 	onStopMissing: suspend (List<String>?) -> ArrActionResult,
+	onCheck: suspend (Boolean) -> ReleaseCheck,
+	onGrab: suspend (ReleaseEntry) -> ArrActionResult,
 	onDismiss: () -> Unit,
 ) {
 	val scope = rememberCoroutineScope()
@@ -911,6 +1052,10 @@ private fun SearchingActionsPanel(
 	var armed by remember { mutableStateOf(false) }
 	var status by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
 	var choosing by remember { mutableStateOf(false) }
+	// "Why? / pick a release": null until asked, then loading, then the check.
+	var checking by remember { mutableStateOf(false) }
+	var check by remember { mutableStateOf<ReleaseCheck?>(null) }
+	val firstRelease = remember { FocusRequester() }
 	var unticked by remember { mutableStateOf(setOf<String>()) }
 	val labels = item.missingLabels
 	val chosen = labels.filterNot { it in unticked }
@@ -922,6 +1067,22 @@ private fun SearchingActionsPanel(
 			runCatching { removeButton.requestFocus() }
 			delay(5_000)
 			armed = false
+		}
+	}
+
+	fun loadCheck(fresh: Boolean) {
+		if (checking) return
+		checking = true
+		check = null
+		scope.launch {
+			check = onCheck(fresh)
+			checking = false
+		}
+	}
+	LaunchedEffect(check) {
+		if (check?.releases?.isNotEmpty() == true) {
+			delay(100)
+			runCatching { firstRelease.requestFocus() }
 		}
 	}
 
@@ -991,6 +1152,11 @@ private fun SearchingActionsPanel(
 					modifier = Modifier.focusRequester(firstButton),
 				) { Text("Search again") }
 
+				Button(
+					onClick = { loadCheck(fresh = check != null) },
+					enabled = !busy && !checking,
+				) { Text(if (check != null) "Check again" else "Why? / Pick") }
+
 				if (isShow) {
 					Button(
 						onClick = {
@@ -1027,6 +1193,36 @@ private fun SearchingActionsPanel(
 								focusedContentColor = Color.White,
 							),
 						) { Text((if (on) "✓ " else "") + label) }
+					}
+				}
+			}
+
+			if (checking) {
+				Spacer(modifier = Modifier.height(14.dp))
+				Text("Asking your indexers\u2026 this can take up to a minute.", fontSize = 14.sp,
+					color = Color.White.copy(alpha = 0.6f))
+			}
+			check?.let { c ->
+				Spacer(modifier = Modifier.height(14.dp))
+				Text(c.detail ?: c.summary, fontSize = 14.sp,
+					color = if (c.detail != null) Color(0xFFF87171) else Color.White)
+				if (c.scope.isNotBlank()) {
+					Text("Checked ${c.scope}", fontSize = 12.sp, color = Color.White.copy(alpha = 0.5f))
+				}
+				if (c.releases.isNotEmpty()) {
+					Spacer(modifier = Modifier.height(8.dp))
+					LazyColumn(
+						modifier = Modifier.heightIn(max = 190.dp),
+						verticalArrangement = Arrangement.spacedBy(6.dp),
+					) {
+						itemsIndexed(c.releases, key = { i, r -> "$i:${r.guid}" }) { i, r ->
+							ReleaseRow(
+								release = r,
+								enabled = !busy,
+								modifier = if (i == 0) Modifier.focusRequester(firstRelease) else Modifier,
+								onClick = { run({ onGrab(r) }, closeOnOk = true) },
+							)
+						}
 					}
 				}
 			}
@@ -1074,5 +1270,44 @@ private fun SearchingActionsPanel(
 			}
 		}
 	}
+	}
+}
+
+private fun sizeLabel(bytes: Long): String = when {
+	bytes >= 1L shl 30 -> String.format(java.util.Locale.US, "%.1f GB", bytes / (1L shl 30).toDouble())
+	bytes > 0 -> "${bytes / (1L shl 20)} MB"
+	else -> ""
+}
+
+/** One release from a check: what it is, why it was turned down, press to download. */
+@Composable
+private fun ReleaseRow(release: ReleaseEntry, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+	var focused by remember { mutableStateOf(false) }
+	Row(
+		modifier = modifier
+			.fillMaxWidth()
+			.onFocusChanged { focused = it.isFocused }
+			.clip(RoundedCornerShape(8.dp))
+			.background(if (focused) Color(0x556D5FE6) else Color(0x14FFFFFF))
+			.clickable(enabled = enabled, onClick = onClick)
+			.padding(horizontal = 12.dp, vertical = 8.dp),
+		verticalAlignment = Alignment.CenterVertically,
+		horizontalArrangement = Arrangement.spacedBy(12.dp),
+	) {
+		Column(modifier = Modifier.weight(1f)) {
+			Text(release.title, fontSize = 13.sp, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+			Text(
+				listOf(release.quality, sizeLabel(release.sizeBytes),
+					if (release.protocol == "torrent" && release.seeders != null) "${release.seeders} seeders" else release.protocol,
+					release.languages).filter { it.isNotBlank() }.joinToString(" \u00b7 "),
+				fontSize = 12.sp, color = Color.White.copy(alpha = 0.6f), maxLines = 1,
+			)
+			if (release.rejected) {
+				Text(release.reasons.joinToString(", ").ifBlank { "rejected" }, fontSize = 12.sp,
+					color = Color(0xFFFBBF24), maxLines = 1, overflow = TextOverflow.Ellipsis)
+			}
+		}
+		Text(if (release.rejected) "Download anyway" else "Download", fontSize = 13.sp,
+			fontWeight = FontWeight.Bold, color = if (focused) Color.White else Color.White.copy(alpha = 0.7f))
 	}
 }

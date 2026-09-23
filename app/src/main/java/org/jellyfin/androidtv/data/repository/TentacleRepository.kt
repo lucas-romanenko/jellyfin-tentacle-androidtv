@@ -877,6 +877,55 @@ class TentacleRepository(
 			""","episodes":[""" + list.joinToString(",") { "\"" + it.filter { c -> c.isLetterOrDigit() } + "\"" } + "]"
 		} ?: "")
 
+	// A release check waits on every indexer; allow for it.
+	private val checkClient: OkHttpClient by lazy {
+		httpClient.newBuilder()
+			.readTimeout(200, java.util.concurrent.TimeUnit.SECONDS)
+			.callTimeout(210, java.util.concurrent.TimeUnit.SECONDS)
+			.build()
+	}
+
+	/** Why hasn't this downloaded? Runs (or reuses) a release check. */
+	suspend fun arrCheck(item: ActivitySearching, fresh: Boolean = false): ReleaseCheck = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/ArrCheck")
+			val mediaType = if (item.mediaType == "series") "series" else "movie"
+			val body = """{"media_type":"$mediaType","tmdb_id":${item.tmdbId},"tvdb_id":${item.tvdbId},"fresh":$fresh}"""
+			val request = Request.Builder().url(url).post(body.toRequestBody("application/json".toMediaType())).build()
+			checkClient.newCall(request).execute().use { response ->
+				val text = response.body?.string().orEmpty()
+				val parsed = runCatching { json.decodeFromString<ReleaseCheck>(text) }.getOrNull() ?: ReleaseCheck()
+				if (response.isSuccessful) parsed else ReleaseCheck(detail = parsed.detail ?: "HTTP ${response.code}")
+			}
+		} catch (e: Exception) {
+			Timber.w(e, "Release check failed")
+			ReleaseCheck(detail = "Can't reach the server right now.")
+		}
+	}
+
+	/** Download one release from a check (even one the profile rejected). */
+	suspend fun arrGrab(item: ActivitySearching, release: ReleaseEntry): ArrActionResult =
+		arrAction("ArrGrab", item, extra = ""","guid":${json.encodeToString(kotlinx.serialization.serializer<String>(), release.guid)},"indexer_id":${release.indexerId}""")
+
+	/** "Bad copy? Get another one" for a movie, or one episode of a show. */
+	suspend fun replaceCopy(mediaType: String, tmdbId: Int, season: Int? = null, episode: Int? = null): ArrActionResult =
+		withContext(Dispatchers.IO) {
+			try {
+				val url = buildUrl("/TentacleDiscover/ReplaceCopy/$mediaType/$tmdbId")
+				val body = if (season != null && episode != null) """{"season_number":$season,"episode_number":$episode}""" else "{}"
+				val request = Request.Builder().url(url).post(body.toRequestBody("application/json".toMediaType())).build()
+				checkClient.newCall(request).execute().use { response ->
+					val text = response.body?.string().orEmpty()
+					val parsed = runCatching { json.decodeFromString<ArrActionResult>(text) }.getOrNull() ?: ArrActionResult()
+					if (response.isSuccessful) parsed.copy(ok = true)
+					else parsed.copy(ok = false, detail = parsed.detail ?: "HTTP ${response.code}")
+				}
+			} catch (e: Exception) {
+				Timber.w(e, "Replace copy failed")
+				ArrActionResult(ok = false, detail = "Can't reach the server right now.")
+			}
+		}
+
 	private suspend fun arrAction(action: String, item: ActivitySearching, extra: String = ""): ArrActionResult = withContext(Dispatchers.IO) {
 		try {
 			val url = buildUrl("/TentacleDiscover/$action")
@@ -1256,6 +1305,9 @@ data class DiscoverDetail(
 	/** Admin + IPTV (VOD) movie: may report it as a different film than its label. */
 	@SerialName("can_report_wrong")
 	val canReportWrong: Boolean = false,
+	/** "Bad copy? Get another one": a downloaded movie, or a show with downloaded episodes. */
+	@SerialName("can_replace")
+	val canReplace: Boolean = false,
 	@SerialName("trailer_url")
 	val trailerUrl: String? = null,
 	val source: String? = null,
@@ -1369,6 +1421,11 @@ data class ActivityResponse(
 	val unreleased: List<ActivityUnreleased> = emptyList(),
 	@SerialName("recently_downloaded")
 	val recentlyDownloaded: List<ActivityRecentlyDownloaded> = emptyList(),
+	/** What in Radarr/Sonarr is stopping downloads (indexers, download client, disk). */
+	val problems: List<ArrProblem> = emptyList(),
+	/** Episodes of monitored shows airing this week. */
+	@SerialName("coming_up")
+	val comingUp: List<ActivityComingUp> = emptyList(),
 	/** Set (with [message]) when the plugin could not ask Tentacle. */
 	val error: String? = null,
 	val message: String? = null,
@@ -1461,6 +1518,69 @@ data class ActivitySearching(
 	/** Shows: episodes already downloaded — deleting the show would delete these. */
 	@SerialName("episodes_on_disk")
 	val episodesOnDisk: Int = 0,
+	/** The last release check: why it hasn't downloaded (null until one ran). */
+	val check: ReleaseCheckLine? = null,
+)
+
+@Serializable
+data class ReleaseCheckLine(
+	/** none | usable | delayed | rejected */
+	val state: String = "",
+	val short: String = "",
+	val summary: String = "",
+)
+
+@Serializable
+data class ArrProblem(
+	val app: String = "",
+	val kind: String = "",
+	val level: String = "",
+	val message: String = "",
+)
+
+@Serializable
+data class ActivityComingUp(
+	@SerialName("tmdb_id")
+	val tmdbId: Int = 0,
+	val title: String = "",
+	val episode: String = "",
+	@SerialName("episode_title")
+	val episodeTitle: String = "",
+	@SerialName("air_date_utc")
+	val airDateUtc: String? = null,
+	@SerialName("poster_path")
+	val posterPath: String? = null,
+)
+
+/** Radarr/Sonarr's interactive search, summed up — and the releases to pick from. */
+@Serializable
+data class ReleaseCheck(
+	val state: String = "",
+	val short: String = "",
+	val summary: String = "",
+	val scope: String = "",
+	@SerialName("checked_at")
+	val checkedAt: String? = null,
+	val releases: List<ReleaseEntry> = emptyList(),
+	/** Set when the check failed. */
+	val detail: String? = null,
+)
+
+@Serializable
+data class ReleaseEntry(
+	val title: String = "",
+	val quality: String = "",
+	@SerialName("size_bytes")
+	val sizeBytes: Long = 0,
+	val seeders: Int? = null,
+	val protocol: String = "",
+	val indexer: String = "",
+	val languages: String = "",
+	val rejected: Boolean = false,
+	val reasons: List<String> = emptyList(),
+	val guid: String = "",
+	@SerialName("indexer_id")
+	val indexerId: Int = 0,
 )
 
 @Serializable

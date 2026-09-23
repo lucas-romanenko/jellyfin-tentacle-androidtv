@@ -52,6 +52,13 @@ import androidx.lifecycle.repeatOnLifecycle
 import coil3.compose.AsyncImage
 import coil3.request.crossfade
 import kotlinx.coroutines.delay
+import org.jellyfin.androidtv.ui.base.button.ButtonDefaults
+import org.jellyfin.androidtv.ui.base.button.Button
+import org.jellyfin.androidtv.data.repository.ArrActionResult
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import org.jellyfin.androidtv.data.repository.ActivityDownload
 import org.jellyfin.androidtv.data.repository.ActivityRecentlyDownloaded
 import org.jellyfin.androidtv.data.repository.ActivityResponse
@@ -120,6 +127,8 @@ class ActivityFragment : Fragment() {
 			var activity by remember { mutableStateOf<ActivityResponse?>(null) }
 			var isLoading by remember { mutableStateOf(true) }
 			val contentFocusRequester = remember { FocusRequester() }
+			// The Searching card whose actions (search again / remove) are open.
+			var actionItem by remember { mutableStateOf<ActivitySearching?>(null) }
 
 			// Poll for activity updates every 3s while the screen is visible.
 			// repeatOnLifecycle stops polling when the fragment is not STARTED.
@@ -156,6 +165,7 @@ class ActivityFragment : Fragment() {
 				}
 			}
 
+			Box(modifier = Modifier.fillMaxSize()) {
 			Column(modifier = Modifier.fillMaxSize()) {
 				Navbar(activeButton = NavbarActiveButton.Activity)
 
@@ -208,7 +218,7 @@ class ActivityFragment : Fragment() {
 							}
 							if (searching.isNotEmpty()) {
 								item(key = "searching") {
-									SearchingRow(searching)
+									SearchingRow(searching) { actionItem = it }
 								}
 							}
 							if (recentlyDownloaded.isNotEmpty()) {
@@ -226,6 +236,20 @@ class ActivityFragment : Fragment() {
 						}
 					}
 				}
+			}
+
+			actionItem?.let { item ->
+				SearchingActionsPanel(
+					item = item,
+					onSearch = { tentacleRepository.arrSearchAgain(item) },
+					onRemove = {
+						val r = tentacleRepository.arrRemove(item)
+						if (r.ok) tentacleRepository.getActivity()?.let { fresh -> activity = fresh }
+						r
+					},
+					onDismiss = { actionItem = null },
+				)
+			}
 			}
 		}
 	}
@@ -584,7 +608,7 @@ private fun waitedFor(iso: String?): String {
 }
 
 @Composable
-private fun SearchingRow(searching: List<ActivitySearching>) {
+private fun SearchingRow(searching: List<ActivitySearching>, onOpen: (ActivitySearching) -> Unit) {
 	Column(modifier = Modifier.focusGroup()) {
 		Text(
 			text = "Searching",
@@ -599,7 +623,7 @@ private fun SearchingRow(searching: List<ActivitySearching>) {
 			horizontalArrangement = Arrangement.spacedBy(16.dp),
 		) {
 			itemsIndexed(searching, key = { index, it -> "$index:${it.mediaType}:${it.tmdbId}:${it.tvdbId}" }) { _, item ->
-				SearchingCard(item)
+				SearchingCard(item) { onOpen(item) }
 			}
 		}
 	}
@@ -607,7 +631,7 @@ private fun SearchingRow(searching: List<ActivitySearching>) {
 
 /** A requested title the arrs are still looking for a release of. */
 @Composable
-private fun SearchingCard(item: ActivitySearching) {
+private fun SearchingCard(item: ActivitySearching, onClick: () -> Unit) {
 	var isFocused by remember { mutableStateOf(false) }
 	val waited = remember(item.waitingSince) { waitedFor(item.waitingSince) }
 
@@ -615,7 +639,7 @@ private fun SearchingCard(item: ActivitySearching) {
 		modifier = Modifier
 			.width(150.dp)
 			.onFocusChanged { isFocused = it.isFocused }
-			.focusable(),
+			.clickable(onClick = onClick),
 	) {
 		Box(
 			modifier = Modifier
@@ -845,5 +869,130 @@ private fun UnreleasedCard(item: ActivityUnreleased) {
 				color = Color.White.copy(alpha = 0.5f),
 			)
 		}
+	}
+}
+
+
+/**
+ * Search again / Remove for a title still in "Searching" — what used to mean
+ * opening Radarr/Sonarr, finding it and deleting it there by hand.
+ * Remove takes two presses; the first says exactly what will be deleted.
+ */
+@Composable
+private fun SearchingActionsPanel(
+	item: ActivitySearching,
+	onSearch: suspend () -> ArrActionResult,
+	onRemove: suspend () -> ArrActionResult,
+	onDismiss: () -> Unit,
+) {
+	val scope = rememberCoroutineScope()
+	val firstButton = remember { FocusRequester() }
+	val removeButton = remember { FocusRequester() }
+	val arr = if (item.mediaType == "series") "Sonarr" else "Radarr"
+	var busy by remember { mutableStateOf(false) }
+	var armed by remember { mutableStateOf(false) }
+	var status by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+
+	LaunchedEffect(Unit) { runCatching { firstButton.requestFocus() } }
+	LaunchedEffect(armed) {
+		if (armed) {
+			// Keep the remote on the armed button so the confirming press lands on it.
+			runCatching { removeButton.requestFocus() }
+			delay(5_000)
+			armed = false
+		}
+	}
+
+	// A real Dialog: its own window, so D-pad focus cannot wander to the cards
+	// behind it and Back dismisses it (the fragment's navigation otherwise
+	// takes Back and leaves the screen).
+	Dialog(
+		onDismissRequest = onDismiss,
+		properties = DialogProperties(usePlatformDefaultWidth = false),
+	) {
+	Box(
+		modifier = Modifier
+			.fillMaxSize()
+			.background(Color.Black.copy(alpha = 0.7f)),
+		contentAlignment = Alignment.Center,
+	) {
+		Column(
+			modifier = Modifier
+				.width(560.dp)
+				.clip(RoundedCornerShape(12.dp))
+				.background(Color(0xFF1a1a2e))
+				.padding(28.dp)
+				.focusGroup(),
+		) {
+			Text(text = item.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White,
+				maxLines = 2, overflow = TextOverflow.Ellipsis)
+			Spacer(modifier = Modifier.height(6.dp))
+			val sub = listOfNotNull(
+				item.episode.takeIf { it.isNotBlank() },
+				waitedFor(item.waitingSince).takeIf { it.isNotBlank() }?.let { "searching for $it" },
+			).joinToString(" \u00b7 ")
+			Text(text = "In $arr \u2014 no release found yet" + if (sub.isNotBlank()) " ($sub)" else "",
+				fontSize = 14.sp, color = Color.White.copy(alpha = 0.6f))
+			Spacer(modifier = Modifier.height(20.dp))
+
+			Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+				Button(
+					onClick = {
+						if (busy) return@Button
+						busy = true
+						scope.launch {
+							val r = onSearch()
+							status = (r.message ?: r.detail ?: "") to r.ok
+							busy = false
+						}
+					},
+					enabled = !busy,
+					modifier = Modifier.focusRequester(firstButton),
+				) { Text("Search again") }
+
+				Button(
+					onClick = {
+						if (busy) return@Button
+						if (!armed) {
+							armed = true
+							return@Button
+						}
+						armed = false
+						busy = true
+						scope.launch {
+							val r = onRemove()
+							busy = false
+							if (r.ok) onDismiss() else status = (r.detail ?: "Remove failed") to false
+						}
+					},
+					enabled = !busy,
+					modifier = Modifier.focusRequester(removeButton),
+					colors = ButtonDefaults.colors(
+						containerColor = if (armed) Color(0xFFDC2626) else Color(0x33EF4444),
+						contentColor = Color.White,
+						focusedContainerColor = Color(0xFFEF4444),
+						focusedContentColor = Color.White,
+					),
+				) {
+					Text(
+						if (armed) {
+							if (item.mediaType == "series") "Press again: delete series + folder"
+							else "Press again: delete movie + folder"
+						} else "Remove from $arr"
+					)
+				}
+
+				Button(onClick = onDismiss) { Text("Cancel") }
+			}
+
+			status?.let { (text, ok) ->
+				if (text.isNotBlank()) {
+					Spacer(modifier = Modifier.height(14.dp))
+					Text(text = text, fontSize = 14.sp,
+						color = if (ok) Color(0xFF50BE82) else Color(0xFFF87171))
+				}
+			}
+		}
+	}
 	}
 }

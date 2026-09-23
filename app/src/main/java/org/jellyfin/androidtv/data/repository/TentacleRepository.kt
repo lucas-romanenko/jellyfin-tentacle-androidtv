@@ -785,6 +785,30 @@ class TentacleRepository(
 		}
 	}
 
+	/** Ask Radarr/Sonarr to search again for a title still in "Searching". */
+	suspend fun arrSearchAgain(item: ActivitySearching): ArrActionResult = arrAction("ArrSearch", item)
+
+	/** Remove a title still in "Searching" from Radarr/Sonarr, folder included (VOD folders kept). */
+	suspend fun arrRemove(item: ActivitySearching): ArrActionResult = arrAction("ArrRemove", item)
+
+	private suspend fun arrAction(action: String, item: ActivitySearching): ArrActionResult = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/$action")
+			val mediaType = if (item.mediaType == "series") "series" else "movie"
+			val jsonBody = """{"media_type":"$mediaType","tmdb_id":${item.tmdbId},"tvdb_id":${item.tvdbId}}"""
+			val request = Request.Builder().url(url).post(jsonBody.toRequestBody("application/json".toMediaType())).build()
+			httpClient.newCall(request).execute().use { response ->
+				val body = response.body?.string().orEmpty()
+				val parsed = runCatching { json.decodeFromString<ArrActionResult>(body) }.getOrNull() ?: ArrActionResult()
+				if (response.isSuccessful) parsed.copy(ok = true)
+				else parsed.copy(ok = false, detail = parsed.detail ?: "HTTP ${response.code}")
+			}
+		} catch (e: Exception) {
+			Timber.w(e, "Tentacle $action failed")
+			ArrActionResult(ok = false, detail = "Can't reach the server right now.")
+		}
+	}
+
 	/**
 	 * Fetch download activity (active downloads + unreleased items) from Tentacle.
 	 */
@@ -1259,6 +1283,16 @@ data class ActivityResponse(
 	/** Set (with [message]) when the plugin could not ask Tentacle. */
 	val error: String? = null,
 	val message: String? = null,
+)
+
+/** Result of search-again / remove: `message` on success, `detail` on failure. */
+@Serializable
+data class ArrActionResult(
+	val ok: Boolean = false,
+	val message: String? = null,
+	val detail: String? = null,
+	@SerialName("files_deleted")
+	val filesDeleted: Boolean = false,
 )
 
 @Serializable

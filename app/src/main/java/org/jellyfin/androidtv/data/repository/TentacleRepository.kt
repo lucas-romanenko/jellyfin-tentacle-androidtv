@@ -864,14 +864,24 @@ class TentacleRepository(
 	/** Ask Radarr/Sonarr to search again for a title still in "Searching". */
 	suspend fun arrSearchAgain(item: ActivitySearching): ArrActionResult = arrAction("ArrSearch", item)
 
-	/** Remove a title still in "Searching" from Radarr/Sonarr, folder included (VOD folders kept). */
-	suspend fun arrRemove(item: ActivitySearching): ArrActionResult = arrAction("ArrRemove", item)
+	/**
+	 * Remove a title still in "Searching" from Radarr/Sonarr, folder included (VOD folders kept).
+	 * A show with episodes on disk is deleted whole only with [deleteDownloaded].
+	 */
+	suspend fun arrRemove(item: ActivitySearching, deleteDownloaded: Boolean = false): ArrActionResult =
+		arrAction("ArrRemove", item, extra = if (deleteDownloaded) ""","delete_downloaded":true""" else "")
 
-	private suspend fun arrAction(action: String, item: ActivitySearching): ArrActionResult = withContext(Dispatchers.IO) {
+	/** Stop Sonarr looking for a show's missing episodes ([episodes] as "S01E02"; null = all). Keeps downloads. */
+	suspend fun arrStopMissing(item: ActivitySearching, episodes: List<String>? = null): ArrActionResult =
+		arrAction("ArrStopMissing", item, extra = episodes?.let { list ->
+			""","episodes":[""" + list.joinToString(",") { "\"" + it.filter { c -> c.isLetterOrDigit() } + "\"" } + "]"
+		} ?: "")
+
+	private suspend fun arrAction(action: String, item: ActivitySearching, extra: String = ""): ArrActionResult = withContext(Dispatchers.IO) {
 		try {
 			val url = buildUrl("/TentacleDiscover/$action")
 			val mediaType = if (item.mediaType == "series") "series" else "movie"
-			val jsonBody = """{"media_type":"$mediaType","tmdb_id":${item.tmdbId},"tvdb_id":${item.tvdbId}}"""
+			val jsonBody = """{"media_type":"$mediaType","tmdb_id":${item.tmdbId},"tvdb_id":${item.tvdbId}$extra}"""
 			val request = Request.Builder().url(url).post(jsonBody.toRequestBody("application/json".toMediaType())).build()
 			httpClient.newCall(request).execute().use { response ->
 				val body = response.body?.string().orEmpty()
@@ -1443,6 +1453,14 @@ data class ActivitySearching(
 	val waitingSince: String? = null,
 	@SerialName("requested_by")
 	val requestedBy: String? = null,
+	/** Shows: how many aired episodes Sonarr is still looking for, and which (first 50). */
+	@SerialName("missing_episodes")
+	val missingEpisodes: Int = 0,
+	@SerialName("missing_labels")
+	val missingLabels: List<String> = emptyList(),
+	/** Shows: episodes already downloaded — deleting the show would delete these. */
+	@SerialName("episodes_on_disk")
+	val episodesOnDisk: Int = 0,
 )
 
 @Serializable

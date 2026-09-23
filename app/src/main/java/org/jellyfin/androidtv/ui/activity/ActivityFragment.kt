@@ -4,6 +4,11 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
@@ -243,7 +248,12 @@ class ActivityFragment : Fragment() {
 					item = item,
 					onSearch = { tentacleRepository.arrSearchAgain(item) },
 					onRemove = {
-						val r = tentacleRepository.arrRemove(item)
+						val r = tentacleRepository.arrRemove(item, deleteDownloaded = item.episodesOnDisk > 0)
+						if (r.ok) tentacleRepository.getActivity()?.let { fresh -> activity = fresh }
+						r
+					},
+					onStopMissing = { episodes ->
+						val r = tentacleRepository.arrStopMissing(item, episodes)
 						if (r.ok) tentacleRepository.getActivity()?.let { fresh -> activity = fresh }
 						r
 					},
@@ -874,24 +884,36 @@ private fun UnreleasedCard(item: ActivityUnreleased) {
 
 
 /**
- * Search again / Remove for a title still in "Searching" — what used to mean
- * opening Radarr/Sonarr, finding it and deleting it there by hand.
- * Remove takes two presses; the first says exactly what will be deleted.
+ * Search again / stop looking / remove for a title still in "Searching" — what
+ * used to mean opening Radarr/Sonarr, finding it and changing it there by hand.
+ *
+ * Shows: "Stop looking" unmonitors only the missing episodes and keeps
+ * everything downloaded (optionally just the chosen ones). Deleting the whole
+ * show says how many downloaded episodes go with it. Removing takes two
+ * presses; the first says exactly what will be deleted.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SearchingActionsPanel(
 	item: ActivitySearching,
 	onSearch: suspend () -> ArrActionResult,
 	onRemove: suspend () -> ArrActionResult,
+	onStopMissing: suspend (List<String>?) -> ArrActionResult,
 	onDismiss: () -> Unit,
 ) {
 	val scope = rememberCoroutineScope()
 	val firstButton = remember { FocusRequester() }
 	val removeButton = remember { FocusRequester() }
-	val arr = if (item.mediaType == "series") "Sonarr" else "Radarr"
+	val isShow = item.mediaType == "series"
+	val arr = if (isShow) "Sonarr" else "Radarr"
+	val onDisk = if (isShow) item.episodesOnDisk else 0
 	var busy by remember { mutableStateOf(false) }
 	var armed by remember { mutableStateOf(false) }
 	var status by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+	var choosing by remember { mutableStateOf(false) }
+	var unticked by remember { mutableStateOf(setOf<String>()) }
+	val labels = item.missingLabels
+	val chosen = labels.filterNot { it in unticked }
 
 	LaunchedEffect(Unit) { runCatching { firstButton.requestFocus() } }
 	LaunchedEffect(armed) {
@@ -901,6 +923,25 @@ private fun SearchingActionsPanel(
 			delay(5_000)
 			armed = false
 		}
+	}
+
+	fun run(action: suspend () -> ArrActionResult, closeOnOk: Boolean) {
+		if (busy) return
+		busy = true
+		scope.launch {
+			val r = action()
+			busy = false
+			if (r.ok && closeOnOk) onDismiss()
+			else status = (r.message ?: r.detail ?: if (r.ok) "" else "Failed") to r.ok
+		}
+	}
+
+	val stopLabel = when {
+		choosing && chosen.size == 1 -> "Stop looking for ${chosen[0]}"
+		choosing -> "Stop looking for ${chosen.size} chosen"
+		item.missingEpisodes == 1 -> "Stop looking for ${labels.firstOrNull() ?: "1 episode"}"
+		item.missingEpisodes > 1 -> "Stop looking for ${item.missingEpisodes} missing"
+		else -> "Stop looking for missing episodes"
 	}
 
 	// A real Dialog: its own window, so D-pad focus cannot wander to the cards
@@ -918,7 +959,7 @@ private fun SearchingActionsPanel(
 	) {
 		Column(
 			modifier = Modifier
-				.width(560.dp)
+				.width(680.dp)
 				.clip(RoundedCornerShape(12.dp))
 				.background(Color(0xFF1a1a2e))
 				.padding(28.dp)
@@ -930,26 +971,69 @@ private fun SearchingActionsPanel(
 			val sub = listOfNotNull(
 				item.episode.takeIf { it.isNotBlank() },
 				waitedFor(item.waitingSince).takeIf { it.isNotBlank() }?.let { "searching for $it" },
-			).joinToString(" \u00b7 ")
-			Text(text = "In $arr \u2014 no release found yet" + if (sub.isNotBlank()) " ($sub)" else "",
+			).joinToString(" · ")
+			Text(text = "In $arr — no release found yet" + if (sub.isNotBlank()) " ($sub)" else "",
 				fontSize = 14.sp, color = Color.White.copy(alpha = 0.6f))
+			if (isShow) {
+				Spacer(modifier = Modifier.height(6.dp))
+				Text(
+					text = (if (onDisk > 0) "Stopping keeps the $onDisk downloaded episode${if (onDisk == 1) "" else "s"} and " else "Stopping keeps ") +
+						"new episodes as they air. Undo it from Manage Episodes.",
+					fontSize = 13.sp, color = Color.White.copy(alpha = 0.5f),
+				)
+			}
 			Spacer(modifier = Modifier.height(20.dp))
 
 			Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
 				Button(
-					onClick = {
-						if (busy) return@Button
-						busy = true
-						scope.launch {
-							val r = onSearch()
-							status = (r.message ?: r.detail ?: "") to r.ok
-							busy = false
-						}
-					},
+					onClick = { run(onSearch, closeOnOk = false) },
 					enabled = !busy,
 					modifier = Modifier.focusRequester(firstButton),
 				) { Text("Search again") }
 
+				if (isShow) {
+					Button(
+						onClick = {
+							// All ticked = every missing episode (the list shows at most 50).
+							val episodes = if (choosing && chosen.size < labels.size) chosen else null
+							run({ onStopMissing(episodes) }, closeOnOk = true)
+						},
+						enabled = !busy && !(choosing && chosen.isEmpty()),
+					) { Text(stopLabel) }
+					if (labels.size > 1) {
+						Button(onClick = { choosing = !choosing }, enabled = !busy) {
+							Text(if (choosing) "All missing" else "Choose…")
+						}
+					}
+				}
+			}
+
+			if (isShow && choosing) {
+				Spacer(modifier = Modifier.height(14.dp))
+				FlowRow(
+					modifier = Modifier.heightIn(max = 180.dp).verticalScroll(rememberScrollState()),
+					horizontalArrangement = Arrangement.spacedBy(8.dp),
+					verticalArrangement = Arrangement.spacedBy(8.dp),
+				) {
+					labels.forEach { label ->
+						val on = label !in unticked
+						Button(
+							onClick = { unticked = if (on) unticked + label else unticked - label },
+							enabled = !busy,
+							colors = ButtonDefaults.colors(
+								containerColor = if (on) Color(0x556D5FE6) else Color(0x14FFFFFF),
+								contentColor = if (on) Color.White else Color.White.copy(alpha = 0.5f),
+								focusedContainerColor = Color(0xFF8B80FF),
+								focusedContentColor = Color.White,
+							),
+						) { Text((if (on) "✓ " else "") + label) }
+					}
+				}
+			}
+
+			Spacer(modifier = Modifier.height(12.dp))
+			Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+				Button(onClick = onDismiss) { Text("Cancel") }
 				Button(
 					onClick = {
 						if (busy) return@Button
@@ -958,12 +1042,7 @@ private fun SearchingActionsPanel(
 							return@Button
 						}
 						armed = false
-						busy = true
-						scope.launch {
-							val r = onRemove()
-							busy = false
-							if (r.ok) onDismiss() else status = (r.detail ?: "Remove failed") to false
-						}
+						run(onRemove, closeOnOk = true)
 					},
 					enabled = !busy,
 					modifier = Modifier.focusRequester(removeButton),
@@ -975,14 +1054,15 @@ private fun SearchingActionsPanel(
 					),
 				) {
 					Text(
-						if (armed) {
-							if (item.mediaType == "series") "Press again: delete series + folder"
-							else "Press again: delete movie + folder"
-						} else "Remove from $arr"
+						when {
+							armed && onDisk > 0 -> "Press again: delete the show and all $onDisk episode${if (onDisk == 1) "" else "s"}"
+							armed && isShow -> "Press again: delete series + folder"
+							armed -> "Press again: delete movie + folder"
+							onDisk > 0 -> "Delete whole show ($onDisk on disk)"
+							else -> "Remove from $arr"
+						}
 					)
 				}
-
-				Button(onClick = onDismiss) { Text("Cancel") }
 			}
 
 			status?.let { (text, ok) ->

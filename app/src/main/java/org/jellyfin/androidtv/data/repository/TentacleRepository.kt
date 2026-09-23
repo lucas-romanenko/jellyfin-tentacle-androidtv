@@ -819,6 +819,30 @@ class TentacleRepository(
 		}
 	}
 
+	// Grabbing stills seeks into the provider stream a few times: allow for it.
+	private val framesClient: OkHttpClient by lazy {
+		httpClient.newBuilder()
+			.readTimeout(100, java.util.concurrent.TimeUnit.SECONDS)
+			.callTimeout(110, java.util.concurrent.TimeUnit.SECONDS)
+			.build()
+	}
+
+	/** A few stills from a movie's stream, for when the admin can't tell which film it is. */
+	suspend fun fixMatchFrames(tmdbId: Int): FixMatchFrames = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/FixMatch/movie/$tmdbId/Frames")
+			framesClient.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
+				val body = response.body?.string().orEmpty()
+				val parsed = runCatching { json.decodeFromString<FixMatchFrames>(body) }.getOrNull() ?: FixMatchFrames()
+				if (response.isSuccessful) parsed
+				else parsed.copy(frames = emptyList(), detail = parsed.detail ?: "HTTP ${response.code}")
+			}
+		} catch (e: Exception) {
+			Timber.w(e, "Fix-match frames failed for tmdb:$tmdbId")
+			FixMatchFrames(detail = "Can't reach the server right now.")
+		}
+	}
+
 	/** Move a mislabelled IPTV movie to the film it really is (admin). */
 	suspend fun fixMatch(tmdbId: Int, newTmdbId: Int): ArrActionResult = withContext(Dispatchers.IO) {
 		try {
@@ -1345,7 +1369,30 @@ data class FixMatchSuggestions(
 	/** The stream's real length (Jellyfin's probe), when it has been played. */
 	@SerialName("actual_minutes")
 	val actualMinutes: Int? = null,
+	/** Languages of the stream's audio tracks (Jellyfin's probe). */
+	@SerialName("audio_languages")
+	val audioLanguages: List<FixMatchLanguage> = emptyList(),
 	val candidates: List<FixMatchCandidate> = emptyList(),
+)
+
+@Serializable
+data class FixMatchLanguage(
+	val code: String = "",
+	val name: String = "",
+)
+
+@Serializable
+data class FixMatchFrames(
+	val frames: List<FixMatchFrame> = emptyList(),
+	val detail: String? = null,
+)
+
+@Serializable
+data class FixMatchFrame(
+	@SerialName("at_minutes")
+	val atMinutes: Int = 0,
+	/** A JPEG as a data: URI. */
+	val image: String = "",
 )
 
 @Serializable
@@ -1359,6 +1406,10 @@ data class FixMatchCandidate(
 	val posterPath: String? = null,
 	@SerialName("runtime_matches")
 	val runtimeMatches: Boolean = false,
+	@SerialName("language_name")
+	val languageName: String? = null,
+	@SerialName("language_matches")
+	val languageMatches: Boolean = false,
 	@SerialName("in_library")
 	val inLibrary: Boolean = false,
 )

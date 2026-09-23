@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -55,6 +56,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -2327,6 +2329,9 @@ class ItemDetailsFragment : Fragment() {
 		var armed by remember { mutableStateOf(false) }
 		var status by remember { mutableStateOf<String?>(null) }
 		val firstFocus = remember { FocusRequester() }
+		// Stills from the stream, fetched only on request (it opens a provider connection).
+		var frames by remember { mutableStateOf<List<Pair<Int, androidx.compose.ui.graphics.ImageBitmap>>>(emptyList()) }
+		var framesState by remember { mutableStateOf<String?>(null) }
 
 		LaunchedEffect(tmdbId) {
 			data = tentacleRepository.fixMatchSuggestions(tmdbId)
@@ -2364,13 +2369,36 @@ class ItemDetailsFragment : Fragment() {
 					Text("Which movie is this really?", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
 					Spacer(modifier = Modifier.height(6.dp))
 					val actual = data?.actualMinutes
+					val langs = data?.audioLanguages.orEmpty()
+					val clues = listOfNotNull(
+						actual?.let { "it plays $it minutes" },
+						langs.singleOrNull()?.let { "its audio is ${it.name}" },
+					)
 					Text(
 						"Your IPTV provider labelled this stream \"${item.name}\", but it plays something else. " +
-							if (actual != null) "It plays $actual minutes — films of that length are listed first."
+							if (clues.isNotEmpty()) "Clues: ${clues.joinToString(", ")} \u2014 films that fit are listed first."
 							else "Pick the film it really is.",
 						fontSize = 14.sp, color = Color.White.copy(alpha = 0.65f),
 					)
-					Spacer(modifier = Modifier.height(16.dp))
+					Spacer(modifier = Modifier.height(12.dp))
+					if (frames.isNotEmpty()) {
+						Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+							frames.forEach { (minutes, bitmap) ->
+								Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+									androidx.compose.foundation.Image(
+										bitmap = bitmap, contentDescription = null,
+										modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).clip(RoundedCornerShape(6.dp)).background(Color.Black),
+										contentScale = ContentScale.Crop,
+									)
+									Text("$minutes min", fontSize = 12.sp, color = Color.White.copy(alpha = 0.55f))
+								}
+							}
+						}
+						Spacer(modifier = Modifier.height(12.dp))
+					} else if (framesState != null) {
+						Text(framesState!!, fontSize = 13.sp, color = Color.White.copy(alpha = 0.5f))
+						Spacer(modifier = Modifier.height(12.dp))
+					}
 
 					val candidates = data?.candidates.orEmpty()
 					Box(modifier = Modifier.weight(1f)) {
@@ -2383,6 +2411,7 @@ class ItemDetailsFragment : Fragment() {
 							else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
 								items(candidates.size) { i ->
 									val c = candidates[i]
+									val fits = c.runtimeMatches || c.languageMatches
 									var focused by remember { mutableStateOf(false) }
 									Row(
 										modifier = Modifier
@@ -2413,11 +2442,12 @@ class ItemDetailsFragment : Fragment() {
 										Column {
 											Text(c.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
 											Text(
-												listOfNotNull(c.year, c.runtime?.let { "$it min" }).joinToString(" \u00b7 ") +
+												listOfNotNull(c.year, c.runtime?.let { "$it min" }, c.languageName).joinToString(" \u00b7 ") +
 													(if (c.runtimeMatches) "   \u2713 same length" else "") +
+													(if (c.languageMatches) "   \u2713 same language" else "") +
 													(if (c.inLibrary) "   already in library" else ""),
 												fontSize = 13.sp,
-												color = if (c.runtimeMatches) Color(0xFF50BE82) else Color.White.copy(alpha = 0.6f),
+												color = if (fits) Color(0xFF50BE82) else Color.White.copy(alpha = 0.6f),
 											)
 										}
 									}
@@ -2432,6 +2462,22 @@ class ItemDetailsFragment : Fragment() {
 					}
 					Spacer(modifier = Modifier.height(14.dp))
 					Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+						if (frames.isEmpty()) {
+							org.jellyfin.androidtv.ui.base.button.Button(
+								onClick = {
+									if (framesState == "Grabbing pictures from the stream\u2026") return@Button
+									framesState = "Grabbing pictures from the stream\u2026"
+									scope.launch {
+										val r = tentacleRepository.fixMatchFrames(tmdbId)
+										val decoded = r.frames.mapNotNull { f -> decodeDataUri(f.image)?.let { f.atMinutes to it } }
+										frames = decoded
+										framesState = if (decoded.isEmpty()) r.detail ?: "Couldn't grab pictures from the stream" else null
+									}
+								},
+								enabled = !busy,
+							) { Text("Not sure? Show pictures") }
+						}
+						org.jellyfin.androidtv.ui.base.button.Button(onClick = onDismiss) { Text("Leave it for now") }
 						org.jellyfin.androidtv.ui.base.button.Button(
 							onClick = {
 								if (busy) return@Button
@@ -2452,12 +2498,16 @@ class ItemDetailsFragment : Fragment() {
 								focusedContentColor = Color.White,
 							),
 						) { Text(if (armed) "Press again: remove it and block the stream" else "None of these \u2014 remove it") }
-						org.jellyfin.androidtv.ui.base.button.Button(onClick = onDismiss) { Text(stringResource(R.string.lbl_cancel)) }
 					}
 				}
 			}
 		}
 	}
+
+	private fun decodeDataUri(uri: String): androidx.compose.ui.graphics.ImageBitmap? = runCatching {
+		val bytes = android.util.Base64.decode(uri.substringAfter("base64,"), android.util.Base64.DEFAULT)
+		android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+	}.getOrNull()
 
 	private fun confirmDeleteItem(item: BaseItemDto) {
 		android.app.AlertDialog.Builder(requireContext())

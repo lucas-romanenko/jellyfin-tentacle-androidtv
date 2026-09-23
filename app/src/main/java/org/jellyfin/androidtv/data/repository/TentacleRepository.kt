@@ -785,6 +785,26 @@ class TentacleRepository(
 		}
 	}
 
+	/**
+	 * "Wrong movie": the provider's stream is a different film than its label.
+	 * Tentacle blocks that stream and removes the copy (admin only).
+	 */
+	suspend fun reportWrongMovie(tmdbId: Int): ArrActionResult = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/WrongMatch/movie/$tmdbId")
+			val request = Request.Builder().url(url).post("{}".toRequestBody("application/json".toMediaType())).build()
+			httpClient.newCall(request).execute().use { response ->
+				val body = response.body?.string().orEmpty()
+				val parsed = runCatching { json.decodeFromString<ArrActionResult>(body) }.getOrNull() ?: ArrActionResult()
+				if (response.isSuccessful) parsed.copy(ok = true)
+				else parsed.copy(ok = false, detail = parsed.detail ?: "HTTP ${response.code}")
+			}
+		} catch (e: Exception) {
+			Timber.w(e, "Wrong-movie report failed for tmdb:$tmdbId")
+			ArrActionResult(ok = false, detail = "Can't reach the server right now.")
+		}
+	}
+
 	/** Ask Radarr/Sonarr to search again for a title still in "Searching". */
 	suspend fun arrSearchAgain(item: ActivitySearching): ArrActionResult = arrAction("ArrSearch", item)
 
@@ -1167,6 +1187,9 @@ data class DiscoverDetail(
 	val inLibrary: Boolean = false,
 	@SerialName("can_delete")
 	val canDelete: Boolean = false,
+	/** Admin + IPTV (VOD) movie: may report it as a different film than its label. */
+	@SerialName("can_report_wrong")
+	val canReportWrong: Boolean = false,
 	@SerialName("trailer_url")
 	val trailerUrl: String? = null,
 	val source: String? = null,

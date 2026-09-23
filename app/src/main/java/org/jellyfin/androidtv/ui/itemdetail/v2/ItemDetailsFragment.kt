@@ -546,6 +546,7 @@ class ItemDetailsFragment : Fragment() {
 
 		// Tentacle-controlled delete permission (only for downloaded content, not VOD)
 		var tentacleCanDelete by remember { mutableStateOf(false) }
+		var tentacleCanReportWrong by remember { mutableStateOf(false) }
 		var tentacleTmdbId by remember { mutableStateOf<Int?>(null) }
 		var tentacleInSonarr by remember { mutableStateOf(false) }
 		if (item.type == BaseItemKind.MOVIE || item.type == BaseItemKind.SERIES) {
@@ -555,6 +556,7 @@ class ItemDetailsFragment : Fragment() {
 					val mediaType = if (item.type == BaseItemKind.MOVIE) "movie" else "series"
 					val detail = tentacleRepository.getDiscoverDetail(mediaType, tmdbId)
 					tentacleCanDelete = detail?.canDelete == true
+					tentacleCanReportWrong = detail?.canReportWrong == true
 					if (item.type == BaseItemKind.SERIES) {
 						tentacleTmdbId = tmdbId
 						val sonarrInfo = tentacleRepository.getSonarrEpisodes(tmdbId)
@@ -868,7 +870,7 @@ class ItemDetailsFragment : Fragment() {
 								},
 							horizontalArrangement = Arrangement.Center,
 						) {
-							ActionButtonsRow(item, uiState, playButtonFocusRequester, tentacleCanDelete, tentacleTmdbId, tentacleInSonarr)
+							ActionButtonsRow(item, uiState, playButtonFocusRequester, tentacleCanDelete, tentacleTmdbId, tentacleInSonarr, tentacleCanReportWrong)
 						}
 					}
 				}
@@ -1182,6 +1184,7 @@ class ItemDetailsFragment : Fragment() {
 		tentacleCanDelete: Boolean = false,
 		tentacleTmdbId: Int? = null,
 		tentacleInSonarr: Boolean = false,
+		tentacleCanReportWrong: Boolean = false,
 	) {
 		val hasPlaybackPosition = item.canResume
 		val mediaSources = item.mediaSources
@@ -1336,6 +1339,15 @@ class ItemDetailsFragment : Fragment() {
 						label = stringResource(R.string.lbl_delete),
 						icon = ImageVector.vectorResource(R.drawable.ic_delete),
 						onClick = { confirmDeleteItem(item) },
+					)
+				}
+
+				// Admin, IPTV movie: the provider's stream plays a different film.
+				if (tentacleCanReportWrong) {
+					DetailActionButton(
+						label = "Wrong movie",
+						icon = ImageVector.vectorResource(R.drawable.ic_error),
+						onClick = { confirmWrongMovie(item) },
 					)
 				}
 			}
@@ -2292,6 +2304,33 @@ class ItemDetailsFragment : Fragment() {
 				}
 			}
 		}
+	}
+
+	private fun confirmWrongMovie(item: BaseItemDto) {
+		val tmdbId = item.providerIds?.get("Tmdb")?.toIntOrNull() ?: return
+		android.app.AlertDialog.Builder(requireContext())
+			.setTitle("Wrong movie?")
+			.setMessage(
+				"Use this when \"${item.name}\" plays a different film.\n\n" +
+					"Your IPTV provider labelled that stream wrong. This removes this copy from the " +
+					"library and stops the stream from being added again.\n\n" +
+					"If you requested the real movie, Radarr keeps looking for it."
+			)
+			.setNegativeButton(R.string.lbl_cancel, null)
+			.setPositiveButton("Remove wrong copy") { _, _ ->
+				lifecycleScope.launch {
+					val r = tentacleRepository.reportWrongMovie(tmdbId)
+					if (r.ok) {
+						Toast.makeText(requireContext(), r.message ?: "Removed the wrong copy", Toast.LENGTH_LONG).show()
+						dataRefreshService.lastDeletedItemId = item.id
+						if (navigationRepository.canGoBack) navigationRepository.goBack()
+						else navigationRepository.navigate(Destinations.home)
+					} else {
+						Toast.makeText(requireContext(), r.detail ?: "Failed", Toast.LENGTH_LONG).show()
+					}
+				}
+			}
+			.show()
 	}
 
 	private fun confirmDeleteItem(item: BaseItemDto) {

@@ -805,6 +805,38 @@ class TentacleRepository(
 		}
 	}
 
+	/** Films a mislabelled IPTV movie might really be, best first (admin). */
+	suspend fun fixMatchSuggestions(tmdbId: Int): FixMatchSuggestions? = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/FixMatch/movie/$tmdbId/Suggestions")
+			httpClient.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
+				if (!response.isSuccessful) return@withContext null
+				json.decodeFromString<FixMatchSuggestions>(response.body?.string() ?: return@withContext null)
+			}
+		} catch (e: Exception) {
+			Timber.w(e, "Fix-match suggestions failed for tmdb:$tmdbId")
+			null
+		}
+	}
+
+	/** Move a mislabelled IPTV movie to the film it really is (admin). */
+	suspend fun fixMatch(tmdbId: Int, newTmdbId: Int): ArrActionResult = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/FixMatch/movie/$tmdbId")
+			val request = Request.Builder().url(url)
+				.post("""{"tmdb_id":$newTmdbId}""".toRequestBody("application/json".toMediaType())).build()
+			httpClient.newCall(request).execute().use { response ->
+				val body = response.body?.string().orEmpty()
+				val parsed = runCatching { json.decodeFromString<ArrActionResult>(body) }.getOrNull() ?: ArrActionResult()
+				if (response.isSuccessful) parsed.copy(ok = true)
+				else parsed.copy(ok = false, detail = parsed.detail ?: "HTTP ${response.code}")
+			}
+		} catch (e: Exception) {
+			Timber.w(e, "Fix-match failed for tmdb:$tmdbId")
+			ArrActionResult(ok = false, detail = "Can't reach the server right now.")
+		}
+	}
+
 	/** Ask Radarr/Sonarr to search again for a title still in "Searching". */
 	suspend fun arrSearchAgain(item: ActivitySearching): ArrActionResult = arrAction("ArrSearch", item)
 
@@ -1306,6 +1338,29 @@ data class ActivityResponse(
 	/** Set (with [message]) when the plugin could not ask Tentacle. */
 	val error: String? = null,
 	val message: String? = null,
+)
+
+@Serializable
+data class FixMatchSuggestions(
+	/** The stream's real length (Jellyfin's probe), when it has been played. */
+	@SerialName("actual_minutes")
+	val actualMinutes: Int? = null,
+	val candidates: List<FixMatchCandidate> = emptyList(),
+)
+
+@Serializable
+data class FixMatchCandidate(
+	@SerialName("tmdb_id")
+	val tmdbId: Int = 0,
+	val title: String = "",
+	val year: String? = null,
+	val runtime: Int? = null,
+	@SerialName("poster_path")
+	val posterPath: String? = null,
+	@SerialName("runtime_matches")
+	val runtimeMatches: Boolean = false,
+	@SerialName("in_library")
+	val inLibrary: Boolean = false,
 )
 
 /** Result of search-again / remove: `message` on success, `detail` on failure. */

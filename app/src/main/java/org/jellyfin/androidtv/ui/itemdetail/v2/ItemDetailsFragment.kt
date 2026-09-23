@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -1204,6 +1205,7 @@ class ItemDetailsFragment : Fragment() {
 		var showSubtitleDialog by remember { mutableStateOf(false) }
 		var showVersionDialog by remember { mutableStateOf(false) }
 		var showEpisodePicker by remember { mutableStateOf(false) }
+		var showFixMatch by remember { mutableStateOf(false) }
 
 		Row(
 			modifier = Modifier.fillMaxWidth(),
@@ -1345,12 +1347,16 @@ class ItemDetailsFragment : Fragment() {
 				// Admin, IPTV movie: the provider's stream plays a different film.
 				if (tentacleCanReportWrong) {
 					DetailActionButton(
-						label = "Wrong movie",
+						label = "Wrong movie? Fix it",
 						icon = ImageVector.vectorResource(R.drawable.ic_error),
-						onClick = { confirmWrongMovie(item) },
+						onClick = { showFixMatch = true },
 					)
 				}
 			}
+		}
+
+		if (showFixMatch) {
+			FixMatchDialog(item = item, onDismiss = { showFixMatch = false })
 		}
 
 		// Episode picker dialog
@@ -2306,31 +2312,151 @@ class ItemDetailsFragment : Fragment() {
 		}
 	}
 
-	private fun confirmWrongMovie(item: BaseItemDto) {
+	/**
+	 * "This plays a different film": which film is it really? Tentacle ranks
+	 * candidates by the stream's real length; picking one moves the copy there.
+	 * Removing it (and blocking the stream) is the fallback — two presses.
+	 */
+	@Composable
+	private fun FixMatchDialog(item: BaseItemDto, onDismiss: () -> Unit) {
 		val tmdbId = item.providerIds?.get("Tmdb")?.toIntOrNull() ?: return
-		android.app.AlertDialog.Builder(requireContext())
-			.setTitle("Wrong movie?")
-			.setMessage(
-				"Use this when \"${item.name}\" plays a different film.\n\n" +
-					"Your IPTV provider labelled that stream wrong. This removes this copy from the " +
-					"library and stops the stream from being added again.\n\n" +
-					"If you requested the real movie, Radarr keeps looking for it."
-			)
-			.setNegativeButton(R.string.lbl_cancel, null)
-			.setPositiveButton("Remove wrong copy") { _, _ ->
-				lifecycleScope.launch {
-					val r = tentacleRepository.reportWrongMovie(tmdbId)
-					if (r.ok) {
-						Toast.makeText(requireContext(), r.message ?: "Removed the wrong copy", Toast.LENGTH_LONG).show()
-						dataRefreshService.lastDeletedItemId = item.id
-						if (navigationRepository.canGoBack) navigationRepository.goBack()
-						else navigationRepository.navigate(Destinations.home)
-					} else {
-						Toast.makeText(requireContext(), r.detail ?: "Failed", Toast.LENGTH_LONG).show()
+		val scope = rememberCoroutineScope()
+		var data by remember { mutableStateOf<org.jellyfin.androidtv.data.repository.FixMatchSuggestions?>(null) }
+		var loading by remember { mutableStateOf(true) }
+		var busy by remember { mutableStateOf(false) }
+		var armed by remember { mutableStateOf(false) }
+		var status by remember { mutableStateOf<String?>(null) }
+		val firstFocus = remember { FocusRequester() }
+
+		LaunchedEffect(tmdbId) {
+			data = tentacleRepository.fixMatchSuggestions(tmdbId)
+			loading = false
+		}
+		LaunchedEffect(loading) { if (!loading) runCatching { firstFocus.requestFocus() } }
+		LaunchedEffect(armed) {
+			if (armed) {
+				kotlinx.coroutines.delay(5_000)
+				armed = false
+			}
+		}
+
+		fun done(message: String) {
+			Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
+			onDismiss()
+			dataRefreshService.lastDeletedItemId = item.id
+			if (navigationRepository.canGoBack) navigationRepository.goBack()
+			else navigationRepository.navigate(Destinations.home)
+		}
+
+		Dialog(onDismissRequest = onDismiss, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+			Box(
+				modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f)),
+				contentAlignment = Alignment.Center,
+			) {
+				Column(
+					modifier = Modifier
+						.fillMaxWidth(0.62f)
+						.fillMaxHeight(0.86f)
+						.clip(RoundedCornerShape(16.dp))
+						.background(Color(0xFF1a1a2e))
+						.padding(28.dp),
+				) {
+					Text("Which movie is this really?", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
+					Spacer(modifier = Modifier.height(6.dp))
+					val actual = data?.actualMinutes
+					Text(
+						"Your IPTV provider labelled this stream \"${item.name}\", but it plays something else. " +
+							if (actual != null) "It plays $actual minutes — films of that length are listed first."
+							else "Pick the film it really is.",
+						fontSize = 14.sp, color = Color.White.copy(alpha = 0.65f),
+					)
+					Spacer(modifier = Modifier.height(16.dp))
+
+					val candidates = data?.candidates.orEmpty()
+					Box(modifier = Modifier.weight(1f)) {
+						when {
+							loading -> Text("Looking for likely matches\u2026", color = Color.White.copy(alpha = 0.5f))
+							candidates.isEmpty() -> Text(
+								"No likely matches found. Search for it in the Jellyfin web app, or remove it below.",
+								color = Color.White.copy(alpha = 0.5f),
+							)
+							else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+								items(candidates.size) { i ->
+									val c = candidates[i]
+									var focused by remember { mutableStateOf(false) }
+									Row(
+										modifier = Modifier
+											.fillMaxWidth()
+											.then(if (i == 0) Modifier.focusRequester(firstFocus) else Modifier)
+											.onFocusChanged { focused = it.isFocused }
+											.clip(RoundedCornerShape(10.dp))
+											.background(if (focused) Color(0x556D5FE6) else Color(0x14FFFFFF))
+											.clickable(enabled = !busy) {
+												busy = true
+												status = "Fixing\u2026"
+												scope.launch {
+													val r = tentacleRepository.fixMatch(tmdbId, c.tmdbId)
+													busy = false
+													if (r.ok) done(r.message ?: "Fixed: ${c.title}") else status = r.detail ?: "Failed"
+												}
+											}
+											.padding(10.dp),
+										horizontalArrangement = Arrangement.spacedBy(14.dp),
+										verticalAlignment = Alignment.CenterVertically,
+									) {
+										Box(modifier = Modifier.width(46.dp).height(69.dp).clip(RoundedCornerShape(6.dp)).background(Color(0x22FFFFFF))) {
+											if (c.posterPath != null) {
+												AsyncImage(model = "https://image.tmdb.org/t/p/w92${c.posterPath}", contentDescription = c.title,
+													modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+											}
+										}
+										Column {
+											Text(c.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+											Text(
+												listOfNotNull(c.year, c.runtime?.let { "$it min" }).joinToString(" \u00b7 ") +
+													(if (c.runtimeMatches) "   \u2713 same length" else "") +
+													(if (c.inLibrary) "   already in library" else ""),
+												fontSize = 13.sp,
+												color = if (c.runtimeMatches) Color(0xFF50BE82) else Color.White.copy(alpha = 0.6f),
+											)
+										}
+									}
+								}
+							}
+						}
+					}
+
+					status?.let {
+						Spacer(modifier = Modifier.height(8.dp))
+						Text(it, fontSize = 14.sp, color = Color(0xFFF87171))
+					}
+					Spacer(modifier = Modifier.height(14.dp))
+					Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+						org.jellyfin.androidtv.ui.base.button.Button(
+							onClick = {
+								if (busy) return@Button
+								if (!armed) { armed = true; return@Button }
+								armed = false
+								busy = true
+								scope.launch {
+									val r = tentacleRepository.reportWrongMovie(tmdbId)
+									busy = false
+									if (r.ok) done(r.message ?: "Removed the wrong copy") else status = r.detail ?: "Failed"
+								}
+							},
+							enabled = !busy,
+							colors = org.jellyfin.androidtv.ui.base.button.ButtonDefaults.colors(
+								containerColor = if (armed) Color(0xFFDC2626) else Color(0x33EF4444),
+								contentColor = Color.White,
+								focusedContainerColor = Color(0xFFEF4444),
+								focusedContentColor = Color.White,
+							),
+						) { Text(if (armed) "Press again: remove it and block the stream" else "None of these \u2014 remove it") }
+						org.jellyfin.androidtv.ui.base.button.Button(onClick = onDismiss) { Text(stringResource(R.string.lbl_cancel)) }
 					}
 				}
 			}
-			.show()
+		}
 	}
 
 	private fun confirmDeleteItem(item: BaseItemDto) {

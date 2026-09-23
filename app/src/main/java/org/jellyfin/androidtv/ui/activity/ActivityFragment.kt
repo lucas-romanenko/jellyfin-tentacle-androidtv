@@ -55,6 +55,7 @@ import kotlinx.coroutines.delay
 import org.jellyfin.androidtv.data.repository.ActivityDownload
 import org.jellyfin.androidtv.data.repository.ActivityRecentlyDownloaded
 import org.jellyfin.androidtv.data.repository.ActivityResponse
+import org.jellyfin.androidtv.data.repository.ActivitySearching
 import org.jellyfin.androidtv.data.repository.ActivityUnreleased
 import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.util.pollDelay
@@ -65,6 +66,8 @@ import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.shared.toolbar.Navbar
 import org.jellyfin.androidtv.ui.shared.toolbar.NavbarActiveButton
 import org.koin.android.ext.android.inject
+import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import java.util.UUID
@@ -128,10 +131,13 @@ class ActivityFragment : Fragment() {
 					var failures = 0
 					while (true) {
 						val response = tentacleRepository.getActivity()
-						if (response != null) {
+						if (response != null && response.error.isNullOrBlank()) {
 							activity = response
 							failures = 0
 						} else {
+							// A failed poll (the plugin says why in `error`) keeps what is on
+							// screen; the reason only shows when there is nothing to keep.
+							if (response != null && activity == null) activity = response
 							failures++
 						}
 						isLoading = false
@@ -166,10 +172,14 @@ class ActivityFragment : Fragment() {
 					}
 				} else {
 					val downloads = activity?.downloads.orEmpty()
+					val searching = activity?.searching.orEmpty()
 					val recentlyDownloaded = activity?.recentlyDownloaded.orEmpty()
 					val unreleased = activity?.unreleased.orEmpty()
+					// Set when the server could not ask Tentacle (busy, not set up) —
+					// an empty list then means "unknown", not "nothing happening".
+					val unavailable = activity?.message?.takeIf { !activity?.error.isNullOrBlank() }
 
-					if (downloads.isEmpty() && recentlyDownloaded.isEmpty() && unreleased.isEmpty()) {
+					if (downloads.isEmpty() && searching.isEmpty() && recentlyDownloaded.isEmpty() && unreleased.isEmpty()) {
 						Box(
 							modifier = Modifier
 								.fillMaxSize()
@@ -178,7 +188,7 @@ class ActivityFragment : Fragment() {
 							contentAlignment = Alignment.Center,
 						) {
 							Text(
-								text = "No active downloads or upcoming releases",
+								text = unavailable ?: "No active downloads, searches or upcoming releases",
 								fontSize = 16.sp,
 								color = Color.White.copy(alpha = 0.5f),
 							)
@@ -194,6 +204,11 @@ class ActivityFragment : Fragment() {
 							if (downloads.isNotEmpty()) {
 								item(key = "downloads") {
 									DownloadsRow(downloads)
+								}
+							}
+							if (searching.isNotEmpty()) {
+								item(key = "searching") {
+									SearchingRow(searching)
 								}
 							}
 							if (recentlyDownloaded.isNotEmpty()) {
@@ -550,6 +565,139 @@ private fun RecentlyDownloadedCard(
 		}
 	}
 
+}
+
+/** "5m" / "3h" / "2d" since an ISO-8601 instant, or "" when unknown. */
+private fun waitedFor(iso: String?): String {
+	if (iso.isNullOrBlank()) return ""
+	return try {
+		val mins = Duration.between(Instant.parse(iso), Instant.now()).toMinutes()
+		when {
+			mins < 0 -> ""
+			mins < 60 -> "${maxOf(mins, 1)}m"
+			mins < 48 * 60 -> "${mins / 60}h"
+			else -> "${mins / (24 * 60)}d"
+		}
+	} catch (_: Exception) {
+		""
+	}
+}
+
+@Composable
+private fun SearchingRow(searching: List<ActivitySearching>) {
+	Column(modifier = Modifier.focusGroup()) {
+		Text(
+			text = "Searching",
+			fontSize = 20.sp,
+			fontWeight = FontWeight.Bold,
+			color = Color.White,
+			modifier = Modifier.padding(start = 48.dp, bottom = 12.dp),
+		)
+
+		LazyRow(
+			contentPadding = PaddingValues(horizontal = 48.dp),
+			horizontalArrangement = Arrangement.spacedBy(16.dp),
+		) {
+			itemsIndexed(searching, key = { index, it -> "$index:${it.mediaType}:${it.tmdbId}:${it.tvdbId}" }) { _, item ->
+				SearchingCard(item)
+			}
+		}
+	}
+}
+
+/** A requested title the arrs are still looking for a release of. */
+@Composable
+private fun SearchingCard(item: ActivitySearching) {
+	var isFocused by remember { mutableStateOf(false) }
+	val waited = remember(item.waitingSince) { waitedFor(item.waitingSince) }
+
+	Column(
+		modifier = Modifier
+			.width(150.dp)
+			.onFocusChanged { isFocused = it.isFocused }
+			.focusable(),
+	) {
+		Box(
+			modifier = Modifier
+				.fillMaxWidth()
+				.aspectRatio(2f / 3f)
+				.clip(RoundedCornerShape(8.dp))
+				.background(Color(0xFF1a1a2e))
+				.then(
+					if (isFocused) Modifier.border(3.dp, Color.White, RoundedCornerShape(8.dp))
+					else Modifier
+				)
+		) {
+			if (item.posterPath != null) {
+				PosterImage(path = item.posterPath, contentDescription = item.title)
+			} else {
+				Box(
+					modifier = Modifier.fillMaxSize(),
+					contentAlignment = Alignment.Center,
+				) {
+					Text(
+						text = item.title,
+						fontSize = 12.sp,
+						color = Color.White.copy(alpha = 0.5f),
+						maxLines = 2,
+						overflow = TextOverflow.Ellipsis,
+						modifier = Modifier.padding(8.dp),
+					)
+				}
+			}
+
+			// Status badge — same orange as a queued download.
+			Box(
+				modifier = Modifier
+					.align(Alignment.BottomStart)
+					.padding(6.dp)
+					.background(
+						color = Color(0xE6FF9800),
+						shape = RoundedCornerShape(4.dp),
+					)
+					.padding(horizontal = 6.dp, vertical = 2.dp),
+			) {
+				Text(
+					text = if (waited.isNotBlank()) "Searching \u00b7 $waited" else "Searching",
+					fontSize = 10.sp,
+					color = Color.White,
+					fontWeight = FontWeight.Bold,
+				)
+			}
+
+			if (isFocused) {
+				Box(
+					modifier = Modifier
+						.fillMaxSize()
+						.background(Color.White.copy(alpha = 0.08f))
+				)
+			}
+		}
+
+		Spacer(modifier = Modifier.height(6.dp))
+
+		Text(
+			text = item.title,
+			fontSize = 13.sp,
+			fontWeight = if (isFocused) FontWeight.Bold else FontWeight.Normal,
+			color = if (isFocused) Color.White else Color.White.copy(alpha = 0.8f),
+			maxLines = 1,
+			overflow = TextOverflow.Ellipsis,
+		)
+
+		val sub = listOf(item.episode, item.year).firstOrNull { it.isNotBlank() }.orEmpty()
+		val requester = item.requestedBy?.takeIf { it.isNotBlank() }
+		val line = listOfNotNull(sub.takeIf { it.isNotBlank() }, requester).joinToString(" \u00b7 ")
+		if (line.isNotBlank()) {
+			Text(
+				text = line,
+				fontSize = 11.sp,
+				color = Color.White.copy(alpha = 0.5f),
+				maxLines = 1,
+				overflow = TextOverflow.Ellipsis,
+			)
+		}
+	}
 }
 
 @Composable

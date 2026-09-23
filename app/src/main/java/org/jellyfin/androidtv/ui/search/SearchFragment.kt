@@ -81,6 +81,7 @@ class SearchFragment : Fragment() {
 			// TMDB search results
 			val tmdbResults by viewModel.tmdbResultsFlow.collectAsState()
 			val isTmdbSearching by viewModel.isTmdbSearching.collectAsState()
+			val tmdbUnavailable by tentacleRepository.discoverUnavailable.collectAsState()
 			var selectedItem by remember { mutableStateOf<DiscoverItem?>(null) }
 			val scope = rememberCoroutineScope()
 
@@ -157,6 +158,17 @@ class SearchFragment : Fragment() {
 							modifier = Modifier
 								.weight(1f)
 								.focusRequester(textInputFocusRequester),
+						)
+					}
+
+					// The TMDB search could not reach Tentacle — say so rather than
+					// leaving only the library results, as if nothing had matched.
+					if (query.text.isNotBlank() && !isTmdbSearching && tmdbResults.isEmpty() && tmdbUnavailable != null) {
+						Text(
+							text = tmdbUnavailable.orEmpty(),
+							fontSize = 14.sp,
+							color = Color.White.copy(alpha = 0.5f),
+							modifier = Modifier.padding(start = 48.dp, top = 8.dp),
 						)
 					}
 

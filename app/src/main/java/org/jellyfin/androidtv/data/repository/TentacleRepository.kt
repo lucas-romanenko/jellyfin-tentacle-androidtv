@@ -142,6 +142,24 @@ class TentacleRepository(
 	private var availabilityChecked = false
 	private var isAvailable = false
 
+	// Why Discover came back empty, when it was not "nothing matched": Tentacle
+	// busy, not set up, or refusing this account. The plugin answers such a
+	// request with an empty list plus {error, message}; null once a request
+	// succeeds again. Shown in place of "no results" / a blank Discover page.
+	private val _discoverUnavailable = MutableStateFlow<String?>(null)
+	val discoverUnavailable: StateFlow<String?> = _discoverUnavailable.asStateFlow()
+
+	private fun noteDiscover(error: String?, message: String?) {
+		_discoverUnavailable.value = if (error.isNullOrBlank()) null
+		else message?.takeIf { it.isNotBlank() } ?: "Tentacle is unavailable right now."
+	}
+
+	private fun noteDiscoverHttp(code: Int) =
+		noteDiscover("http_$code", "The server answered with an error (HTTP $code). Try again in a moment.")
+
+	private fun noteDiscoverUnreachable() =
+		noteDiscover("unreachable", "Can't reach the server right now. Try again in a moment.")
+
 	// Activity download count for navbar badge
 	private val _activityDownloadCount = MutableStateFlow(0)
 	val activityDownloadCount: StateFlow<Int> = _activityDownloadCount.asStateFlow()
@@ -295,6 +313,7 @@ class TentacleRepository(
 			val response = httpClient.newCall(request).execute()
 
 			if (!response.isSuccessful) {
+				noteDiscoverHttp(response.code)
 				response.close()
 				return@withContext emptyList()
 			}
@@ -303,9 +322,11 @@ class TentacleRepository(
 			response.close()
 
 			val result = json.decodeFromString<DiscoverResponse>(body)
+			noteDiscover(result.error, result.message)
 			result.sections
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch Tentacle discover sections")
+			noteDiscoverUnreachable()
 			emptyList()
 		}
 	}
@@ -322,14 +343,20 @@ class TentacleRepository(
 				val request = Request.Builder().url(url).get().build()
 				val response = httpClient.newCall(request).execute()
 				if (!response.isSuccessful) {
+					noteDiscoverHttp(response.code)
 					response.close()
 					return@withContext emptyList()
 				}
 				val body = response.body?.string() ?: return@withContext emptyList()
 				response.close()
-				json.decodeFromString<DiscoverSearchResponse>(body).items
+				val result = json.decodeFromString<DiscoverSearchResponse>(body)
+				noteDiscover(result.error, result.message)
+				result.items
+			} catch (e: kotlinx.coroutines.CancellationException) {
+				throw e
 			} catch (e: Exception) {
 				Timber.w(e, "Failed to fetch discover items from $path")
+				noteDiscoverUnreachable()
 				emptyList()
 			}
 		}
@@ -346,7 +373,9 @@ class TentacleRepository(
 			}
 			val body = response.body?.string() ?: return@withContext emptyList()
 			response.close()
-			json.decodeFromString<ProvidersResponse>(body).providers
+			val result = json.decodeFromString<ProvidersResponse>(body)
+			if (!result.error.isNullOrBlank()) noteDiscover(result.error, result.message)
+			result.providers
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch streaming providers")
 			emptyList()
@@ -415,6 +444,7 @@ class TentacleRepository(
 			val response = httpClient.newCall(request).execute()
 
 			if (!response.isSuccessful) {
+				noteDiscoverHttp(response.code)
 				response.close()
 				return@withContext emptyList()
 			}
@@ -423,6 +453,7 @@ class TentacleRepository(
 			response.close()
 
 			val result = json.decodeFromString<DiscoverSearchResponse>(body)
+			noteDiscover(result.error, result.message)
 			result.items
 		} catch (e: kotlinx.coroutines.CancellationException) {
 			// A newer keystroke cancelled this request — propagate cancellation
@@ -430,6 +461,7 @@ class TentacleRepository(
 			throw e
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to search discover for '$query'")
+			noteDiscoverUnreachable()
 			emptyList()
 		}
 	}
@@ -765,7 +797,8 @@ class TentacleRepository(
 				val body = response.body?.string() ?: return@withContext null
 
 				val result = json.decodeFromString<ActivityResponse>(body)
-				_activityDownloadCount.value = result.downloads.size
+				// An answer carrying `error` is "could not ask", not "nothing downloading".
+				if (result.error.isNullOrBlank()) _activityDownloadCount.value = result.downloads.size
 				result
 			}
 		} catch (e: Exception) {
@@ -1045,6 +1078,9 @@ data class QueryResultResponse(
 @Serializable
 data class DiscoverResponse(
 	val sections: List<DiscoverSection> = emptyList(),
+	/** Set (with [message]) when the plugin could not ask Tentacle — see discoverUnavailable. */
+	val error: String? = null,
+	val message: String? = null,
 )
 
 @Serializable
@@ -1121,6 +1157,8 @@ data class CastMember(
 @Serializable
 data class DiscoverSearchResponse(
 	val items: List<DiscoverItem> = emptyList(),
+	val error: String? = null,
+	val message: String? = null,
 )
 
 @Serializable
@@ -1133,6 +1171,8 @@ data class StreamingProvider(
 data class ProvidersResponse(
 	val region: String = "",
 	val providers: List<StreamingProvider> = emptyList(),
+	val error: String? = null,
+	val message: String? = null,
 )
 
 @Serializable
@@ -1211,9 +1251,35 @@ data class ToolbarResponse(
 @Serializable
 data class ActivityResponse(
 	val downloads: List<ActivityDownload> = emptyList(),
+	/** Requested titles the arrs are still looking for a release of (server #121). */
+	val searching: List<ActivitySearching> = emptyList(),
 	val unreleased: List<ActivityUnreleased> = emptyList(),
 	@SerialName("recently_downloaded")
 	val recentlyDownloaded: List<ActivityRecentlyDownloaded> = emptyList(),
+	/** Set (with [message]) when the plugin could not ask Tentacle. */
+	val error: String? = null,
+	val message: String? = null,
+)
+
+@Serializable
+data class ActivitySearching(
+	@SerialName("tmdb_id")
+	val tmdbId: Int = 0,
+	@SerialName("tvdb_id")
+	val tvdbId: Int = 0,
+	val title: String = "",
+	val year: String = "",
+	@SerialName("poster_path")
+	val posterPath: String? = null,
+	@SerialName("media_type")
+	val mediaType: String = "movie",
+	/** "S01E03", or "S01E03 +2" when more episodes are outstanding. */
+	val episode: String = "",
+	/** ISO-8601 UTC time the title became wanted. */
+	@SerialName("waiting_since")
+	val waitingSince: String? = null,
+	@SerialName("requested_by")
+	val requestedBy: String? = null,
 )
 
 @Serializable

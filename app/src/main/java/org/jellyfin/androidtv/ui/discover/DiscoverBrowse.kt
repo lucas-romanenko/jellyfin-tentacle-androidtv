@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -184,7 +185,7 @@ internal fun StreamingBrowseSection(
 				FilterPill(text = "TV Shows", selected = type == "series") { type = "series" }
 			}
 		}
-		ContentRow(items, isLoading, "Nothing new on this service right now.", onItemClick)
+		ContentRow(items, isLoading, repository.discoverUnavailable.collectAsState().value ?: "Nothing new on this service right now.", onItemClick)
 	}
 }
 
@@ -242,7 +243,7 @@ internal fun GenresBrowseSection(
 				)
 			}
 		}
-		ContentRow(items, isLoading, "No titles found in this genre.", onItemClick)
+		ContentRow(items, isLoading, repository.discoverUnavailable.collectAsState().value ?: "No titles found in this genre.", onItemClick)
 	}
 }
 
@@ -292,6 +293,6 @@ internal fun ListsBrowseSection(
 				)
 			}
 		}
-		ContentRow(items, isLoading, "Nothing missing from this list.", onItemClick)
+		ContentRow(items, isLoading, repository.discoverUnavailable.collectAsState().value ?: "Nothing missing from this list.", onItemClick)
 	}
 }

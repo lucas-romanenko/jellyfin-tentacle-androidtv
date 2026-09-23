@@ -9,13 +9,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,6 +87,7 @@ class DiscoverFragment : Fragment() {
 			var isLoading by remember { mutableStateOf(true) }
 			var selectedItem by remember { mutableStateOf<DiscoverItem?>(null) }
 			val contentFocusRequester = remember { FocusRequester() }
+			val unavailable by tentacleRepository.discoverUnavailable.collectAsState()
 
 			LaunchedEffect(Unit) {
 				sections = tentacleRepository.getDiscoverSections()
@@ -122,6 +126,25 @@ class DiscoverFragment : Fragment() {
 						contentPadding = PaddingValues(top = 12.dp, bottom = 48.dp),
 						verticalArrangement = Arrangement.spacedBy(24.dp),
 					) {
+						// Tentacle could not be asked (busy, not set up, refused this
+						// account): say so, instead of the blank page it used to be.
+						if (sections.isEmpty() && unavailable != null) {
+							item(key = "unavailable") {
+								Box(
+									modifier = Modifier
+										.fillMaxWidth()
+										.padding(horizontal = 48.dp, vertical = 48.dp)
+										.focusable(),
+									contentAlignment = Alignment.Center,
+								) {
+									Text(
+										text = unavailable.orEmpty(),
+										fontSize = 18.sp,
+										color = Color.White.copy(alpha = 0.7f),
+									)
+								}
+							}
+						}
 						// Base sections (Popular, Now Playing, Upcoming). The base
 						// "From My Lists" row is dropped here — the richer From My
 						// Lists picker below supersedes it (All + per-list tabs).

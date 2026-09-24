@@ -51,8 +51,10 @@ import org.jellyfin.androidtv.ui.composable.item.ItemCard
 import org.jellyfin.androidtv.ui.composable.item.ItemCardBaseItemOverlay
 import org.jellyfin.androidtv.ui.composable.item.ItemPreview
 import org.jellyfin.androidtv.ui.composable.item.SeriesTrailerOverlay
+import org.jellyfin.androidtv.ui.composable.item.hasLocalMedia
 import org.jellyfin.androidtv.ui.composable.item.isEligibleForPreview
 import org.jellyfin.androidtv.ui.composable.item.isEligibleForTrailerPreview
+import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.preference.UserSettingPreferences
 import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.BaseRowItem
@@ -450,7 +452,20 @@ private fun CardViewHolderContent(
 				val trailerPreviewEnabled = userSettingPrefs[UserSettingPreferences.mediaBarTrailerPreview]
 				val previewAudioEnabled = userSettingPrefs[UserSettingPreferences.previewAudioEnabled]
 				val baseItem = item.baseItem
-				if (episodePreviewEnabled && baseItem != null && isEligibleForPreview(baseItem)) {
+				// Server-side "card previews" policy (androidtv#47): a provider .strm card's
+				// preview opens a real connection to the IPTV backend just from D-pad scrolling
+				// (four connections in fourteen seconds while scrolling one row, each lingering
+				// 12-16s after focus moved on — on a connection-limited account that cut a
+				// running recording). "all" behaves as today; "off" disables the preview
+				// entirely; "local_only" additionally requires hasLocalMedia() before allowing it.
+				val tentacleRepository = koinInject<TentacleRepository>()
+				val cardPreviewPolicy by tentacleRepository.cardPreviewPolicy.collectAsState()
+				val previewAllowedByServer = when (cardPreviewPolicy) {
+					"off" -> false
+					"local_only" -> baseItem?.hasLocalMedia() == true
+					else -> true // "all", or an unrecognized value from a newer server
+				}
+				if (episodePreviewEnabled && previewAllowedByServer && baseItem != null && isEligibleForPreview(baseItem)) {
 					EpisodePreviewOverlay(
 						item = baseItem,
 						focused = focused,

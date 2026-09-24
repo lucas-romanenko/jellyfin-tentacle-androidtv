@@ -164,6 +164,18 @@ class TentacleRepository(
 	private val _activityDownloadCount = MutableStateFlow(0)
 	val activityDownloadCount: StateFlow<Int> = _activityDownloadCount.asStateFlow()
 
+	// Server-side "card previews" policy ("all" | "local_only" | "off"), carried on
+	// GET /TentacleHome/Toolbar (androidtv#47: a provider .strm card's ExoPlayer preview
+	// opened four provider connections in fourteen seconds while scrolling one row, each
+	// lingering 12-16s after focus moved past the card — on a connection-limited IPTV
+	// account that cut a running recording). CardPresenter reads this synchronously via
+	// .value on every card composition, so it must be updated as a side effect of
+	// getToolbarConfig() rather than only returned from it. Default "all" preserves today's
+	// behaviour until the first successful fetch (and for older servers, which omit the
+	// field entirely thanks to ignoreUnknownKeys).
+	private val _cardPreviewPolicy = MutableStateFlow("all")
+	val cardPreviewPolicy: StateFlow<String> = _cardPreviewPolicy.asStateFlow()
+
 	// Notification flow — emits new notifications for toast display
 	private val _pendingNotifications = MutableStateFlow<List<TentacleNotification>>(emptyList())
 	val pendingNotifications: StateFlow<List<TentacleNotification>> = _pendingNotifications.asStateFlow()
@@ -718,7 +730,9 @@ class TentacleRepository(
 			httpClient.newCall(request).execute().use { response ->
 				if (!response.isSuccessful) return@withContext null
 				val body = response.body?.string() ?: return@withContext null
-				json.decodeFromString<ToolbarResponse>(body).buttons
+				val result = json.decodeFromString<ToolbarResponse>(body)
+				_cardPreviewPolicy.value = result.cardPreviews
+				result.buttons
 			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch toolbar config")
@@ -1411,6 +1425,12 @@ data class ToolbarButton(
 @Serializable
 data class ToolbarResponse(
 	val buttons: List<ToolbarButton> = emptyList(),
+	/**
+	 * Server-side card-previews policy: "all" | "local_only" | "off". Absent or an
+	 * unrecognized value (older plugin, per ignoreUnknownKeys) defaults to "all" so
+	 * behaviour is unchanged until an admin opts into restricting previews.
+	 */
+	val cardPreviews: String = "all",
 )
 
 @Serializable

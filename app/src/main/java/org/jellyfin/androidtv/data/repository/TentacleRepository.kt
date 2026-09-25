@@ -56,6 +56,28 @@ class TentacleRepository(
 			.build()
 	}
 
+	// Adds and episode management wait for Radarr/Sonarr, which do a metadata refresh,
+	// artwork download and disk scan before answering — 40-130 s is normal on a busy
+	// instance, and the server keeps polling a slow add for up to 150 s. The plugin's own
+	// add client waits 4 minutes (DiscoverController.AddClient). The shared client's 30 s
+	// call timeout made the app report "Error: timeout" for adds that then succeeded.
+	private val addClient: OkHttpClient by lazy {
+		httpClient.newBuilder()
+			.callTimeout(5, java.util.concurrent.TimeUnit.MINUTES)
+			.readTimeout(5, java.util.concurrent.TimeUnit.MINUTES)
+			.writeTimeout(1, java.util.concurrent.TimeUnit.MINUTES)
+			.build()
+	}
+
+	/** The server's `detail` for a refused request, else just the status. */
+	private fun errorReason(code: Int, body: String?): String {
+		val detail = runCatching {
+			json.parseToJsonElement(body.orEmpty()).let { it as? kotlinx.serialization.json.JsonObject }
+				?.get("detail")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+		}.getOrNull()
+		return detail?.takeIf { it.isNotBlank() } ?: "HTTP $code"
+	}
+
 	/** Hard ceiling on items per home row (matches backend/plugin cap). */
 	private val maxRowItems = 30
 
@@ -546,13 +568,13 @@ class TentacleRepository(
 			Timber.d("addToRadarr: POST tmdb:$tmdbId")
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
-			httpClient.newCall(request).execute().use { response ->
+			addClient.newCall(request).execute().use { response ->
 				val body = response.body?.string() ?: return@withContext AddResult(error = "Empty response")
 
 				Timber.d("addToRadarr: HTTP ${response.code} body=$body")
 
 				if (!response.isSuccessful) {
-					return@withContext AddResult(error = "HTTP ${response.code}: $body")
+					return@withContext AddResult(error = errorReason(response.code, body))
 				}
 
 				val result = json.decodeFromString<AddResult>(body)
@@ -582,11 +604,11 @@ class TentacleRepository(
 			}
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
-			httpClient.newCall(request).execute().use { response ->
+			addClient.newCall(request).execute().use { response ->
 				val body = response.body?.string() ?: return@withContext AddResult(error = "Empty response")
 
 				if (!response.isSuccessful) {
-					return@withContext AddResult(error = "HTTP ${response.code}")
+					return@withContext AddResult(error = errorReason(response.code, body))
 				}
 
 				json.decodeFromString<AddResult>(body)
@@ -1141,15 +1163,17 @@ class TentacleRepository(
 					})
 					append("]")
 				}
-				if (autoFollow) append(""","auto_follow":true""")
+				// The server's field is monitor_new (auto_follow was silently dropped, so a
+				// picked-episode add always ended up with Sonarr's "monitor new items" off).
+				append(""","monitor_new":$autoFollow""")
 				append("}")
 			}
 			Timber.d("addToSonarrWithEpisodes: POST body=$jsonBody")
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
-			httpClient.newCall(request).execute().use { response ->
+			addClient.newCall(request).execute().use { response ->
 				val body = response.body?.string() ?: return@withContext AddResult(error = "Empty response")
-				if (!response.isSuccessful) return@withContext AddResult(error = "HTTP ${response.code}: $body")
+				if (!response.isSuccessful) return@withContext AddResult(error = errorReason(response.code, body))
 				json.decodeFromString<AddResult>(body)
 			}
 		} catch (e: Exception) {
@@ -1173,14 +1197,14 @@ class TentacleRepository(
 			}
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
-			httpClient.newCall(request).execute().use { response ->
-				val body = response.body?.string() ?: return@withContext ManageEpisodesResult()
-				if (!response.isSuccessful) return@withContext ManageEpisodesResult()
+			addClient.newCall(request).execute().use { response ->
+				val body = response.body?.string() ?: return@withContext ManageEpisodesResult(error = "Empty response")
+				if (!response.isSuccessful) return@withContext ManageEpisodesResult(error = errorReason(response.code, body))
 				json.decodeFromString<ManageEpisodesResult>(body)
 			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to manage episodes for tmdb:$tmdbId")
-			ManageEpisodesResult()
+			ManageEpisodesResult(error = e.message ?: "Unknown error")
 		}
 	}
 
@@ -1713,6 +1737,8 @@ data class ManageEpisodesResult(
 	val success: Boolean = false,
 	val monitored: Int = 0,
 	val searching: Int = 0,
+	/** Why the request failed (client-side only; never sent by the server). */
+	val error: String? = null,
 )
 
 data class SelectedEpisode(

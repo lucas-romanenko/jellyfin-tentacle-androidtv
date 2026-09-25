@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -323,9 +324,11 @@ internal fun DiscoverDetailDialog(
 		}
 	}
 
-	// Focus the action button once detail loads
-	LaunchedEffect(isLoadingDetail) {
-		if (!isLoadingDetail) {
+	// Focus the action button once detail loads, and again when the episode picker closes:
+	// the picker replaces this dialog's content, and when it goes away focus otherwise
+	// fell onto the dialog panel, from which the D-pad could not reach any button.
+	LaunchedEffect(isLoadingDetail, showEpisodePicker) {
+		if (!isLoadingDetail && !showEpisodePicker) {
 			try {
 				buttonFocusRequester.requestFocus()
 			} catch (_: Exception) {
@@ -371,6 +374,8 @@ internal fun DiscoverDetailDialog(
 					.fillMaxHeight(0.85f)
 					.clip(RoundedCornerShape(16.dp))
 					.background(Color(0xFF1a1a2e))
+					// Only here to swallow taps; it must not take focus itself (see above).
+					.focusProperties { canFocus = false }
 					.clickable(
 					interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
 					indication = null,

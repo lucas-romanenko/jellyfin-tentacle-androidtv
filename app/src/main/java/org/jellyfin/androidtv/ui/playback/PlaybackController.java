@@ -57,7 +57,7 @@ import org.koin.java.KoinJavaComponent;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -1482,7 +1482,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     private long getTimeShiftedProgress() {
         refreshCurrentPosition();
-        return !directStreamLiveTv ? mCurrentPosition + (mCurrentTranscodeStartTime - (mCurrentProgramStart == null ? 0 : mCurrentProgramStart.toInstant(ZoneOffset.UTC).toEpochMilli())) : getRealTimeProgress();
+        return !directStreamLiveTv ? mCurrentPosition + (mCurrentTranscodeStartTime - (mCurrentProgramStart == null ? 0 : mCurrentProgramStart.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())) : getRealTimeProgress();
     }
 
     private void startReportLoop() {

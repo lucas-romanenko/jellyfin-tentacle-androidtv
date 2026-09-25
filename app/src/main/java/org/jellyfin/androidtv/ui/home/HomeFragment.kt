@@ -473,10 +473,11 @@ class HomeFragment : Fragment() {
 									tentacleRepository.dismissNotification(currentNotif.id)
 									tentacleRepository.consumeNotification(currentNotif.id)
 									if (!currentNotif.jellyfinItemId.isNullOrEmpty()) {
-										try {
-											val itemUuid = java.util.UUID.fromString(currentNotif.jellyfinItemId)
+										// Tentacle sends Jellyfin's dashless 32-hex id, which
+										// java.util.UUID.fromString rejects.
+										org.jellyfin.androidtv.util.UUIDUtils.parseUUID(currentNotif.jellyfinItemId)?.let { itemUuid ->
 											navigationRepository.navigate(Destinations.itemDetails(itemUuid))
-										} catch (_: IllegalArgumentException) {}
+										}
 									}
 								}
 							},

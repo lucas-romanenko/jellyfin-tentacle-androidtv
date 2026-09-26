@@ -451,6 +451,9 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             });
         }
 
+        // The cell holds the programme as last updated by the popup (record / cancel), while
+        // mSelectedProgram may still be the copy from when the guide loaded.
+        if (mSelectedProgramView instanceof ProgramGridCell) mSelectedProgram = ((ProgramGridCell) mSelectedProgramView).getProgram();
         mDetailPopup.setContent(mSelectedProgram, ((ProgramGridCell)mSelectedProgramView));
         mDetailPopup.show(mImage, mTitle.getLeft(), mTitle.getTop() - 10);
     }

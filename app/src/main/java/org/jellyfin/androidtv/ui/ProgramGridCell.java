@@ -30,6 +30,11 @@ public class ProgramGridCell extends RelativeLayout implements RecordingIndicato
     private TextView mProgramName;
     private LinearLayout mInfoRow;
     private BaseItemDto mProgram;
+
+    /** Replace the programme after its timer changed, so reopening its popup sees the new state. */
+    public void setProgram(BaseItemDto program) {
+        mProgram = program;
+    }
     private ImageView mRecIndicator;
     private int mBackgroundColor = 0;
     private boolean isLast;

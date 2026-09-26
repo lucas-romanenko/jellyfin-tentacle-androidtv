@@ -335,9 +335,13 @@ class MainActivity : FragmentActivity() {
 
 		// Only destroy session if app is finishing, not just temporarily stopping
 		if (isFinishing) {
-			// Release the player backend (ExoPlayer decoders, threads, surfaces) on real teardown.
-			// Safe to release the singleton here because the process is exiting.
-			playbackManager.release()
+			// Stop playback, which frees the decoders and clears the queue. Do NOT release():
+			// PlaybackManager is a process-wide singleton and release() empties its service list
+			// for good, but finishing this Activity does not end the process — "Switch account"
+			// finishes it and opens the next MainActivity in the same process, which then got a
+			// manager with no QueueService and crashed on the first `queue` access (the navbar's
+			// Now Playing button, the video player).
+			playbackManager.state.stop()
 			lifecycleScope.launch(Dispatchers.IO) {
 				Timber.i("MainActivity finishing - destroying session")
 				sessionRepository.restoreSession(destroyOnly = true)

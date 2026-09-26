@@ -135,6 +135,9 @@ class ActivityFragment : Fragment() {
 		JellyfinTheme {
 			var activity by remember { mutableStateOf<ActivityResponse?>(null) }
 			var isLoading by remember { mutableStateOf(true) }
+			// The last poll got no answer at all (server unreachable): with nothing shown yet
+			// that is "can't reach the server", not "nothing is downloading" (#52).
+			var unreachable by remember { mutableStateOf(false) }
 			val contentFocusRequester = remember { FocusRequester() }
 			// The Searching card whose actions (search again / remove) are open.
 			var actionItem by remember { mutableStateOf<ActivitySearching?>(null) }
@@ -149,6 +152,7 @@ class ActivityFragment : Fragment() {
 					var failures = 0
 					while (true) {
 						val response = tentacleRepository.getActivity()
+						unreachable = response == null
 						if (response != null && response.error.isNullOrBlank()) {
 							activity = response
 							failures = 0
@@ -199,6 +203,7 @@ class ActivityFragment : Fragment() {
 					// Set when the server could not ask Tentacle (busy, not set up) —
 					// an empty list then means "unknown", not "nothing happening".
 					val unavailable = activity?.message?.takeIf { !activity?.error.isNullOrBlank() }
+						?: if (activity == null && unreachable) "Can't reach the server right now. Retrying\u2026" else null
 
 					if (downloads.isEmpty() && searching.isEmpty() && recentlyDownloaded.isEmpty() && unreleased.isEmpty()
 						&& comingUp.isEmpty() && problems.isEmpty()) {

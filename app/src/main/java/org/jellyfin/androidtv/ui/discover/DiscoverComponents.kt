@@ -599,8 +599,10 @@ internal fun DiscoverDetailDialog(
 									Button(
 										onClick = {
 											scope.launch {
-												val itemId = tentacleRepository.findJellyfinItem(
-													item.title, item.year, item.mediaType
+												// `detail` (already loaded by this dialog) carries the exact id
+												val itemId = tentacleRepository.resolveOwnedItem(
+													item.mediaType, item.tmdbId, item.title, item.year,
+													knownId = detail?.jellyfinItemId,
 												)
 												if (itemId != null) {
 													onNavigateToItem(itemId)

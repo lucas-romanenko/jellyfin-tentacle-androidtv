@@ -521,7 +521,7 @@ private fun RecentlyDownloadedCard(
 
 	val jellyfinUuid = remember(item.jellyfinItemId) {
 		item.jellyfinItemId.takeIf { it.isNotBlank() }?.let {
-			runCatching { UUID.fromString(it) }.getOrNull()
+			org.jellyfin.androidtv.util.UUIDUtils.parseUUID(it)
 		}
 	}
 

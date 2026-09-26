@@ -16,6 +16,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.itemsApi
+import org.jellyfin.sdk.api.client.extensions.userLibraryApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemDtoQueryResult
 import org.jellyfin.sdk.model.api.BaseItemKind
@@ -601,6 +602,29 @@ class TentacleRepository(
 	 * Find a Jellyfin library item by searching for its title.
 	 * Returns the item UUID if found, null otherwise.
 	 */
+	/**
+	 * Open an owned title: prefer the id the server resolved by TMDB id (exact),
+	 * confirm the signed-in user can open it, else fall back to the title search.
+	 */
+	suspend fun resolveOwnedItem(
+		mediaType: String,
+		tmdbId: Int,
+		title: String,
+		year: String,
+		knownId: String? = null,
+	): java.util.UUID? {
+		val raw = knownId ?: if (tmdbId > 0) getDiscoverDetail(mediaType, tmdbId)?.jellyfinItemId else null
+		// Tentacle returns Jellyfin's dashless 32-hex form; java.util.UUID.fromString rejects it.
+		val id = org.jellyfin.androidtv.util.UUIDUtils.parseUUID(raw)
+		if (id != null) {
+			val visible = withContext(Dispatchers.IO) {
+				runCatching { api.userLibraryApi.getItem(itemId = id).content }.isSuccess
+			}
+			if (visible) return id
+		}
+		return findJellyfinItem(title, year, mediaType)
+	}
+
 	suspend fun findJellyfinItem(title: String, year: String, mediaType: String): java.util.UUID? = withContext(Dispatchers.IO) {
 		try {
 			val itemKind = if (mediaType == "series") BaseItemKind.SERIES else BaseItemKind.MOVIE
@@ -1311,6 +1335,9 @@ data class DiscoverDetail(
 	@SerialName("trailer_url")
 	val trailerUrl: String? = null,
 	val source: String? = null,
+	// Exact Jellyfin item id, resolved server-side by TMDB id (server >= 2.241.0).
+	@SerialName("jellyfin_item_id")
+	val jellyfinItemId: String? = null,
 )
 
 @Serializable

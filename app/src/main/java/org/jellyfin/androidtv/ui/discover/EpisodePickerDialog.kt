@@ -87,6 +87,7 @@ fun EpisodePickerContent(
 	var isSubmitting by remember { mutableStateOf(false) }
 	var submitSuccess by remember { mutableStateOf(false) }
 	var submitMessage by remember { mutableStateOf("") }
+	var submitOk by remember { mutableStateOf(true) }
 	var seasons by remember { mutableStateOf<List<TmdbSeason>>(emptyList()) }
 	var seasonEpisodes by remember { mutableStateOf<Map<Int, List<TmdbEpisode>>>(emptyMap()) }
 	var sonarrData by remember { mutableStateOf(SonarrEpisodesResponse()) }
@@ -153,10 +154,10 @@ fun EpisodePickerContent(
 				Box(
 					modifier = Modifier
 						.size(72.dp)
-						.background(Color(0xFF4CAF50), androidx.compose.foundation.shape.CircleShape),
+						.background(if (submitOk) Color(0xFF4CAF50) else Color(0xFFE53935), androidx.compose.foundation.shape.CircleShape),
 					contentAlignment = Alignment.Center,
 				) {
-					Text("✓", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.White)
+					Text(if (submitOk) "✓" else "✕", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.White)
 				}
 				Text(
 					text = submitMessage,
@@ -218,7 +219,7 @@ fun EpisodePickerContent(
 										SelectedEpisode(parts[0].toInt(), parts[1].toInt())
 									}
 
-								val message = when (mode) {
+								val outcome = when (mode) {
 									EpisodePickerMode.ADD_NEW, EpisodePickerMode.DOWNLOAD_MORE -> {
 										val result = tentacleRepository.addToSonarrWithEpisodes(
 											tmdbId = tmdbId,
@@ -228,23 +229,32 @@ fun EpisodePickerContent(
 											autoFollow = autoFollow,
 											tvdbId = tvdbId,
 										)
-										if (result.error != null) "Error: ${result.error}"
-										else {
-											tentacleRepository.bumpActivityDownloadCount(selectedCount)
-											"Added $selectedCount episodes to Sonarr"
+										// A 200 can still carry added=0 with failed/already_exists — check
+										// the counts, as the Discover add button does, instead of reporting
+										// "Added" for anything that wasn't a transport error.
+										when {
+											result.error != null -> false to "Error: ${result.error}"
+											result.added > 0 -> {
+												tentacleRepository.bumpActivityDownloadCount(selectedCount)
+												true to "Added $selectedCount episodes to Sonarr"
+											}
+											result.alreadyExists > 0 -> true to "Already in Sonarr"
+											else -> false to (result.detail ?: "Failed to add to Sonarr")
 										}
 									}
 									EpisodePickerMode.MANAGE -> {
 										val result = tentacleRepository.manageEpisodes(tmdbId, selected)
 										if (result.success) {
-											"Monitoring ${result.monitored} episodes" +
-												if (result.searching > 0) ", searching ${result.searching}" else ""
-										} else "Failed to update"
+											true to ("Monitoring ${result.monitored} episodes" +
+												if (result.searching > 0) ", searching ${result.searching}" else "")
+										} else false to ("Failed to update" + (result.error?.let { ": $it" } ?: ""))
 									}
 								}
+								val (ok, message) = outcome
 								submitMessage = message
+								submitOk = ok
 								submitSuccess = true
-								delay(1500)
+								delay(if (ok) 1500 else 3500)
 								onComplete(message)
 							}
 						}

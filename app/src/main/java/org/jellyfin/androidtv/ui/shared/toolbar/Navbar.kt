@@ -130,15 +130,18 @@ fun Navbar(
 
 	// Fetch toolbar config from Tentacle plugin (re-fetches when toolbarRefreshKey changes).
 	// Start with the documented defaults so the toolbar is never empty while loading or
-	// if the fetch fails. A successful (even empty) response replaces them.
+	// if the fetch fails. A successful non-empty response replaces them.
 	var toolbarButtons by remember { mutableStateOf(DEFAULT_TOOLBAR_BUTTONS) }
 	var toolbarRefreshKey by remember { mutableIntStateOf(0) }
 	LaunchedEffect(toolbarRefreshKey) {
 		// Retry a few times on failure, then keep showing the defaults.
 		repeat(3) { attempt ->
 			val config = tentacleRepository.getToolbarConfig()
+			// An empty list means the user has no Tentacle home config yet (a new user, or one
+			// Tentacle has not written a config for) — not "hide every button". Applying it
+			// removed Search and Libraries, so such a user could not search or browse at all.
 			if (config != null) {
-				toolbarButtons = config
+				if (config.isNotEmpty()) toolbarButtons = config
 				return@LaunchedEffect
 			}
 			if (attempt < 2) kotlinx.coroutines.delay(3_000)

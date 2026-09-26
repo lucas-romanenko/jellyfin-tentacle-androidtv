@@ -48,6 +48,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.jellyfin.androidtv.data.repository.AddResult
 import org.jellyfin.androidtv.data.repository.SelectedEpisode
 import org.jellyfin.androidtv.data.repository.SonarrEpisode
 import org.jellyfin.androidtv.data.repository.SonarrEpisodesResponse
@@ -229,18 +230,9 @@ fun EpisodePickerContent(
 											autoFollow = autoFollow,
 											tvdbId = tvdbId,
 										)
-										// A 200 can still carry added=0 with failed/already_exists — check
-										// the counts, as the Discover add button does, instead of reporting
-										// "Added" for anything that wasn't a transport error.
-										when {
-											result.error != null -> false to "Error: ${result.error}"
-											result.added > 0 -> {
-												tentacleRepository.bumpActivityDownloadCount(selectedCount)
-												true to "Added $selectedCount episodes to Sonarr"
-											}
-											result.alreadyExists > 0 -> true to "Already in Sonarr"
-											else -> false to (result.detail ?: "Failed to add to Sonarr")
-										}
+										val outcome = addEpisodesOutcome(result, selectedCount)
+										if (outcome.first) tentacleRepository.bumpActivityDownloadCount(selectedCount)
+										outcome
 									}
 									EpisodePickerMode.MANAGE -> {
 										val result = tentacleRepository.manageEpisodes(tmdbId, selected)
@@ -637,4 +629,17 @@ private fun isEpisodeUnaired(airDate: String?, today: LocalDate): Boolean {
 	} catch (_: Exception) {
 		false
 	}
+}
+
+/**
+ * What adding picked episodes to Sonarr came to: (done, message). A 200 can still carry
+ * added=0 with failed or already_exists, so the counts decide, as the Discover add button's do.
+ * A series already in Sonarr comes back already_exists WITHOUT the picked episodes applied
+ * (the server's add returns early), so that is not done: Manage Episodes applies them (#21).
+ */
+internal fun addEpisodesOutcome(result: AddResult, selectedCount: Int): Pair<Boolean, String> = when {
+	result.error != null -> false to "Error: ${result.error}"
+	result.added > 0 -> true to "Added $selectedCount episodes to Sonarr"
+	result.alreadyExists > 0 -> false to "Already in Sonarr, so the picked episodes were not added. Use Manage Episodes."
+	else -> false to (result.detail ?: "Failed to add to Sonarr")
 }

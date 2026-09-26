@@ -937,11 +937,12 @@ class TentacleRepository(
 			""","episodes":[""" + list.joinToString(",") { "\"" + it.filter { c -> c.isLetterOrDigit() } + "\"" } + "]"
 		} ?: "")
 
-	// A release check waits on every indexer; allow for it.
+	// A release check waits on every indexer; allow for it. Longer than the plugin's own
+	// 240 s for ArrCheck, so the app shows the plugin's answer rather than timing out first.
 	private val checkClient: OkHttpClient by lazy {
 		httpClient.newBuilder()
-			.readTimeout(200, java.util.concurrent.TimeUnit.SECONDS)
-			.callTimeout(210, java.util.concurrent.TimeUnit.SECONDS)
+			.readTimeout(250, java.util.concurrent.TimeUnit.SECONDS)
+			.callTimeout(260, java.util.concurrent.TimeUnit.SECONDS)
 			.build()
 	}
 
@@ -992,7 +993,10 @@ class TentacleRepository(
 			val mediaType = if (item.mediaType == "series") "series" else "movie"
 			val jsonBody = """{"media_type":"$mediaType","tmdb_id":${item.tmdbId},"tvdb_id":${item.tvdbId}$extra}"""
 			val request = Request.Builder().url(url).post(jsonBody.toRequestBody("application/json".toMediaType())).build()
-			httpClient.newCall(request).execute().use { response ->
+			// The plugin gives these Radarr/Sonarr calls 4 minutes: on the 30 s client a slow
+			// whole-show Remove said "Can't reach the server" while the delete carried on, and a
+			// second press then got a 404 (#21).
+			addClient.newCall(request).execute().use { response ->
 				val body = response.body?.string().orEmpty()
 				val parsed = runCatching { json.decodeFromString<ArrActionResult>(body) }.getOrNull() ?: ArrActionResult()
 				if (response.isSuccessful) parsed.copy(ok = true)

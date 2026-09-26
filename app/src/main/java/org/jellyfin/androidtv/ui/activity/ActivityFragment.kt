@@ -275,8 +275,8 @@ class ActivityFragment : Fragment() {
 						}
 						r
 					},
-					onStopMissing = { episodes ->
-						val r = tentacleRepository.arrStopMissing(item, episodes)
+					onStopMissing = { episodes, count ->
+						val r = tentacleRepository.arrStopMissing(item, episodes, count)
 						if (r.ok) tentacleRepository.getActivity()?.let { fresh -> activity = fresh }
 						r
 					},
@@ -1037,7 +1037,7 @@ private fun SearchingActionsPanel(
 	item: ActivitySearching,
 	onSearch: suspend () -> ArrActionResult,
 	onRemove: suspend () -> ArrActionResult,
-	onStopMissing: suspend (List<String>?) -> ArrActionResult,
+	onStopMissing: suspend (List<String>?, Int?) -> ArrActionResult,
 	onCheck: suspend (Boolean) -> ReleaseCheck,
 	onGrab: suspend (ReleaseEntry) -> ArrActionResult,
 	onDismiss: () -> Unit,
@@ -1169,9 +1169,13 @@ private fun SearchingActionsPanel(
 				if (isShow) {
 					Button(
 						onClick = {
-							// All ticked = every missing episode (the list shows at most 50).
-							val episodes = if (choosing && chosen.size < labels.size) chosen else null
-							run({ onStopMissing(episodes) }, closeOnOk = true)
+							// A subset: just those. The whole card: its labels and its count, so the
+							// server stops exactly what the card counted (the list shows at most 50).
+							if (choosing && chosen.size < labels.size) {
+								run({ onStopMissing(chosen, null) }, closeOnOk = true)
+							} else {
+								run({ onStopMissing(labels, maxOf(item.missingEpisodes, labels.size)) }, closeOnOk = true)
+							}
 						},
 						enabled = !busy && !(choosing && chosen.isEmpty()),
 					) { Text(stopLabel) }

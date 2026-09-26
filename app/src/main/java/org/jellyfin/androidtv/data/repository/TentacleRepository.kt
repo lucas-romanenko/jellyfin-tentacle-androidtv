@@ -931,11 +931,16 @@ class TentacleRepository(
 	suspend fun arrRemove(item: ActivitySearching, deleteDownloaded: Boolean = false): ArrActionResult =
 		arrAction("ArrRemove", item, extra = if (deleteDownloaded) ""","delete_downloaded":true""" else "")
 
-	/** Stop Sonarr looking for a show's missing episodes ([episodes] as "S01E02"; null = all). Keeps downloads. */
-	suspend fun arrStopMissing(item: ActivitySearching, episodes: List<String>? = null): ArrActionResult =
-		arrAction("ArrStopMissing", item, extra = episodes?.let { list ->
+	/**
+	 * Stop Sonarr looking for a show's missing episodes, [episodes] as "S01E02". Keeps downloads.
+	 * For the whole card pass its labels and [episodeCount] (the card's count; its label list is
+	 * capped at 50): the server never widens "all" past what the card counted, and without the
+	 * labels it answers 409 once it no longer remembers the card (a restart, a day later).
+	 */
+	suspend fun arrStopMissing(item: ActivitySearching, episodes: List<String>?, episodeCount: Int? = null): ArrActionResult =
+		arrAction("ArrStopMissing", item, extra = (episodes?.let { list ->
 			""","episodes":[""" + list.joinToString(",") { "\"" + it.filter { c -> c.isLetterOrDigit() } + "\"" } + "]"
-		} ?: "")
+		} ?: "") + (episodeCount?.let { ""","episode_count":$it""" } ?: ""))
 
 	// A release check waits on every indexer; allow for it. Longer than the plugin's own
 	// 240 s for ArrCheck, so the app shows the plugin's answer rather than timing out first.

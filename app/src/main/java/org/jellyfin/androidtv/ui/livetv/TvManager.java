@@ -27,7 +27,7 @@ import org.koin.java.KoinJavaComponent;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -191,7 +191,7 @@ public class TvManager {
                 .append(" @ ")
                 .append(DateTimeExtensionsKt.getTimeFormatter(context).format(local))
                 .append(" (")
-                .append(DateUtils.getRelativeTimeSpanString(local.toInstant(ZoneOffset.UTC).toEpochMilli(), Instant.now().toEpochMilli(), 0))
+                .append(DateUtils.getRelativeTimeSpanString(local.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), Instant.now().toEpochMilli(), 0))
                 .append(")")
         );
         timelineRow.addView(datetime);

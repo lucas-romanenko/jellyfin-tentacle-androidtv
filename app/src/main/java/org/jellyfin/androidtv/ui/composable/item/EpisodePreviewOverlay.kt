@@ -48,6 +48,7 @@ import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.videosApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
+import org.jellyfin.sdk.model.api.MediaProtocol
 import org.jellyfin.sdk.model.api.MediaSegmentType
 import org.koin.compose.koinInject
 import timber.log.Timber
@@ -291,3 +292,28 @@ fun EpisodePreviewOverlay(
 /** Whether the given item type supports preview playback. */
 fun isEligibleForPreview(item: BaseItemDto?): Boolean =
 	item?.type == BaseItemKind.EPISODE || item?.type == BaseItemKind.MOVIE || item?.type == BaseItemKind.MUSIC_VIDEO || item?.type == BaseItemKind.VIDEO
+
+/**
+ * Whether this item's media is a confirmed local file rather than a provider-backed
+ * pointer (a `.strm` file) or a remote/HTTP stream — same distinction the item-details
+ * "downloaded content, not VOD" delete-permission gate already makes
+ * (ItemDetailsFragment.kt: `!(item.path ?: item.mediaSources?.firstOrNull()?.path ?: "")
+ * .endsWith(".strm", ...)`), reused here for the server's `local_only` card-previews policy.
+ *
+ * A preview under `local_only` is only allowed once this returns true. Home rows and other
+ * light-payload listings often omit `Path`/`MediaSources` on the BaseItemDto entirely, so
+ * when neither is present we deliberately return false (NOT local) rather than assuming the
+ * best case: the whole point of `local_only` is to stop a preview from opening a provider
+ * connection, so an item we can't positively confirm as local must be treated as if it
+ * weren't.
+ */
+fun BaseItemDto.hasLocalMedia(): Boolean {
+	val source = mediaSources?.firstOrNull()
+	val path = path ?: source?.path
+	if (path.isNullOrEmpty()) return false
+	if (path.endsWith(".strm", ignoreCase = true)) return false
+	if (path.startsWith("http://", ignoreCase = true) || path.startsWith("https://", ignoreCase = true)) return false
+	if (source?.isRemote == true) return false
+	if (source?.protocol == MediaProtocol.HTTP) return false
+	return true
+}

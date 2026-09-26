@@ -261,7 +261,17 @@ class GenresGridViewModel(
 				fields = ItemRepository.itemFields,
 			).content
 
-			val itemCount = itemsResponse.totalRecordCount ?: 0
+			// The query above only returns items WITH a backdrop (it picks the tile's picture), so
+			// its total left out every title without backdrop art — Action showed 3593 on the tile
+			// and 3654 in the grid. Count with the same filters minus the image requirement.
+			val itemCount = client.itemsApi.getItems(
+				parentId = selectedLibraryId,
+				genres = setOf(genre.name.orEmpty()),
+				includeItemTypes = relevantItemTypes(),
+				recursive = true,
+				limit = 0,
+				enableTotalRecordCount = true,
+			).content.totalRecordCount ?: 0
 			if (itemCount == 0) return null
 
 			val backdropUrl = itemsResponse.items.firstOrNull()?.let { item ->

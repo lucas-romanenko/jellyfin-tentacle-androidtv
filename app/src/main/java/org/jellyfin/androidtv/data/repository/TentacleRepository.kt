@@ -2,6 +2,7 @@ package org.jellyfin.androidtv.data.repository
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -281,33 +282,69 @@ class TentacleRepository(
 		}
 	}
 
+	// Home rows are fetched at most 4 at a time. Every row was asked for at once, and on a
+	// busy server 25 parallel reads took 13-22 s each (some past the 30 s timeout) where one
+	// at a time they take 0.4-5 s; a row that timed out was then dropped (androidtv #49).
+	private val sectionFetchPermits = kotlinx.coroutines.sync.Semaphore(4)
+
 	/**
-	 * Fetch items for a specific section/playlist.
-	 * Returns standard Jellyfin BaseItemDto objects.
+	 * Items for one home row, and where they came from:
+	 * - [SectionSource.SERVER]: the server's answer, possibly empty;
+	 * - [SectionSource.SAVED_COPY]: the server did not answer (timeout, refused, 5xx), so the
+	 *   row's last good answer from disk — a slow server no longer drops rows (#49);
+	 * - [SectionSource.GONE]: a 4xx — the user can no longer see this playlist, so its saved
+	 *   copy is deleted and never shown again.
 	 */
-	suspend fun getSectionItems(playlistId: String): List<BaseItemDto> = withContext(Dispatchers.IO) {
-		try {
-			val url = buildUrl("/TentacleHome/Section/$playlistId")
-			val request = Request.Builder().url(url).get().build()
-			val response = httpClient.newCall(request).execute()
-
-			if (!response.isSuccessful) {
-				response.close()
-				return@withContext emptyList()
+	suspend fun fetchSectionItems(playlistId: String): SectionFetch = withContext(Dispatchers.IO) {
+		sectionFetchPermits.withPermit {
+			try {
+				val url = buildUrl("/TentacleHome/Section/$playlistId")
+				val request = Request.Builder().url(url).get().build()
+				httpClient.newCall(request).execute().use { response ->
+					when {
+						response.code in 400..499 -> {
+							deleteHomeCache("section-$playlistId.json")
+							SectionFetch(emptyList(), SectionSource.GONE)
+						}
+						!response.isSuccessful -> savedSection(playlistId)
+						else -> {
+							val body = response.body?.string()
+							if (body == null) savedSection(playlistId) else {
+								val result = json.decodeFromString<BaseItemDtoQueryResult>(body)
+								Timber.d("Tentacle section '$playlistId': ${result.items.size} items")
+								if (result.items.isNotEmpty()) writeHomeCache("section-$playlistId.json", body)
+								SectionFetch(result.items.take(maxRowItems), SectionSource.SERVER)
+							}
+						}
+					}
+				}
+			} catch (e: kotlin.coroutines.cancellation.CancellationException) {
+				throw e
+			} catch (e: java.io.IOException) {
+				// A timeout or refused connection (a saturated or restarting server): one line,
+				// not a stack trace per row.
+				Timber.w("Tentacle row $playlistId: ${e.javaClass.simpleName} (${e.message}), using its saved copy")
+				savedSection(playlistId)
+			} catch (e: Exception) {
+				Timber.e(e, "Failed to fetch Tentacle section items for $playlistId")
+				savedSection(playlistId)
 			}
-
-			val body = response.body?.string() ?: return@withContext emptyList()
-			response.close()
-
-			val result = json.decodeFromString<BaseItemDtoQueryResult>(body)
-			Timber.d("Tentacle section '$playlistId': ${result.items.size} items, first imageTags=${result.items.firstOrNull()?.imageTags}")
-			if (result.items.isNotEmpty()) writeHomeCache("section-$playlistId.json", body)
-			result.items.take(maxRowItems)
-		} catch (e: Exception) {
-			Timber.e(e, "Failed to fetch Tentacle section items for $playlistId")
-			emptyList()
 		}
 	}
+
+	private fun savedSection(playlistId: String): SectionFetch {
+		val items = try {
+			readHomeCache("section-$playlistId.json")
+				?.let { json.decodeFromString<BaseItemDtoQueryResult>(it).items.take(maxRowItems) }
+				.orEmpty()
+		} catch (_: Exception) {
+			emptyList()
+		}
+		return SectionFetch(items, SectionSource.SAVED_COPY)
+	}
+
+	/** Items for one home row (the server's, or its saved copy when the server did not answer). */
+	suspend fun getSectionItems(playlistId: String): List<BaseItemDto> = fetchSectionItems(playlistId).items
 
 	/**
 	 * Fetch hero/spotlight items with full image data.
@@ -1295,7 +1332,14 @@ data class TentacleSection(
 	// content has no portrait artwork at all — a YouTube thumbnail in a poster
 	// slot is cropped to a strip of its middle — so the row says which it wants.
 	val shape: String = "poster",
+	/** The row's item limit (plugin >= 2.267); 0 from an older plugin, meaning unknown. */
+	val maxItems: Int = 0,
 )
+
+/** Where a home row's items came from (see TentacleRepository.fetchSectionItems). */
+enum class SectionSource { SERVER, SAVED_COPY, GONE }
+
+data class SectionFetch(val items: List<BaseItemDto>, val source: SectionSource)
 
 @Serializable
 data class QueryResultResponse(
@@ -1474,7 +1518,22 @@ data class TentacleHeroConfig(
 	val displayName: String = "",
 	val trailerAudio: Boolean = true,
 	val itemCount: Int = 10,
-)
+	// Sent by plugin >= 2.267 (jellyfin-tentacle #209); older plugins leave the defaults.
+	val sortBy: String = "",
+	val sortOrder: String = "",
+	val requireLogo: Boolean = false,
+	val requireTrailer: Boolean = false,
+) {
+	/**
+	 * Whether the hero shows the same things as [other]: a changed playlist, size, sort or
+	 * filter means reload. Only the name and trailer audio are left out; comparing just
+	 * enabled/playlist/size missed a sort or filter change until the app restarted (#53).
+	 */
+	fun sameContentAs(other: TentacleHeroConfig?): Boolean = other != null &&
+		enabled == other.enabled && playlistId == other.playlistId && itemCount == other.itemCount &&
+		sortBy == other.sortBy && sortOrder == other.sortOrder &&
+		requireLogo == other.requireLogo && requireTrailer == other.requireTrailer
+}
 
 @Serializable
 data class ToolbarButton(

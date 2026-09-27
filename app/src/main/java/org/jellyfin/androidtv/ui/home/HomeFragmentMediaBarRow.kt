@@ -22,6 +22,9 @@ class HomeFragmentMediaBarRow(
 	private var rowsAdapter: MutableObjectAdapter<Row>? = null
 	private var rowAdded = false
 
+	/** Given a rows adapter: it then adds and removes its row itself as the hero loads or goes off. */
+	val isAttached: Boolean get() = rowsAdapter != null
+
 	init {
 		// Observe state to show/hide the row
 		viewModel.state.onEach { state ->

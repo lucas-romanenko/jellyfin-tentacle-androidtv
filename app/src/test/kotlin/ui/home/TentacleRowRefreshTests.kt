@@ -28,6 +28,15 @@ class TentacleRowRefreshTests : FunSpec({
 		TentacleRowRefresh.decide(20, server(5), limit = 0, emptyAnswersInARow = 0) shouldBe RowRefreshAction.KEEP
 	}
 
+	test("a real shrink below the limit is applied once the same answer comes twice (#54)") {
+		TentacleRowRefresh.decide(20, server(8), limit = 20, emptyAnswersInARow = 0) shouldBe RowRefreshAction.KEEP
+		TentacleRowRefresh.decide(20, server(8), limit = 20, emptyAnswersInARow = 0, sameShrunkAnswerAgain = true) shouldBe
+			RowRefreshAction.REPLACE
+		// A saved copy is never evidence, repeated or not.
+		TentacleRowRefresh.decide(20, SectionFetch(items(8), SectionSource.SAVED_COPY), 20, 0, sameShrunkAnswerAgain = true) shouldBe
+			RowRefreshAction.KEEP
+	}
+
 	test("one empty answer is kept, a second in a row takes the row away") {
 		TentacleRowRefresh.decide(20, server(0), limit = 20, emptyAnswersInARow = 1) shouldBe RowRefreshAction.KEEP
 		TentacleRowRefresh.decide(20, server(0), limit = 20, emptyAnswersInARow = 2) shouldBe RowRefreshAction.DROP

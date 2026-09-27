@@ -138,6 +138,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val tentacleRowAdapters = mutableMapOf<String, ItemRowAdapter>()
 	// Empty answers in a row per Tentacle row (see TentacleRowRefresh).
 	private val emptyRowAnswers = mutableMapOf<String, Int>()
+	// The last answer kept as "shrank too far to believe", per playlist: the same answer
+	// again means the playlist really is that small (#54).
+	private val shrunkRowAnswers = mutableMapOf<String, List<java.util.UUID>>()
 
 	// Track current Tentacle section structure for detecting structural changes
 	private var currentTentacleSectionKeys = listOf<String>()
@@ -917,7 +920,15 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						(emptyRowAnswers[playlistId] ?: 0) + 1
 					} else 0
 					emptyRowAnswers[playlistId] = empties
-					when (TentacleRowRefresh.decide(rowAdapter.size(), fetch, limits[playlistId] ?: 0, empties)) {
+					val answerIds = fetch.items.map { it.id }
+					val fromServer = fetch.source == SectionSource.SERVER && answerIds.isNotEmpty()
+					val action = TentacleRowRefresh.decide(
+						rowAdapter.size(), fetch, limits[playlistId] ?: 0, empties,
+						sameShrunkAnswerAgain = fromServer && shrunkRowAnswers[playlistId] == answerIds,
+					)
+					if (action == RowRefreshAction.KEEP && fromServer) shrunkRowAnswers[playlistId] = answerIds
+					else shrunkRowAnswers.remove(playlistId)
+					when (action) {
 						RowRefreshAction.REPLACE -> {
 							rowAdapter.replaceStaticItems(fetch.items)
 							Timber.d("Refreshed Tentacle row $playlistId with ${fetch.items.size} items")

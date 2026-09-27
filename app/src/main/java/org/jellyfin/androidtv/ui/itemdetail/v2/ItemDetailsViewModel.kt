@@ -14,6 +14,9 @@ import org.jellyfin.androidtv.data.repository.ItemRepository
 import org.jellyfin.androidtv.util.Utils
 import org.jellyfin.androidtv.util.sdk.ApiClientFactory
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.client.exception.ApiClientException
+import org.jellyfin.sdk.api.client.exception.InvalidContentException
+import org.jellyfin.sdk.api.client.exception.InvalidStatusException
 import org.jellyfin.sdk.api.client.extensions.itemsApi
 import org.jellyfin.sdk.api.client.extensions.libraryApi
 import org.jellyfin.sdk.api.client.extensions.playStateApi
@@ -37,9 +40,32 @@ data class MediaBadge(
 	val label: String,
 )
 
+/** Why the page has no item to show. */
+enum class ItemLoadFailure {
+	/** No answer from the server (timeout, connection, TLS) or a 5xx. */
+	UNREACHABLE,
+
+	/** The server answered, but not with this item. */
+	NOT_FOUND,
+}
+
+/**
+ * Whether a failed item request is worth asking again another way. The fallback only helps
+ * when the server answered and refused or garbled the item; after no answer at all it goes
+ * to the same unresponsive server and waits a second full timeout (#18).
+ */
+internal fun serverAnswered(err: Throwable): Boolean =
+	err !is ApiClientException || err is InvalidStatusException || err is InvalidContentException
+
+internal fun loadFailureFor(err: Throwable): ItemLoadFailure = when {
+	err is InvalidStatusException && err.status in 400..499 -> ItemLoadFailure.NOT_FOUND
+	else -> ItemLoadFailure.UNREACHABLE
+}
+
 data class ItemDetailsUiState(
 	val isLoading: Boolean = true,
 	val item: BaseItemDto? = null,
+	val loadFailure: ItemLoadFailure? = null,
 	val seasons: List<BaseItemDto> = emptyList(),
 	val episodes: List<BaseItemDto> = emptyList(),
 	val tracks: List<BaseItemDto> = emptyList(),
@@ -69,6 +95,14 @@ class ItemDetailsViewModel(
 
 	var serverId: UUID? = null
 		private set
+
+	private var lastRequest: Pair<UUID, UUID?>? = null
+
+	/** Ask again for the item the page failed to load. */
+	fun retry() {
+		val (itemId, requestedServerId) = lastRequest ?: return
+		loadItem(itemId, requestedServerId)
+	}
 
 	fun refreshItem(itemId: UUID) {
 		viewModelScope.launch {
@@ -100,6 +134,7 @@ class ItemDetailsViewModel(
 	}
 
 	fun loadItem(itemId: UUID, serverId: UUID? = null) {
+		lastRequest = itemId to serverId
 		viewModelScope.launch {
 			_uiState.value = ItemDetailsUiState(isLoading = true)
 
@@ -146,6 +181,11 @@ class ItemDetailsViewModel(
 				loadAdditionalData(item)
 			} catch (err: Exception) {
 				coroutineContext.ensureActive()
+				if (!serverAnswered(err)) {
+					Timber.w("Item $itemId: the server did not answer (${err.javaClass.simpleName}: ${err.message})")
+					_uiState.value = ItemDetailsUiState(isLoading = false, loadFailure = ItemLoadFailure.UNREACHABLE)
+					return@launch
+				}
 				Timber.e(err, "Failed to load item $itemId, trying fallback")
 				try {
 					val result = withContext(Dispatchers.IO) {
@@ -170,12 +210,12 @@ class ItemDetailsViewModel(
 						)
 						loadAdditionalData(fallbackItem)
 					} else {
-						_uiState.value = ItemDetailsUiState(isLoading = false)
+						_uiState.value = ItemDetailsUiState(isLoading = false, loadFailure = loadFailureFor(err))
 					}
 				} catch (fallbackErr: Exception) {
 					coroutineContext.ensureActive()
 					Timber.e(fallbackErr, "Fallback load also failed for item $itemId")
-					_uiState.value = ItemDetailsUiState(isLoading = false)
+					_uiState.value = ItemDetailsUiState(isLoading = false, loadFailure = loadFailureFor(fallbackErr))
 				}
 			}
 		}

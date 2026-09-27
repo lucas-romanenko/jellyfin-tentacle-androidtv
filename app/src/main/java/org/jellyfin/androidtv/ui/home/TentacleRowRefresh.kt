@@ -23,8 +23,17 @@ object TentacleRowRefresh {
 	 * @param currentCount cards the row shows now
 	 * @param limit the row's item limit from the plugin, 0 when unknown (older plugin)
 	 * @param emptyAnswersInARow server answers of "no items" for this row, this one included
+	 * @param sameShrunkAnswerAgain this answer lists exactly the items of the previous one, which
+	 *   was kept as a shrink too small to believe: a playlist caught mid-rebuild answers
+	 *   differently a refresh later, a playlist that really shrank answers the same (#54)
 	 */
-	fun decide(currentCount: Int, fetch: SectionFetch, limit: Int, emptyAnswersInARow: Int): RowRefreshAction = when {
+	fun decide(
+		currentCount: Int,
+		fetch: SectionFetch,
+		limit: Int,
+		emptyAnswersInARow: Int,
+		sameShrunkAnswerAgain: Boolean = false,
+	): RowRefreshAction = when {
 		// A 4xx: the user can no longer see the playlist.
 		fetch.source == SectionSource.GONE -> RowRefreshAction.DROP
 		// The server did not answer: what is on screen is at least as fresh as the saved copy.
@@ -36,8 +45,11 @@ object TentacleRowRefresh {
 		// As many items as the row's limit is a complete answer, however much it shrank: the
 		// dashboard lowered the limit (20 → 5 used to keep the 20 old cards) (#54).
 		limit > 0 && fetch.items.size >= limit -> RowRefreshAction.REPLACE
-		// Less than half of what is shown is most likely a playlist caught mid-rebuild.
-		currentCount > 0 && fetch.items.size * 2 < currentCount -> RowRefreshAction.KEEP
+		// Less than half of what is shown is most likely a playlist caught mid-rebuild, unless
+		// the same smaller answer came twice: then the playlist really shrank (20 → 8 below a
+		// limit of 20 used to keep the 20 old cards for ever) (#54).
+		currentCount > 0 && fetch.items.size * 2 < currentCount ->
+			if (sameShrunkAnswerAgain) RowRefreshAction.REPLACE else RowRefreshAction.KEEP
 		else -> RowRefreshAction.REPLACE
 	}
 }

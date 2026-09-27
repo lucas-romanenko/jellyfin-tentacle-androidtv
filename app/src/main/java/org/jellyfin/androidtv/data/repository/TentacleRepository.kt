@@ -818,7 +818,7 @@ class TentacleRepository(
 				result.buttons
 			}
 		} catch (e: Exception) {
-			Timber.w(e, "Failed to fetch toolbar config")
+			warnPollFailed("Failed to fetch toolbar config", e)
 			null
 		}
 	}
@@ -1051,6 +1051,16 @@ class TentacleRepository(
 	}
 
 	/**
+	 * A call the app repeats on a timer failing on the network (the server restarting, the
+	 * Wi-Fi dropping) is expected: one line, not a stack trace, or every poll during an outage
+	 * logs the same "Caused by: SocketException" block again (#49). Anything else keeps its trace.
+	 */
+	private fun warnPollFailed(what: String, e: Exception) {
+		if (e is java.io.IOException) Timber.w("$what: ${e.javaClass.simpleName}: ${e.message}")
+		else Timber.w(e, what)
+	}
+
+	/**
 	 * Fetch download activity (active downloads + unreleased items) from Tentacle.
 	 */
 	suspend fun getActivity(): ActivityResponse? = withContext(Dispatchers.IO) {
@@ -1067,7 +1077,7 @@ class TentacleRepository(
 				result
 			}
 		} catch (e: Exception) {
-			Timber.w(e, "Failed to fetch Tentacle activity")
+			warnPollFailed("Failed to fetch Tentacle activity", e)
 			null
 		}
 	}
@@ -1098,7 +1108,7 @@ class TentacleRepository(
 			}
 			result
 		} catch (e: Exception) {
-			Timber.w(e, "Failed to poll Tentacle notifications")
+			warnPollFailed("Failed to poll Tentacle notifications", e)
 			null
 		}
 	}

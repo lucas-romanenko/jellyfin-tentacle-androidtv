@@ -420,11 +420,17 @@ class HomeFragment : Fragment() {
 	private fun startNotificationPolling() {
 		lifecycleScope.launch {
 			lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+				var wait = NOTIFICATION_POLL_MS
 				while (true) {
-					delay(15_000)
-					try {
-						tentacleRepository.pollNotifications()
-					} catch (_: Exception) {}
+					delay(wait)
+					val answered = try {
+						tentacleRepository.pollNotifications() != null
+					} catch (_: Exception) {
+						false
+					}
+					// While the server is not answering, ask less often (#49): 15 s doubling to
+					// 2 min, back to 15 s with the first answer.
+					wait = nextNotificationPoll(wait, answered)
 				}
 			}
 		}
@@ -572,3 +578,10 @@ private fun NotificationToast(
 		)
 	}
 }
+
+internal const val NOTIFICATION_POLL_MS = 15_000L
+internal const val NOTIFICATION_POLL_MAX_MS = 120_000L
+
+/** The next wait of the Home notification poll: normal after an answer, doubling while none comes. */
+internal fun nextNotificationPoll(current: Long, answered: Boolean): Long =
+	if (answered) NOTIFICATION_POLL_MS else (current * 2).coerceAtMost(NOTIFICATION_POLL_MAX_MS)

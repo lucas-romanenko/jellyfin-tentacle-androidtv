@@ -121,6 +121,7 @@ public class LiveProgramDetailPopup {
                             LiveProgramDetailPopupHelperKt.cancelTimer(LiveProgramDetailPopup.this, mProgram.getTimerId(), () -> {
                                 selectedGridView.setRecTimer(null);
                                 mProgram = LiveProgramDetailPopupHelperKt.copyWithTimerId(mProgram, null);
+                                selectedGridView.setProgram(mProgram);
                                 dismiss();
                                 Utils.showToast(mContext, R.string.msg_recording_cancelled);
                                 return null;
@@ -142,6 +143,7 @@ public class LiveProgramDetailPopup {
                         public void onClick(View v) {
                             LiveProgramDetailPopupHelperKt.recordProgram(LiveProgramDetailPopup.this, mProgram.getId(), program -> {
                                 mProgram = program;
+                                mSelectedProgramView.setProgram(program);
                                 mSelectedProgramView.setRecSeriesTimer(program.getSeriesTimerId());
                                 mSelectedProgramView.setRecTimer(program.getTimerId());
                                 if (mSeriesSettingsButton != null)
@@ -197,6 +199,7 @@ public class LiveProgramDetailPopup {
                             public void onClick(View v) {
                                 LiveProgramDetailPopupHelperKt.recordSeries(LiveProgramDetailPopup.this, mProgram.getId(), program -> {
                                     mProgram = program;
+                                    mSelectedProgramView.setProgram(program);
                                     mSelectedProgramView.setRecSeriesTimer(program.getSeriesTimerId());
                                     mSelectedProgramView.setRecTimer(program.getTimerId());
                                     if (mSeriesSettingsButton != null)

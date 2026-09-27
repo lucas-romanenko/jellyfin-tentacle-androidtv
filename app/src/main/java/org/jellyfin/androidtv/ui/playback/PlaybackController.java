@@ -57,7 +57,7 @@ import org.koin.java.KoinJavaComponent;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -441,10 +441,26 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         if (playerError != null
                 && playerError.getCause() instanceof StuckPlayerException
                 && ((StuckPlayerException) playerError.getCause()).stuckType == StuckPlayerException.STUCK_PLAYING_NO_PROGRESS) {
-            stuckAudioCodec = getCurrentAudioCodec();
-            if (stuckAudioCodec != null && blockAudioCodec(stuckAudioCodec) && mFragment != null) {
-                Utils.showToast(mFragment.getContext(),
-                        mFragment.getString(R.string.audio_decoder_fallback, stuckAudioCodec.toUpperCase(Locale.ROOT)));
+            String codec = getCurrentAudioCodec();
+            // Only a decoder that was fed and did nothing is to blame (#51): not live TV, a
+            // transcode or a remote stream, whose input can simply stop, and never a codec Media3
+            // decodes in software. Data "kept arriving" = the buffer reached past the frozen playhead.
+            long buffered = hasInitializedVideoManager() ? mVideoManager.getBufferedPosition() : -1;
+            long position = hasInitializedVideoManager() ? mVideoManager.getCurrentPosition() : -1;
+            long bufferAhead = buffered >= 0 && position >= 0 ? buffered - position : 0;
+            MediaSourceInfo stuckSource = getCurrentMediaSource();
+            boolean remote = stuckSource != null && (Boolean.TRUE.equals(stuckSource.isRemote())
+                    || stuckSource.getProtocol() == org.jellyfin.sdk.model.api.MediaProtocol.HTTP);
+            boolean blame = AudioCodecBlockPolicy.shouldBlockCodec(codec, isTranscoding(), remote, isLiveTv, bufferAhead);
+            Timber.w("Stuck playback: audio %s, %s%s, %d ms buffered ahead - %s", codec,
+                    isTranscoding() ? "transcode" : "direct", isLiveTv ? ", live" : (remote ? ", remote" : ""),
+                    bufferAhead, blame ? "blaming the audio decoder" : "not a decoder fault");
+            if (blame) {
+                stuckAudioCodec = codec;
+                if (blockAudioCodec(stuckAudioCodec) && mFragment != null) {
+                    Utils.showToast(mFragment.getContext(),
+                            mFragment.getString(R.string.audio_decoder_fallback, stuckAudioCodec.toUpperCase(Locale.ROOT)));
+                }
             }
         }
 
@@ -1482,7 +1498,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     private long getTimeShiftedProgress() {
         refreshCurrentPosition();
-        return !directStreamLiveTv ? mCurrentPosition + (mCurrentTranscodeStartTime - (mCurrentProgramStart == null ? 0 : mCurrentProgramStart.toInstant(ZoneOffset.UTC).toEpochMilli())) : getRealTimeProgress();
+        return !directStreamLiveTv ? mCurrentPosition + (mCurrentTranscodeStartTime - (mCurrentProgramStart == null ? 0 : mCurrentProgramStart.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())) : getRealTimeProgress();
     }
 
     private void startReportLoop() {
@@ -1650,7 +1666,18 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             }
             // Clear pre-set index so switchAudioStream queries ExoPlayer's actual track
             mCurrentOptions.setAudioStreamIndex(null);
-            switchAudioStream(eligibleAudioTrack);
+            if (!isTranscoding() && hasInitializedVideoManager() && getAudioStreamIndex() < 0) {
+                // The player can't map what it is playing back to a Jellyfin stream index (e.g. an
+                // HLS stream with a separate audio rendition, as Tentacle's YouTube items are).
+                // switchAudioStream() would then fail to switch in place and restart playback to
+                // "apply" the track, and the restarted stream reports -1 again: it restarted every
+                // few seconds and never played. Switch in place if possible, otherwise keep playing.
+                MediaSourceInfo source = getCurrentMediaSource();
+                if (source != null) mVideoManager.setExoPlayerTrack(eligibleAudioTrack, MediaStreamType.AUDIO, source.getMediaStreams());
+                mCurrentOptions.setAudioStreamIndex(eligibleAudioTrack);
+            } else {
+                switchAudioStream(eligibleAudioTrack);
+            }
         }
 
         // Force disable subtitles if preference is enabled and default is None

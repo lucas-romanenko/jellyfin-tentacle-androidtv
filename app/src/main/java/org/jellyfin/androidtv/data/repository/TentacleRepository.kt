@@ -2,6 +2,7 @@ package org.jellyfin.androidtv.data.repository
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,6 +17,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.itemsApi
+import org.jellyfin.sdk.api.client.extensions.userLibraryApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemDtoQueryResult
 import org.jellyfin.sdk.model.api.BaseItemKind
@@ -54,6 +56,28 @@ class TentacleRepository(
 			.readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
 			.callTimeout(4, java.util.concurrent.TimeUnit.SECONDS)
 			.build()
+	}
+
+	// Adds and episode management wait for Radarr/Sonarr, which do a metadata refresh,
+	// artwork download and disk scan before answering — 40-130 s is normal on a busy
+	// instance, and the server keeps polling a slow add for up to 150 s. The plugin's own
+	// add client waits 4 minutes (DiscoverController.AddClient). The shared client's 30 s
+	// call timeout made the app report "Error: timeout" for adds that then succeeded.
+	private val addClient: OkHttpClient by lazy {
+		httpClient.newBuilder()
+			.callTimeout(5, java.util.concurrent.TimeUnit.MINUTES)
+			.readTimeout(5, java.util.concurrent.TimeUnit.MINUTES)
+			.writeTimeout(1, java.util.concurrent.TimeUnit.MINUTES)
+			.build()
+	}
+
+	/** The server's `detail` for a refused request, else just the status. */
+	private fun errorReason(code: Int, body: String?): String {
+		val detail = runCatching {
+			json.parseToJsonElement(body.orEmpty()).let { it as? kotlinx.serialization.json.JsonObject }
+				?.get("detail")?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+		}.getOrNull()
+		return detail?.takeIf { it.isNotBlank() } ?: "HTTP $code"
 	}
 
 	/** Hard ceiling on items per home row (matches backend/plugin cap). */
@@ -164,6 +188,18 @@ class TentacleRepository(
 	private val _activityDownloadCount = MutableStateFlow(0)
 	val activityDownloadCount: StateFlow<Int> = _activityDownloadCount.asStateFlow()
 
+	// Server-side "card previews" policy ("all" | "local_only" | "off"), carried on
+	// GET /TentacleHome/Toolbar (androidtv#47: a provider .strm card's ExoPlayer preview
+	// opened four provider connections in fourteen seconds while scrolling one row, each
+	// lingering 12-16s after focus moved past the card — on a connection-limited IPTV
+	// account that cut a running recording). CardPresenter reads this synchronously via
+	// .value on every card composition, so it must be updated as a side effect of
+	// getToolbarConfig() rather than only returned from it. Default "all" preserves today's
+	// behaviour until the first successful fetch (and for older servers, which omit the
+	// field entirely thanks to ignoreUnknownKeys).
+	private val _cardPreviewPolicy = MutableStateFlow("all")
+	val cardPreviewPolicy: StateFlow<String> = _cardPreviewPolicy.asStateFlow()
+
 	// Notification flow — emits new notifications for toast display
 	private val _pendingNotifications = MutableStateFlow<List<TentacleNotification>>(emptyList())
 	val pendingNotifications: StateFlow<List<TentacleNotification>> = _pendingNotifications.asStateFlow()
@@ -246,33 +282,69 @@ class TentacleRepository(
 		}
 	}
 
+	// Home rows are fetched at most 4 at a time. Every row was asked for at once, and on a
+	// busy server 25 parallel reads took 13-22 s each (some past the 30 s timeout) where one
+	// at a time they take 0.4-5 s; a row that timed out was then dropped (androidtv #49).
+	private val sectionFetchPermits = kotlinx.coroutines.sync.Semaphore(4)
+
 	/**
-	 * Fetch items for a specific section/playlist.
-	 * Returns standard Jellyfin BaseItemDto objects.
+	 * Items for one home row, and where they came from:
+	 * - [SectionSource.SERVER]: the server's answer, possibly empty;
+	 * - [SectionSource.SAVED_COPY]: the server did not answer (timeout, refused, 5xx), so the
+	 *   row's last good answer from disk — a slow server no longer drops rows (#49);
+	 * - [SectionSource.GONE]: a 4xx — the user can no longer see this playlist, so its saved
+	 *   copy is deleted and never shown again.
 	 */
-	suspend fun getSectionItems(playlistId: String): List<BaseItemDto> = withContext(Dispatchers.IO) {
-		try {
-			val url = buildUrl("/TentacleHome/Section/$playlistId")
-			val request = Request.Builder().url(url).get().build()
-			val response = httpClient.newCall(request).execute()
-
-			if (!response.isSuccessful) {
-				response.close()
-				return@withContext emptyList()
+	suspend fun fetchSectionItems(playlistId: String): SectionFetch = withContext(Dispatchers.IO) {
+		sectionFetchPermits.withPermit {
+			try {
+				val url = buildUrl("/TentacleHome/Section/$playlistId")
+				val request = Request.Builder().url(url).get().build()
+				httpClient.newCall(request).execute().use { response ->
+					when {
+						response.code in 400..499 -> {
+							deleteHomeCache("section-$playlistId.json")
+							SectionFetch(emptyList(), SectionSource.GONE)
+						}
+						!response.isSuccessful -> savedSection(playlistId)
+						else -> {
+							val body = response.body?.string()
+							if (body == null) savedSection(playlistId) else {
+								val result = json.decodeFromString<BaseItemDtoQueryResult>(body)
+								Timber.d("Tentacle section '$playlistId': ${result.items.size} items")
+								if (result.items.isNotEmpty()) writeHomeCache("section-$playlistId.json", body)
+								SectionFetch(result.items.take(maxRowItems), SectionSource.SERVER)
+							}
+						}
+					}
+				}
+			} catch (e: kotlin.coroutines.cancellation.CancellationException) {
+				throw e
+			} catch (e: java.io.IOException) {
+				// A timeout or refused connection (a saturated or restarting server): one line,
+				// not a stack trace per row.
+				Timber.w("Tentacle row $playlistId: ${e.javaClass.simpleName} (${e.message}), using its saved copy")
+				savedSection(playlistId)
+			} catch (e: Exception) {
+				Timber.e(e, "Failed to fetch Tentacle section items for $playlistId")
+				savedSection(playlistId)
 			}
-
-			val body = response.body?.string() ?: return@withContext emptyList()
-			response.close()
-
-			val result = json.decodeFromString<BaseItemDtoQueryResult>(body)
-			Timber.d("Tentacle section '$playlistId': ${result.items.size} items, first imageTags=${result.items.firstOrNull()?.imageTags}")
-			if (result.items.isNotEmpty()) writeHomeCache("section-$playlistId.json", body)
-			result.items.take(maxRowItems)
-		} catch (e: Exception) {
-			Timber.e(e, "Failed to fetch Tentacle section items for $playlistId")
-			emptyList()
 		}
 	}
+
+	private fun savedSection(playlistId: String): SectionFetch {
+		val items = try {
+			readHomeCache("section-$playlistId.json")
+				?.let { json.decodeFromString<BaseItemDtoQueryResult>(it).items.take(maxRowItems) }
+				.orEmpty()
+		} catch (_: Exception) {
+			emptyList()
+		}
+		return SectionFetch(items, SectionSource.SAVED_COPY)
+	}
+
+	/** Items for one home row (the server's, or its saved copy when the server did not answer). */
+	suspend fun getSectionItems(playlistId: String): List<BaseItemDto> = fetchSectionItems(playlistId).items
 
 	/**
 	 * Fetch hero/spotlight items with full image data.
@@ -546,13 +618,13 @@ class TentacleRepository(
 			Timber.d("addToRadarr: POST tmdb:$tmdbId")
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
-			httpClient.newCall(request).execute().use { response ->
+			addClient.newCall(request).execute().use { response ->
 				val body = response.body?.string() ?: return@withContext AddResult(error = "Empty response")
 
 				Timber.d("addToRadarr: HTTP ${response.code} body=$body")
 
 				if (!response.isSuccessful) {
-					return@withContext AddResult(error = "HTTP ${response.code}: $body")
+					return@withContext AddResult(error = errorReason(response.code, body))
 				}
 
 				val result = json.decodeFromString<AddResult>(body)
@@ -582,11 +654,11 @@ class TentacleRepository(
 			}
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
-			httpClient.newCall(request).execute().use { response ->
+			addClient.newCall(request).execute().use { response ->
 				val body = response.body?.string() ?: return@withContext AddResult(error = "Empty response")
 
 				if (!response.isSuccessful) {
-					return@withContext AddResult(error = "HTTP ${response.code}")
+					return@withContext AddResult(error = errorReason(response.code, body))
 				}
 
 				json.decodeFromString<AddResult>(body)
@@ -601,6 +673,29 @@ class TentacleRepository(
 	 * Find a Jellyfin library item by searching for its title.
 	 * Returns the item UUID if found, null otherwise.
 	 */
+	/**
+	 * Open an owned title: prefer the id the server resolved by TMDB id (exact),
+	 * confirm the signed-in user can open it, else fall back to the title search.
+	 */
+	suspend fun resolveOwnedItem(
+		mediaType: String,
+		tmdbId: Int,
+		title: String,
+		year: String,
+		knownId: String? = null,
+	): java.util.UUID? {
+		val raw = knownId ?: if (tmdbId > 0) getDiscoverDetail(mediaType, tmdbId)?.jellyfinItemId else null
+		// Tentacle returns Jellyfin's dashless 32-hex form; java.util.UUID.fromString rejects it.
+		val id = org.jellyfin.androidtv.util.UUIDUtils.parseUUID(raw)
+		if (id != null) {
+			val visible = withContext(Dispatchers.IO) {
+				runCatching { api.userLibraryApi.getItem(itemId = id).content }.isSuccess
+			}
+			if (visible) return id
+		}
+		return findJellyfinItem(title, year, mediaType)
+	}
+
 	suspend fun findJellyfinItem(title: String, year: String, mediaType: String): java.util.UUID? = withContext(Dispatchers.IO) {
 		try {
 			val itemKind = if (mediaType == "series") BaseItemKind.SERIES else BaseItemKind.MOVIE
@@ -718,7 +813,9 @@ class TentacleRepository(
 			httpClient.newCall(request).execute().use { response ->
 				if (!response.isSuccessful) return@withContext null
 				val body = response.body?.string() ?: return@withContext null
-				json.decodeFromString<ToolbarResponse>(body).buttons
+				val result = json.decodeFromString<ToolbarResponse>(body)
+				_cardPreviewPolicy.value = result.cardPreviews
+				result.buttons
 			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch toolbar config")
@@ -871,17 +968,23 @@ class TentacleRepository(
 	suspend fun arrRemove(item: ActivitySearching, deleteDownloaded: Boolean = false): ArrActionResult =
 		arrAction("ArrRemove", item, extra = if (deleteDownloaded) ""","delete_downloaded":true""" else "")
 
-	/** Stop Sonarr looking for a show's missing episodes ([episodes] as "S01E02"; null = all). Keeps downloads. */
-	suspend fun arrStopMissing(item: ActivitySearching, episodes: List<String>? = null): ArrActionResult =
-		arrAction("ArrStopMissing", item, extra = episodes?.let { list ->
+	/**
+	 * Stop Sonarr looking for a show's missing episodes, [episodes] as "S01E02". Keeps downloads.
+	 * For the whole card pass its labels and [episodeCount] (the card's count; its label list is
+	 * capped at 50): the server never widens "all" past what the card counted, and without the
+	 * labels it answers 409 once it no longer remembers the card (a restart, a day later).
+	 */
+	suspend fun arrStopMissing(item: ActivitySearching, episodes: List<String>?, episodeCount: Int? = null): ArrActionResult =
+		arrAction("ArrStopMissing", item, extra = (episodes?.let { list ->
 			""","episodes":[""" + list.joinToString(",") { "\"" + it.filter { c -> c.isLetterOrDigit() } + "\"" } + "]"
-		} ?: "")
+		} ?: "") + (episodeCount?.let { ""","episode_count":$it""" } ?: ""))
 
-	// A release check waits on every indexer; allow for it.
+	// A release check waits on every indexer; allow for it. Longer than the plugin's own
+	// 240 s for ArrCheck, so the app shows the plugin's answer rather than timing out first.
 	private val checkClient: OkHttpClient by lazy {
 		httpClient.newBuilder()
-			.readTimeout(200, java.util.concurrent.TimeUnit.SECONDS)
-			.callTimeout(210, java.util.concurrent.TimeUnit.SECONDS)
+			.readTimeout(250, java.util.concurrent.TimeUnit.SECONDS)
+			.callTimeout(260, java.util.concurrent.TimeUnit.SECONDS)
 			.build()
 	}
 
@@ -932,7 +1035,10 @@ class TentacleRepository(
 			val mediaType = if (item.mediaType == "series") "series" else "movie"
 			val jsonBody = """{"media_type":"$mediaType","tmdb_id":${item.tmdbId},"tvdb_id":${item.tvdbId}$extra}"""
 			val request = Request.Builder().url(url).post(jsonBody.toRequestBody("application/json".toMediaType())).build()
-			httpClient.newCall(request).execute().use { response ->
+			// The plugin gives these Radarr/Sonarr calls 4 minutes: on the 30 s client a slow
+			// whole-show Remove said "Can't reach the server" while the delete carried on, and a
+			// second press then got a 404 (#21).
+			addClient.newCall(request).execute().use { response ->
 				val body = response.body?.string().orEmpty()
 				val parsed = runCatching { json.decodeFromString<ArrActionResult>(body) }.getOrNull() ?: ArrActionResult()
 				if (response.isSuccessful) parsed.copy(ok = true)
@@ -1141,15 +1247,17 @@ class TentacleRepository(
 					})
 					append("]")
 				}
-				if (autoFollow) append(""","auto_follow":true""")
+				// The server's field is monitor_new (auto_follow was silently dropped, so a
+				// picked-episode add always ended up with Sonarr's "monitor new items" off).
+				append(""","monitor_new":$autoFollow""")
 				append("}")
 			}
 			Timber.d("addToSonarrWithEpisodes: POST body=$jsonBody")
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
-			httpClient.newCall(request).execute().use { response ->
+			addClient.newCall(request).execute().use { response ->
 				val body = response.body?.string() ?: return@withContext AddResult(error = "Empty response")
-				if (!response.isSuccessful) return@withContext AddResult(error = "HTTP ${response.code}: $body")
+				if (!response.isSuccessful) return@withContext AddResult(error = errorReason(response.code, body))
 				json.decodeFromString<AddResult>(body)
 			}
 		} catch (e: Exception) {
@@ -1173,14 +1281,14 @@ class TentacleRepository(
 			}
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
 			val request = Request.Builder().url(url).post(requestBody).build()
-			httpClient.newCall(request).execute().use { response ->
-				val body = response.body?.string() ?: return@withContext ManageEpisodesResult()
-				if (!response.isSuccessful) return@withContext ManageEpisodesResult()
+			addClient.newCall(request).execute().use { response ->
+				val body = response.body?.string() ?: return@withContext ManageEpisodesResult(error = "Empty response")
+				if (!response.isSuccessful) return@withContext ManageEpisodesResult(error = errorReason(response.code, body))
 				json.decodeFromString<ManageEpisodesResult>(body)
 			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to manage episodes for tmdb:$tmdbId")
-			ManageEpisodesResult()
+			ManageEpisodesResult(error = e.message ?: "Unknown error")
 		}
 	}
 
@@ -1224,7 +1332,14 @@ data class TentacleSection(
 	// content has no portrait artwork at all — a YouTube thumbnail in a poster
 	// slot is cropped to a strip of its middle — so the row says which it wants.
 	val shape: String = "poster",
+	/** The row's item limit (plugin >= 2.267); 0 from an older plugin, meaning unknown. */
+	val maxItems: Int = 0,
 )
+
+/** Where a home row's items came from (see TentacleRepository.fetchSectionItems). */
+enum class SectionSource { SERVER, SAVED_COPY, GONE }
+
+data class SectionFetch(val items: List<BaseItemDto>, val source: SectionSource)
 
 @Serializable
 data class QueryResultResponse(
@@ -1311,6 +1426,9 @@ data class DiscoverDetail(
 	@SerialName("trailer_url")
 	val trailerUrl: String? = null,
 	val source: String? = null,
+	// Exact Jellyfin item id, resolved server-side by TMDB id (server >= 2.241.0).
+	@SerialName("jellyfin_item_id")
+	val jellyfinItemId: String? = null,
 )
 
 @Serializable
@@ -1400,7 +1518,22 @@ data class TentacleHeroConfig(
 	val displayName: String = "",
 	val trailerAudio: Boolean = true,
 	val itemCount: Int = 10,
-)
+	// Sent by plugin >= 2.267 (jellyfin-tentacle #209); older plugins leave the defaults.
+	val sortBy: String = "",
+	val sortOrder: String = "",
+	val requireLogo: Boolean = false,
+	val requireTrailer: Boolean = false,
+) {
+	/**
+	 * Whether the hero shows the same things as [other]: a changed playlist, size, sort or
+	 * filter means reload. Only the name and trailer audio are left out; comparing just
+	 * enabled/playlist/size missed a sort or filter change until the app restarted (#53).
+	 */
+	fun sameContentAs(other: TentacleHeroConfig?): Boolean = other != null &&
+		enabled == other.enabled && playlistId == other.playlistId && itemCount == other.itemCount &&
+		sortBy == other.sortBy && sortOrder == other.sortOrder &&
+		requireLogo == other.requireLogo && requireTrailer == other.requireTrailer
+}
 
 @Serializable
 data class ToolbarButton(
@@ -1411,6 +1544,12 @@ data class ToolbarButton(
 @Serializable
 data class ToolbarResponse(
 	val buttons: List<ToolbarButton> = emptyList(),
+	/**
+	 * Server-side card-previews policy: "all" | "local_only" | "off". Absent or an
+	 * unrecognized value (older plugin, per ignoreUnknownKeys) defaults to "all" so
+	 * behaviour is unchanged until an admin opts into restricting previews.
+	 */
+	val cardPreviews: String = "all",
 )
 
 @Serializable
@@ -1713,6 +1852,8 @@ data class ManageEpisodesResult(
 	val success: Boolean = false,
 	val monitored: Int = 0,
 	val searching: Int = 0,
+	/** Why the request failed (client-side only; never sent by the server). */
+	val error: String? = null,
 )
 
 data class SelectedEpisode(

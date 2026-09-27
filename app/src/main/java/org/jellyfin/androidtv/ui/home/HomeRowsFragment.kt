@@ -42,6 +42,7 @@ import org.jellyfin.androidtv.constant.QueryType
 import org.jellyfin.androidtv.data.model.DataRefreshService
 import org.jellyfin.androidtv.data.repository.CustomMessageRepository
 import org.jellyfin.androidtv.data.repository.NotificationsRepository
+import org.jellyfin.androidtv.data.repository.SectionSource
 import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.data.repository.UserViewsRepository
 import org.jellyfin.androidtv.data.service.BackgroundService
@@ -135,6 +136,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 	// Track Tentacle playlist rows for in-place refresh (playlistId → ItemRowAdapter)
 	private val tentacleRowAdapters = mutableMapOf<String, ItemRowAdapter>()
+	// Empty answers in a row per Tentacle row (see TentacleRowRefresh).
+	private val emptyRowAnswers = mutableMapOf<String, Int>()
 
 	// Track current Tentacle section structure for detecting structural changes
 	private var currentTentacleSectionKeys = listOf<String>()
@@ -291,13 +294,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					if (rows.any { it !is HomeFragmentMediaBarRow }) {
 						// merge flag is part of the structure key so toggling it in the
 						// dashboard triggers a structural rebuild on the next refresh
-						currentTentacleSectionKeys = sections.map { section ->
-							when (section.type) {
-								"row" -> "playlist:${section.playlistId}:${section.shape}"
-								"builtin" -> "builtin:${section.sectionId}"
-								else -> "unknown:${section.id}"
-							}
-						} + "merge:$cachedMergeCw"
+						currentTentacleSectionKeys = sections.map(::sectionKey) + "merge:$cachedMergeCw"
 						currentRows = rows
 						renderInitialRows(rows)
 						Timber.i("Home rendered from cache fallback (${rows.size} rows), revalidating in background")
@@ -386,13 +383,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 					// Store section keys for detecting structural changes later (the
 					// merge flag is included so toggling it rebuilds rows in place)
-					currentTentacleSectionKeys = tentacleSections.map { section ->
-						when (section.type) {
-							"row" -> "playlist:${section.playlistId}:${section.shape}"
-							"builtin" -> "builtin:${section.sectionId}"
-							else -> "unknown:${section.id}"
-						}
-					} + "merge:$mergeCw"
+					currentTentacleSectionKeys = tentacleSections.map(::sectionKey) + "merge:$mergeCw"
 				}
 			}
 
@@ -858,6 +849,13 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	 * 3. If structure unchanged: updates playlist items in-place (preserves scroll + selection)
 	 * 4. If structure changed: removes old content rows, adds new ones to the adapter in-place
 	 */
+	/** A section's part in "did the home's structure change": for a row its playlist, shape and title. */
+	private fun sectionKey(section: org.jellyfin.androidtv.data.repository.TentacleSection): String = when (section.type) {
+		"row" -> "playlist:${section.playlistId}:${section.shape}:${section.displayText}"
+		"builtin" -> "builtin:${section.sectionId}"
+		else -> "unknown:${section.id}"
+	}
+
 	private suspend fun refreshTentacleRowsInPlace() {
 		if (!isAdded) return
 
@@ -871,53 +869,74 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 		val newSections = sectionsResponse.sections.filter { it.type == "row" || it.type == "builtin" }
 		val mergeCw = sectionsResponse.mergeContinueWatching
-		val newKeys = newSections.map { section ->
-			when (section.type) {
-				"row" -> "playlist:${section.playlistId}:${section.shape}"
-				"builtin" -> "builtin:${section.sectionId}"
-				else -> "unknown:${section.id}"
+		val newKeys = newSections.map(::sectionKey) + "merge:$mergeCw"
+
+		// A hero switched on after launch: its row is only attached at launch, when the hero
+		// is already on, so it never appeared until the app restarted (#53). Attach it now; it
+		// shows itself once the hero has loaded, and removes itself if the hero goes off.
+		val heroOn = userSettingPreferences[UserSettingPreferences.mediaBarEnabled] &&
+			sectionsResponse.sections.any { it.type == "hero" && !it.playlistId.isNullOrEmpty() }
+		if (heroOn && !mediaBarRow.isAttached) {
+			withContext(Dispatchers.Main) {
+				val ctx = context
+				val rowsAdapter = adapter as? MutableObjectAdapter<Row>
+				if (isAdded && ctx != null && rowsAdapter != null) {
+					Timber.i("Hero switched on: attaching the media bar")
+					mediaBarRow.addToRowsAdapter(ctx, sharedCardPresenter, rowsAdapter)
+					hasMediaBarAtPosition0 = true
+				}
 			}
-		} + "merge:$mergeCw"
+		}
 
 		val structureChanged = newKeys != currentTentacleSectionKeys
 
 		if (!structureChanged && tentacleRowAdapters.isNotEmpty()) {
-			// Structure unchanged — just update playlist items in-place
-			val updates = kotlinx.coroutines.coroutineScope {
-				tentacleRowAdapters.keys.map { playlistId ->
-					async(Dispatchers.IO) {
-						playlistId to tentacleRepository.getSectionItems(playlistId)
-					}
-				}.awaitAll()
+			// Structure unchanged — update playlist items in place.
+			val limits = newSections
+				.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }
+				.associate { it.playlistId!! to it.maxItems }
+			// Rows the layout lists but that are not on screen: left out earlier because their
+			// fetch failed or came back empty. Nothing re-fetched them, so a row that timed out
+			// once stayed missing until the app restarted (#49). Asked again on every refresh.
+			val missing = limits.keys - tentacleRowAdapters.keys
+			val (updates, returning) = kotlinx.coroutines.coroutineScope {
+				val shown = tentacleRowAdapters.keys.map { playlistId ->
+					async(Dispatchers.IO) { playlistId to tentacleRepository.fetchSectionItems(playlistId) }
+				}
+				val absent = missing.map { playlistId ->
+					async(Dispatchers.IO) { tentacleRepository.fetchSectionItems(playlistId) }
+				}
+				shown.awaitAll() to absent.awaitAll().any { it.items.isNotEmpty() }
 			}
 
+			var rowLeft = false
 			withContext(Dispatchers.Main) {
-				for ((playlistId, newItems) in updates) {
+				for ((playlistId, fetch) in updates) {
 					val rowAdapter = tentacleRowAdapters[playlistId] ?: continue
-					// A transiently-empty fetch (the backend clears-and-re-adds the
-					// Jellyfin playlist during a refresh) would blank the row. Keep the
-					// last-known items instead of flashing an empty row.
-					if (newItems.isEmpty()) {
-						Timber.d("Skipping empty in-place refresh for Tentacle row $playlistId (keeping existing items)")
-						continue
+					val empties = if (fetch.source == SectionSource.SERVER && fetch.items.isEmpty()) {
+						(emptyRowAnswers[playlistId] ?: 0) + 1
+					} else 0
+					emptyRowAnswers[playlistId] = empties
+					when (TentacleRowRefresh.decide(rowAdapter.size(), fetch, limits[playlistId] ?: 0, empties)) {
+						RowRefreshAction.REPLACE -> {
+							rowAdapter.replaceStaticItems(fetch.items)
+							Timber.d("Refreshed Tentacle row $playlistId with ${fetch.items.size} items")
+						}
+						RowRefreshAction.KEEP ->
+							Timber.d("Kept Tentacle row $playlistId (${fetch.source}, ${fetch.items.size} vs ${rowAdapter.size()} shown)")
+						RowRefreshAction.DROP -> {
+							Timber.i("Tentacle row $playlistId is gone or empty")
+							rowLeft = true
+						}
 					}
-					// A drastic shrink (new set less than half the current row) almost
-					// always means we caught the playlist mid-rebuild — the backend had
-					// cleared it and only re-added part of the items. Applying that would
-					// collapse a full 30-item row to a handful. Keep the current items;
-					// the next settled refresh restores the full set.
-					val currentCount = rowAdapter.size()
-					if (currentCount > 0 && newItems.size * 2 < currentCount) {
-						Timber.d("Skipping shrinking in-place refresh for Tentacle row $playlistId (${newItems.size} < $currentCount, likely mid-rebuild)")
-						continue
-					}
-					rowAdapter.replaceStaticItems(newItems)
-					Timber.d("Refreshed Tentacle row $playlistId with ${newItems.size} items")
 				}
 				resyncSelectedItem()
 			}
-			Timber.i("Tentacle rows refreshed in-place (${updates.size} rows)")
-			return
+			if (!returning && !rowLeft) {
+				Timber.i("Tentacle rows refreshed in-place (${updates.size} rows)")
+				return
+			}
+			Timber.i("Tentacle rows: a row came back or left, rebuilding")
 		}
 
 		// Structure changed — rebuild content rows in-place
@@ -978,23 +997,23 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			selectionDebouncer.cancel()
 			backgroundDebouncer.cancel()
 
-			// Index existing content rows by header name for reuse
+			// Index existing content rows for reuse: a Tentacle row by its playlist id, a
+			// built-in row by its header. Matching Tentacle rows by title too gave one of two
+			// rows that share a title the other's items (#54).
+			val oldIdByAdapter: Map<Any, String> = tentacleRowAdapters.entries.associate { (id, a) -> (a as Any) to id }
+			val existingById = mutableMapOf<String, ListRow>()
 			val existingRowsByName = mutableMapOf<String, ListRow>()
 			for (i in contentRowStartIndex until rowsAdapter.size()) {
 				val row = rowsAdapter[i] as? ListRow ?: continue
-				val name = row.headerItem?.name ?: continue
-				existingRowsByName[name] = row
+				val id = row.adapter?.let { oldIdByAdapter[it] }
+				if (id != null) existingById[id] = row
+				else row.headerItem?.name?.let { existingRowsByName[it] = row }
 			}
 
 			// Build new content rows, reusing existing ListRow objects where possible.
 			// For reused rows, update items silently via replaceStaticItems to preserve
 			// the row's horizontal scroll position.
 			hasMediaBarAtPosition0 = false
-
-			// Build a name→playlistId map from sections for re-registering adapters
-			val nameToPlaylistId = newSections
-				.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }
-				.associate { it.displayText to it.playlistId!! }
 
 			// Build fresh rows into a temp adapter (also populates tentacleRowAdapters)
 			tentacleRowAdapters.clear()
@@ -1004,12 +1023,20 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			for (row in newRows) {
 				row.addToRowsAdapter(ctx, sharedCardPresenter, tempAdapter)
 			}
+			val freshIdByAdapter: Map<Any, String> = tentacleRowAdapters.entries.associate { (id, a) -> (a as Any) to id }
 
 			val newContentRows = mutableListOf<Row>()
 			for (i in 0 until tempAdapter.size()) {
 				val freshRow = tempAdapter[i] as? ListRow
 				val name = freshRow?.headerItem?.name
-				val existingRow = if (name != null) existingRowsByName[name] else null
+				val freshId = freshRow?.adapter?.let { freshIdByAdapter[it] }
+				val existingRow = when {
+					// Same playlist, same title: reuse it. A renamed row is rebuilt so its new
+					// header shows.
+					freshId != null -> existingById[freshId]?.takeIf { it.headerItem?.name == name }
+					name != null -> existingRowsByName[name]
+					else -> null
+				}
 
 				if (existingRow != null && freshRow != null) {
 					val existingAdapter = existingRow.adapter as? ItemRowAdapter
@@ -1032,9 +1059,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						// Reuse existing row as-is — preserves horizontal scroll position.
 						// Don't touch the ItemRowAdapter's items here. Item content updates
 						// are handled by the content-only refresh path (structureChanged=false).
-						val playlistId = nameToPlaylistId[name]
-						if (playlistId != null && existingAdapter != null) {
-							tentacleRowAdapters[playlistId] = existingAdapter
+						if (freshId != null && existingAdapter != null) {
+							tentacleRowAdapters[freshId] = existingAdapter
 						}
 						newContentRows.add(existingRow)
 					}

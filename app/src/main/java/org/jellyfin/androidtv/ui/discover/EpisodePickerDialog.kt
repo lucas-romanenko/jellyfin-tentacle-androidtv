@@ -48,6 +48,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.jellyfin.androidtv.data.repository.AddResult
 import org.jellyfin.androidtv.data.repository.SelectedEpisode
 import org.jellyfin.androidtv.data.repository.SonarrEpisode
 import org.jellyfin.androidtv.data.repository.SonarrEpisodesResponse
@@ -87,6 +88,7 @@ fun EpisodePickerContent(
 	var isSubmitting by remember { mutableStateOf(false) }
 	var submitSuccess by remember { mutableStateOf(false) }
 	var submitMessage by remember { mutableStateOf("") }
+	var submitOk by remember { mutableStateOf(true) }
 	var seasons by remember { mutableStateOf<List<TmdbSeason>>(emptyList()) }
 	var seasonEpisodes by remember { mutableStateOf<Map<Int, List<TmdbEpisode>>>(emptyMap()) }
 	var sonarrData by remember { mutableStateOf(SonarrEpisodesResponse()) }
@@ -153,10 +155,10 @@ fun EpisodePickerContent(
 				Box(
 					modifier = Modifier
 						.size(72.dp)
-						.background(Color(0xFF4CAF50), androidx.compose.foundation.shape.CircleShape),
+						.background(if (submitOk) Color(0xFF4CAF50) else Color(0xFFE53935), androidx.compose.foundation.shape.CircleShape),
 					contentAlignment = Alignment.Center,
 				) {
-					Text("✓", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.White)
+					Text(if (submitOk) "✓" else "✕", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.White)
 				}
 				Text(
 					text = submitMessage,
@@ -218,7 +220,7 @@ fun EpisodePickerContent(
 										SelectedEpisode(parts[0].toInt(), parts[1].toInt())
 									}
 
-								val message = when (mode) {
+								val outcome = when (mode) {
 									EpisodePickerMode.ADD_NEW, EpisodePickerMode.DOWNLOAD_MORE -> {
 										val result = tentacleRepository.addToSonarrWithEpisodes(
 											tmdbId = tmdbId,
@@ -228,23 +230,23 @@ fun EpisodePickerContent(
 											autoFollow = autoFollow,
 											tvdbId = tvdbId,
 										)
-										if (result.error != null) "Error: ${result.error}"
-										else {
-											tentacleRepository.bumpActivityDownloadCount(selectedCount)
-											"Added $selectedCount episodes to Sonarr"
-										}
+										val outcome = addEpisodesOutcome(result, selectedCount)
+										if (outcome.first) tentacleRepository.bumpActivityDownloadCount(selectedCount)
+										outcome
 									}
 									EpisodePickerMode.MANAGE -> {
 										val result = tentacleRepository.manageEpisodes(tmdbId, selected)
 										if (result.success) {
-											"Monitoring ${result.monitored} episodes" +
-												if (result.searching > 0) ", searching ${result.searching}" else ""
-										} else "Failed to update"
+											true to ("Monitoring ${result.monitored} episodes" +
+												if (result.searching > 0) ", searching ${result.searching}" else "")
+										} else false to ("Failed to update" + (result.error?.let { ": $it" } ?: ""))
 									}
 								}
+								val (ok, message) = outcome
 								submitMessage = message
+								submitOk = ok
 								submitSuccess = true
-								delay(1500)
+								delay(if (ok) 1500 else 3500)
 								onComplete(message)
 							}
 						}
@@ -627,4 +629,17 @@ private fun isEpisodeUnaired(airDate: String?, today: LocalDate): Boolean {
 	} catch (_: Exception) {
 		false
 	}
+}
+
+/**
+ * What adding picked episodes to Sonarr came to: (done, message). A 200 can still carry
+ * added=0 with failed or already_exists, so the counts decide, as the Discover add button's do.
+ * A series already in Sonarr comes back already_exists WITHOUT the picked episodes applied
+ * (the server's add returns early), so that is not done: Manage Episodes applies them (#21).
+ */
+internal fun addEpisodesOutcome(result: AddResult, selectedCount: Int): Pair<Boolean, String> = when {
+	result.error != null -> false to "Error: ${result.error}"
+	result.added > 0 -> true to "Added $selectedCount episodes to Sonarr"
+	result.alreadyExists > 0 -> false to "Already in Sonarr, so the picked episodes were not added. Use Manage Episodes."
+	else -> false to (result.detail ?: "Failed to add to Sonarr")
 }

@@ -47,6 +47,7 @@ fun SettingsCustomizationThemeScreen() {
 				onClick = {
 					if (focusColor != entry) {
 						userSettingPreferences[UserSettingPreferences.focusColor] = entry
+						org.jellyfin.androidtv.ui.base.invalidateFocusBorderColor()
 						focusColor = entry
 						activity?.recreate()
 					} else {

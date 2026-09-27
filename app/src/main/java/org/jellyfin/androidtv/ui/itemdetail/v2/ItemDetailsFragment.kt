@@ -513,13 +513,60 @@ class ItemDetailsFragment : Fragment() {
 				CircularProgressIndicator()
 			}
 		} else {
-			val item = uiState.item ?: return
+			val item = uiState.item
+			if (item == null) {
+				ItemLoadFailedContent(uiState.loadFailure ?: ItemLoadFailure.UNREACHABLE)
+				return
+			}
 
 			when (item.type) {
 				BaseItemKind.PERSON -> PersonDetailsContent(uiState, showBackdrop = true)
 				BaseItemKind.SEASON -> SeasonDetailsContent(uiState, showBackdrop = false)
 				BaseItemKind.PLAYLIST -> MainDetailsContent(uiState, showBackdrop = true)
 				else -> MainDetailsContent(uiState, showBackdrop = false)
+			}
+		}
+	}
+
+	/**
+	 * The item could not be loaded. This used to be a blank page with nothing to focus, which
+	 * stayed blank after the server came back: Back was the only way out (#18).
+	 */
+	@Composable
+	private fun ItemLoadFailedContent(failure: ItemLoadFailure) {
+		val retryFocus = remember { FocusRequester() }
+		LaunchedEffect(failure) { runCatching { retryFocus.requestFocus() } }
+
+		Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+			Column(horizontalAlignment = Alignment.CenterHorizontally) {
+				Text(
+					when (failure) {
+						ItemLoadFailure.UNREACHABLE -> "Couldn't reach the server"
+						ItemLoadFailure.NOT_FOUND -> "This item isn't available any more"
+					},
+					fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White,
+				)
+				Spacer(modifier = Modifier.height(8.dp))
+				Text(
+					when (failure) {
+						ItemLoadFailure.UNREACHABLE -> "It didn't answer in time. Check that it's running, then try again."
+						ItemLoadFailure.NOT_FOUND -> "It may have been removed from the library."
+					},
+					fontSize = 15.sp, color = Color.White.copy(alpha = 0.65f),
+				)
+				Spacer(modifier = Modifier.height(24.dp))
+				Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+					org.jellyfin.androidtv.ui.base.button.Button(
+						onClick = { viewModel.retry() },
+						modifier = Modifier.focusRequester(retryFocus),
+					) { Text("Try again") }
+					org.jellyfin.androidtv.ui.base.button.Button(
+						onClick = {
+							if (navigationRepository.canGoBack) navigationRepository.goBack()
+							else navigationRepository.navigate(Destinations.home)
+						},
+					) { Text("Back") }
+				}
 			}
 		}
 	}

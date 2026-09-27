@@ -135,6 +135,9 @@ class ActivityFragment : Fragment() {
 		JellyfinTheme {
 			var activity by remember { mutableStateOf<ActivityResponse?>(null) }
 			var isLoading by remember { mutableStateOf(true) }
+			// The last poll got no answer at all (server unreachable): with nothing shown yet
+			// that is "can't reach the server", not "nothing is downloading" (#52).
+			var unreachable by remember { mutableStateOf(false) }
 			val contentFocusRequester = remember { FocusRequester() }
 			// The Searching card whose actions (search again / remove) are open.
 			var actionItem by remember { mutableStateOf<ActivitySearching?>(null) }
@@ -149,6 +152,7 @@ class ActivityFragment : Fragment() {
 					var failures = 0
 					while (true) {
 						val response = tentacleRepository.getActivity()
+						unreachable = response == null
 						if (response != null && response.error.isNullOrBlank()) {
 							activity = response
 							failures = 0
@@ -199,6 +203,7 @@ class ActivityFragment : Fragment() {
 					// Set when the server could not ask Tentacle (busy, not set up) —
 					// an empty list then means "unknown", not "nothing happening".
 					val unavailable = activity?.message?.takeIf { !activity?.error.isNullOrBlank() }
+						?: if (activity == null && unreachable) "Can't reach the server right now. Retrying\u2026" else null
 
 					if (downloads.isEmpty() && searching.isEmpty() && recentlyDownloaded.isEmpty() && unreleased.isEmpty()
 						&& comingUp.isEmpty() && problems.isEmpty()) {
@@ -275,8 +280,8 @@ class ActivityFragment : Fragment() {
 						}
 						r
 					},
-					onStopMissing = { episodes ->
-						val r = tentacleRepository.arrStopMissing(item, episodes)
+					onStopMissing = { episodes, count ->
+						val r = tentacleRepository.arrStopMissing(item, episodes, count)
 						if (r.ok) tentacleRepository.getActivity()?.let { fresh -> activity = fresh }
 						r
 					},
@@ -521,7 +526,7 @@ private fun RecentlyDownloadedCard(
 
 	val jellyfinUuid = remember(item.jellyfinItemId) {
 		item.jellyfinItemId.takeIf { it.isNotBlank() }?.let {
-			runCatching { UUID.fromString(it) }.getOrNull()
+			org.jellyfin.androidtv.util.UUIDUtils.parseUUID(it)
 		}
 	}
 
@@ -1037,7 +1042,7 @@ private fun SearchingActionsPanel(
 	item: ActivitySearching,
 	onSearch: suspend () -> ArrActionResult,
 	onRemove: suspend () -> ArrActionResult,
-	onStopMissing: suspend (List<String>?) -> ArrActionResult,
+	onStopMissing: suspend (List<String>?, Int?) -> ArrActionResult,
 	onCheck: suspend (Boolean) -> ReleaseCheck,
 	onGrab: suspend (ReleaseEntry) -> ArrActionResult,
 	onDismiss: () -> Unit,
@@ -1055,7 +1060,10 @@ private fun SearchingActionsPanel(
 	// "Why? / pick a release": null until asked, then loading, then the check.
 	var checking by remember { mutableStateOf(false) }
 	var check by remember { mutableStateOf<ReleaseCheck?>(null) }
-	val firstRelease = remember { FocusRequester() }
+	// The rejected release whose "Download anyway" was pressed once (#46). Its own state, not
+	// Remove's `armed`: that one pulls focus onto Remove, where the confirming press would
+	// delete the title.
+	var armedRelease by remember { mutableStateOf<String?>(null) }
 	var unticked by remember { mutableStateOf(setOf<String>()) }
 	val labels = item.missingLabels
 	val chosen = labels.filterNot { it in unticked }
@@ -1079,10 +1087,13 @@ private fun SearchingActionsPanel(
 			checking = false
 		}
 	}
-	LaunchedEffect(check) {
-		if (check?.releases?.isNotEmpty() == true) {
-			delay(100)
-			runCatching { firstRelease.requestFocus() }
+	// Results arriving do not move focus (#46): it jumped onto the first release, often a
+	// rejected one, and the OK the user pressed again while waiting downloaded it. Down reaches
+	// the list.
+	LaunchedEffect(armedRelease) {
+		if (armedRelease != null) {
+			delay(5_000)
+			armedRelease = null
 		}
 	}
 
@@ -1133,7 +1144,7 @@ private fun SearchingActionsPanel(
 				item.episode.takeIf { it.isNotBlank() },
 				waitedFor(item.waitingSince).takeIf { it.isNotBlank() }?.let { "searching for $it" },
 			).joinToString(" · ")
-			Text(text = "In $arr — no release found yet" + if (sub.isNotBlank()) " ($sub)" else "",
+			Text(text = "In $arr — no usable release yet" + if (sub.isNotBlank()) " ($sub)" else "",
 				fontSize = 14.sp, color = Color.White.copy(alpha = 0.6f))
 			if (isShow) {
 				Spacer(modifier = Modifier.height(6.dp))
@@ -1152,17 +1163,24 @@ private fun SearchingActionsPanel(
 					modifier = Modifier.focusRequester(firstButton),
 				) { Text("Search again") }
 
+				// Stays enabled while the check runs (loadCheck ignores presses meanwhile): disabled,
+				// it dropped focus onto "Search again", so an OK pressed while waiting started a
+				// search (#46).
 				Button(
 					onClick = { loadCheck(fresh = check != null) },
-					enabled = !busy && !checking,
-				) { Text(if (check != null) "Check again" else "Why? / Pick") }
+					enabled = !busy,
+				) { Text(if (checking) "Checking…" else if (check != null) "Check again" else "Why? / Pick") }
 
 				if (isShow) {
 					Button(
 						onClick = {
-							// All ticked = every missing episode (the list shows at most 50).
-							val episodes = if (choosing && chosen.size < labels.size) chosen else null
-							run({ onStopMissing(episodes) }, closeOnOk = true)
+							// A subset: just those. The whole card: its labels and its count, so the
+							// server stops exactly what the card counted (the list shows at most 50).
+							if (choosing && chosen.size < labels.size) {
+								run({ onStopMissing(chosen, null) }, closeOnOk = true)
+							} else {
+								run({ onStopMissing(labels, maxOf(item.missingEpisodes, labels.size)) }, closeOnOk = true)
+							}
 						},
 						enabled = !busy && !(choosing && chosen.isEmpty()),
 					) { Text(stopLabel) }
@@ -1216,11 +1234,22 @@ private fun SearchingActionsPanel(
 						verticalArrangement = Arrangement.spacedBy(6.dp),
 					) {
 						itemsIndexed(c.releases, key = { i, r -> "$i:${r.guid}" }) { i, r ->
+							val key = "$i:${r.guid}"
 							ReleaseRow(
 								release = r,
 								enabled = !busy,
-								modifier = if (i == 0) Modifier.focusRequester(firstRelease) else Modifier,
-								onClick = { run({ onGrab(r) }, closeOnOk = true) },
+								armed = armedRelease == key,
+								modifier = Modifier,
+								onDisarm = { if (armedRelease == key) armedRelease = null },
+								onClick = {
+									// A release Radarr/Sonarr turned down takes two presses.
+									if (r.rejected && armedRelease != key) {
+										armedRelease = key
+									} else {
+										armedRelease = null
+										run({ onGrab(r) }, closeOnOk = true)
+									}
+								},
 							)
 						}
 					}
@@ -1281,14 +1310,28 @@ private fun sizeLabel(bytes: Long): String = when {
 
 /** One release from a check: what it is, why it was turned down, press to download. */
 @Composable
-private fun ReleaseRow(release: ReleaseEntry, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun ReleaseRow(
+	release: ReleaseEntry,
+	enabled: Boolean,
+	armed: Boolean,
+	modifier: Modifier,
+	onDisarm: () -> Unit,
+	onClick: () -> Unit,
+) {
 	var focused by remember { mutableStateOf(false) }
 	Row(
 		modifier = modifier
 			.fillMaxWidth()
-			.onFocusChanged { focused = it.isFocused }
+			.onFocusChanged {
+				focused = it.isFocused
+				if (!it.isFocused) onDisarm()
+			}
 			.clip(RoundedCornerShape(8.dp))
-			.background(if (focused) Color(0x556D5FE6) else Color(0x14FFFFFF))
+			.background(when {
+				armed -> Color(0x66B45309)
+				focused -> Color(0x556D5FE6)
+				else -> Color(0x14FFFFFF)
+			})
 			.clickable(enabled = enabled, onClick = onClick)
 			.padding(horizontal = 12.dp, vertical = 8.dp),
 		verticalAlignment = Alignment.CenterVertically,
@@ -1307,7 +1350,11 @@ private fun ReleaseRow(release: ReleaseEntry, enabled: Boolean, modifier: Modifi
 					color = Color(0xFFFBBF24), maxLines = 1, overflow = TextOverflow.Ellipsis)
 			}
 		}
-		Text(if (release.rejected) "Download anyway" else "Download", fontSize = 13.sp,
+		Text(when {
+				armed -> "Press again to download anyway"
+				release.rejected -> "Download anyway"
+				else -> "Download"
+			}, fontSize = 13.sp,
 			fontWeight = FontWeight.Bold, color = if (focused) Color.White else Color.White.copy(alpha = 0.7f))
 	}
 }

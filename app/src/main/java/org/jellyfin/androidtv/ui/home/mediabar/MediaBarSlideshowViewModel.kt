@@ -281,10 +281,7 @@ class MediaBarSlideshowViewModel(
 						// fetching overwrites the disk cache.
 						val cached = tentacleRepository.getCachedHeroConfig()
 						val fresh = tentacleRepository.getHeroConfig()
-						if (fresh != null && (cached == null ||
-								fresh.enabled != cached.enabled ||
-								fresh.playlistId != cached.playlistId ||
-								fresh.itemCount != cached.itemCount)) {
+						if (fresh != null && !fresh.sameContentAs(cached)) {
 							Timber.i("MediaBar: hero config changed, reloading")
 							loadSlideshowItems(allowCache = false)
 						}
@@ -403,10 +400,7 @@ class MediaBarSlideshowViewModel(
 								// Cached config must be read before the fresh fetch overwrites it.
 								val cachedConfig = tentacleRepository.getCachedHeroConfig()
 								val freshConfig = tentacleRepository.getHeroConfig()
-								if (freshConfig != null && (cachedConfig == null ||
-										freshConfig.enabled != cachedConfig.enabled ||
-										freshConfig.playlistId != cachedConfig.playlistId ||
-										freshConfig.itemCount != cachedConfig.itemCount)) {
+								if (freshConfig != null && !freshConfig.sameContentAs(cachedConfig)) {
 									Timber.i("MediaBar: hero config changed on server, reloading")
 									loadSlideshowItems(allowCache = false)
 								} else {

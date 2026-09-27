@@ -32,6 +32,7 @@ import org.jellyfin.androidtv.util.sdk.forUser
 import org.jellyfin.sdk.Jellyfin
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.exception.ApiClientException
+import org.jellyfin.sdk.api.client.exception.InvalidStatusException
 import org.jellyfin.sdk.api.client.exception.TimeoutException
 import org.jellyfin.sdk.api.client.extensions.authenticateUserByName
 import org.jellyfin.sdk.api.client.extensions.authenticateWithQuickConnect
@@ -99,6 +100,12 @@ class AuthenticationRepositoryImpl(
 		} catch (err: TimeoutException) {
 			Timber.e(err, "Failed to connect to server trying to sign in $username")
 			emit(ServerUnavailableState)
+			return@flow
+		} catch (err: InvalidStatusException) {
+			Timber.e(err, "Unable to sign in as $username")
+			// 401 is the server saying the credentials are wrong, not that it can't be reached;
+			// reporting it as ApiClientErrorLoginState showed "Unable to connect to server".
+			emit(if (err.status == 401) RequireSignInState else ApiClientErrorLoginState(err))
 			return@flow
 		} catch (err: ApiClientException) {
 			Timber.e(err, "Unable to sign in as $username")

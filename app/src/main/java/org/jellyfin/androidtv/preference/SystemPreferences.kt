@@ -1,6 +1,7 @@
 package org.jellyfin.androidtv.preference
 
 import android.content.Context
+import org.jellyfin.androidtv.ui.playback.AudioCodecBlockPolicy
 import org.jellyfin.preference.booleanPreference
 import org.jellyfin.preference.store.SharedPreferenceStore
 import org.jellyfin.preference.stringPreference
@@ -94,6 +95,9 @@ class SystemPreferences(context: Context) : SharedPreferenceStore(
 			.split(",")
 			.filter { it.isNotBlank() }
 			.map { it.trim().lowercase() }
+			// A software-decoded codec is never a broken decoder: one blocked by a server-side
+			// stall before 1.19.1 (#51) is ignored, which also undoes it on devices that have it.
+			.filterNot { it in AudioCodecBlockPolicy.SOFTWARE_DECODED }
 			.toCollection(LinkedHashSet())
 
 	/**
@@ -104,7 +108,7 @@ class SystemPreferences(context: Context) : SharedPreferenceStore(
 	 */
 	fun blockAudioCodec(codec: String): Boolean {
 		val normalized = codec.trim().lowercase()
-		if (normalized.isEmpty()) return false
+		if (normalized.isEmpty() || normalized in AudioCodecBlockPolicy.SOFTWARE_DECODED) return false
 		val codecs = LinkedHashSet(blockedAudioCodecs)
 		if (!codecs.add(normalized)) return false
 		this[brokenAudioCodecs] = codecs.joinToString(",")

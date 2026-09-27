@@ -194,10 +194,10 @@ class TentacleRepository(
 	// lingering 12-16s after focus moved past the card — on a connection-limited IPTV
 	// account that cut a running recording). CardPresenter reads this synchronously via
 	// .value on every card composition, so it must be updated as a side effect of
-	// getToolbarConfig() rather than only returned from it. Default "all" preserves today's
-	// behaviour until the first successful fetch (and for older servers, which omit the
-	// field entirely thanks to ignoreUnknownKeys).
-	private val _cardPreviewPolicy = MutableStateFlow("all")
+	// getToolbarConfig() rather than only returned from it. Until the first successful fetch,
+	// and for older servers that omit the field, it is "local_only": a card never opens a
+	// provider connection unless the server says previews may.
+	private val _cardPreviewPolicy = MutableStateFlow("local_only")
 	val cardPreviewPolicy: StateFlow<String> = _cardPreviewPolicy.asStateFlow()
 
 	// Notification flow — emits new notifications for toast display
@@ -1545,11 +1545,11 @@ data class ToolbarButton(
 data class ToolbarResponse(
 	val buttons: List<ToolbarButton> = emptyList(),
 	/**
-	 * Server-side card-previews policy: "all" | "local_only" | "off". Absent or an
-	 * unrecognized value (older plugin, per ignoreUnknownKeys) defaults to "all" so
-	 * behaviour is unchanged until an admin opts into restricting previews.
+	 * Server-side card-previews policy: "all" | "local_only" | "off". Absent (an older
+	 * plugin, per ignoreUnknownKeys) means "local_only": previews of local files, never of
+	 * a provider stream, until an admin chooses otherwise (androidtv#47).
 	 */
-	val cardPreviews: String = "all",
+	val cardPreviews: String = "local_only",
 )
 
 @Serializable

@@ -37,26 +37,99 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentRepository
 import org.jellyfin.androidtv.util.UUIDUtils
 import org.jellyfin.androidtv.util.sdk.ApiClientFactory
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.client.extensions.hlsSegmentApi
 import org.jellyfin.sdk.api.client.extensions.videosApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.MediaProtocol
 import org.jellyfin.sdk.model.api.MediaSegmentType
+import org.jellyfin.sdk.model.api.SubtitleDeliveryMethod
 import org.koin.compose.koinInject
 import timber.log.Timber
+import java.util.Collections
+import java.util.UUID
 
 /** Delay before starting preview playback to debounce quick scrolling. */
 private const val PREVIEW_START_DELAY_MS = 500L
 
 private const val MAX_PREVIEW_DURATION_MS = 30_000L
+
+/** How long a fire-and-forget "stop this preview's transcode" may take. */
+private const val STOP_ENCODING_TIMEOUT_MS = 5_000L
+
+/**
+ * A preview's own play session (androidtv#47). The transcode behind a preview used to run on
+ * for 12-16 s after focus left the card (Jellyfin's kill timer), and for a provider `.strm`
+ * item that kept a connection to the IPTV provider open: scrolling a row held several at once
+ * and cut a running recording. Tagging the preview's stream with a session id of its own lets
+ * it be stopped the moment the preview ends, and only it.
+ */
+internal fun newPreviewSessionId(): String = UUID.randomUUID().toString().replace("-", "")
+
+/** The preview's stream: H.264 8-bit SDR, no subtitles, tagged with its device and session. */
+internal fun previewStreamUrl(api: ApiClient, itemId: UUID, playSessionId: String): String =
+	api.videosApi.getVideoStreamUrl(
+		itemId = itemId,
+		static = false,
+		videoCodec = "h264",
+		audioCodec = "aac",
+		maxVideoBitDepth = 8,
+		audioBitRate = 128000,
+		audioChannels = 2,
+		subtitleMethod = SubtitleDeliveryMethod.DROP,
+		deviceId = api.deviceInfo.id,
+		playSessionId = playSessionId,
+	)
+
+/** Stops the server transcodes behind previews that have ended. */
+internal object PreviewEncodings {
+	private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+	// Sessions already stopped (focus loss, then dispose, can both ask): one request each.
+	private val stopped: MutableSet<String> = Collections.synchronizedSet(
+		Collections.newSetFromMap(object : LinkedHashMap<String, Boolean>() {
+			override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Boolean>?) = size > 64
+		})
+	)
+
+	/**
+	 * Fire-and-forget `DELETE /Videos/ActiveEncodings?deviceId=…&playSessionId=…`. Never without
+	 * the session id: with a device id alone Jellyfin stops every transcode of this device, the
+	 * user's real playback included. Failures are ignored: the kill timer still ends it.
+	 */
+	fun stop(api: ApiClient, playSessionId: String?) {
+		stop(api.deviceInfo.id, playSessionId) { deviceId, sessionId ->
+			api.hlsSegmentApi.stopEncodingProcess(deviceId, sessionId)
+		}
+	}
+
+	/** [stop] with the request passed in: the job, or null when nothing is sent. */
+	internal fun stop(deviceId: String, playSessionId: String?, request: suspend (String, String) -> Unit): Job? {
+		if (playSessionId.isNullOrBlank() || !stopped.add(playSessionId)) return null
+		return scope.launch {
+			try {
+				withTimeoutOrNull(STOP_ENCODING_TIMEOUT_MS) { request(deviceId, playSessionId) }
+			} catch (e: Exception) {
+				Timber.d(e, "EpisodePreview: could not stop the preview transcode")
+			}
+		}
+	}
+}
+
+private data class PreviewStream(val url: String, val playSessionId: String)
 
 /** Seek to 20% of runtime as a fallback when no intro segment or resume position is available. */
 private fun runtimeFallbackMs(item: BaseItemDto): Long {
@@ -94,7 +167,7 @@ fun EpisodePreviewOverlay(
 	val mediaSegmentRepository = koinInject<MediaSegmentRepository>()
 	val httpDataSourceFactory = koinInject<HttpDataSource.Factory>()
 
-	var streamUrl by remember { mutableStateOf<String?>(null) }
+	var stream by remember { mutableStateOf<PreviewStream?>(null) }
 	var seekPositionMs by remember { mutableStateOf(0L) }
 	var isPlaying by remember { mutableStateOf(false) }
 	var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
@@ -112,7 +185,7 @@ fun EpisodePreviewOverlay(
 
 	LaunchedEffect(focused, item.id) {
 		if (!focused) {
-			streamUrl = null
+			stream = null
 			isPlaying = false
 			exoPlayer?.stop()
 			exoPlayer?.release()
@@ -123,18 +196,10 @@ fun EpisodePreviewOverlay(
 		delay(PREVIEW_START_DELAY_MS)
 
 		try {
-			val (primaryUrl, introEndMs) = withContext(Dispatchers.IO) {
+			val (primary, introEndMs) = withContext(Dispatchers.IO) {
 				// Transcoded stream first: forces H.264 8-bit (SDR), no Dolby Vision/HDR
-				val transcoded = effectiveApi.videosApi.getVideoStreamUrl(
-					itemId = item.id,
-					static = false,
-					videoCodec = "h264",
-					audioCodec = "aac",
-					maxVideoBitDepth = 8,
-					audioBitRate = 128000,
-					audioChannels = 2,
-					subtitleMethod = org.jellyfin.sdk.model.api.SubtitleDeliveryMethod.DROP,
-				)
+				val session = newPreviewSessionId()
+				val transcoded = PreviewStream(previewStreamUrl(effectiveApi, item.id, session), session)
 
 				val seekMs = try {
 					val positionTicks = item.userData?.playbackPositionTicks ?: 0L
@@ -155,17 +220,18 @@ fun EpisodePreviewOverlay(
 				Pair(transcoded, seekMs)
 			}
 
-			streamUrl = primaryUrl
+			stream = primary
 			seekPositionMs = introEndMs
 		} catch (e: Exception) {
 			Timber.w(e, "EpisodePreview: Failed to resolve stream URL for ${item.name}")
 		}
 	}
 
-	if (streamUrl != null && focused) {
-		val currentUrl = streamUrl!!
+	if (stream != null && focused) {
+		val current = stream!!
+		val currentUrl = current.url
 
-		DisposableEffect(currentUrl) {
+		DisposableEffect(current) {
 			val renderersFactory = DefaultRenderersFactory(context).apply {
 				setEnableDecoderFallback(true)
 				setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
@@ -196,6 +262,7 @@ fun EpisodePreviewOverlay(
 			val stopRunnable = Runnable {
 				isPlaying = false
 				player.stop()
+				PreviewEncodings.stop(effectiveApi, current.playSessionId)
 			}
 
 			player.addListener(object : Player.Listener {
@@ -235,6 +302,8 @@ fun EpisodePreviewOverlay(
 				player.release()
 				exoPlayer = null
 				isPlaying = false
+				// Focus left the card (or the card went away): end the server side too.
+				PreviewEncodings.stop(effectiveApi, current.playSessionId)
 			}
 		}
 
@@ -249,6 +318,7 @@ fun EpisodePreviewOverlay(
 						exoPlayer?.release()
 						exoPlayer = null
 						isPlaying = false
+						PreviewEncodings.stop(effectiveApi, current.playSessionId)
 					}
 					else -> {}
 				}
@@ -259,6 +329,7 @@ fun EpisodePreviewOverlay(
 				exoPlayer?.release()
 				exoPlayer = null
 				isPlaying = false
+				PreviewEncodings.stop(effectiveApi, current.playSessionId)
 			}
 			onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
 		}

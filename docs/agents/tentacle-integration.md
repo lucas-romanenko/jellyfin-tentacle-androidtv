@@ -57,6 +57,22 @@ Checked against the code on 2026-09-28; the code wins where they differ.
   what order comes from the Tentacle dashboard (`/TentacleHome/Toolbar`),
   not from local preferences; top bar or left sidebar
   (`LeftSidebarNavigation.kt`).
+- **Item details**: the plugin's Detail endpoint merges `following`,
+  `seriesStatus` and `canDelete` into `DiscoverDetail`, so the detail screen
+  shows Follow and Delete without more calls. Delete (downloads only; admin,
+  or the user who requested it) calls
+  `DELETE /TentacleDiscover/LibraryItem/{type}/{id}?jellyfinItemId=` and
+  navigates back at once.
+- **Download notifications**: `pollNotifications()` fills
+  `pendingNotifications` (a StateFlow), which `HomeFragment` shows as toasts;
+  `dismissNotification(id)`.
+- **Preferences** (`preference/UserSettingPreferences.kt`): media bar
+  `mediaBarEnabled`, `mediaBarSourceType` (`"plugin"` = the Tentacle hero
+  playlist only, no random fallback), `mediaBarContentType`,
+  `mediaBarItemCount`, `mediaBarExcludedGenres`; `episodePreviewEnabled`,
+  `previewAudioEnabled`. `UserPreferences.navbarPosition` (top or left).
+  Toolbar buttons come from the dashboard, not preferences; the old
+  `showShuffleButton` is still read in two places.
 - Routes: `ui/navigation/Destinations.kt` (`tentacleDiscover` is
   `ui.discover.DiscoverFragment`, imported as `TentacleDiscoverFragment`;
   `tentacleActivity` is `ActivityFragment`).

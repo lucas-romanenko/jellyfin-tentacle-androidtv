@@ -1,16 +1,28 @@
 name: App / Release
 
+# APKs go to other people's TVs, so publishing is a release: only a version
+# tag (vX.Y.Z) or a GitHub release publishes, never a push to master. A
+# release made in the GitHub UI can fire both events for one tag; the
+# concurrency group runs them in turn, and the second only re-attaches the
+# same APK.
 on:
   push:
     tags:
       - v*
+  release:
+    types: [published]
 
 permissions:
   contents: write
 
+concurrency:
+  group: app-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
@@ -39,9 +51,15 @@ jobs:
         run: ./gradlew assembleGithubRelease
       - name: Collect APKs
         run: mkdir -p build/release/; find app/build/ -iname "*.apk" -exec mv "{}" build/release/ \;
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
-        with:
-          name: ${{ github.ref_name }}
-          generate_release_notes: true
-          files: build/release/*.apk
+      # Lucas's own release (made in the UI) keeps its title and notes: the
+      # APKs are only attached. A bare tag gets a release with generated notes.
+      - name: Publish the APKs on the tag's release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" build/release/*.apk --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" build/release/*.apk --verify-tag --title "$TAG" --generate-notes --repo "$GITHUB_REPOSITORY"
+          fi

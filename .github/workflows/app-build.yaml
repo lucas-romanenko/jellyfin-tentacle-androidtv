@@ -3,8 +3,7 @@ name: App / Build
 on:
   push:
     branches:
-      - master
-      - release-*
+      - '**'
   pull_request:
 
 permissions:
@@ -26,9 +25,14 @@ jobs:
         uses: gradle/actions/setup-gradle@f29f5a9d7b09a7c6b29859002d29d24e1674c884 # v5.0.1
       - name: Assemble debug APKs
         run: ./gradlew assembleDebug
+      # The build is the check. Its APKs are attached only to pull requests
+      # (for reviewing them): on a public repo a push's artifacts are a
+      # download anyone can take, and APKs reach users only by a release.
       - name: Create publish bundle
+        if: github.event_name == 'pull_request'
         run: mkdir -p build/gh-app-publish/; find app/build/ -iname "*.apk" -exec mv "{}" build/gh-app-publish/ \;
       - name: Upload artifacts
+        if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: build-artifacts

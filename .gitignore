@@ -34,8 +34,7 @@ build/outputs/
 *.jks
 release.keystore
 
-# Claude Code
-CLAUDE.md
+# Claude Code local state (CLAUDE.md itself is tracked: it holds no secrets)
 .claude/
 
 # Misc

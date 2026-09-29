@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.media3.datasource.HttpDataSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -66,6 +67,9 @@ fun SeriesTrailerOverlay(
 			}
 
 			trailerInfo = info
+		} catch (e: CancellationException) {
+			// Focus left the card while its trailer was resolving: not a failure (#7).
+			throw e
 		} catch (e: Exception) {
 			Timber.w(e, "SeriesTrailer: Failed to resolve trailer for ${item.name}")
 		}

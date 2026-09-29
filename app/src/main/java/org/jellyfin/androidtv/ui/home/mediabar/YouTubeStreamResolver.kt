@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.ui.home.mediabar
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.NewPipe
@@ -61,6 +62,8 @@ object YouTubeStreamResolver {
 				Timber.w("$TAG: NewPipe Extractor returned no usable streams for $videoId")
 			}
 			result
+		} catch (e: CancellationException) {
+			throw e
 		} catch (e: Throwable) {
 			Timber.w(e, "$TAG: NewPipe Extractor failed for $videoId")
 			null

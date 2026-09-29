@@ -611,7 +611,7 @@ class TentacleRepository(
 	 * null leaves the choice to the server's default. The server ignores the older
 	 * `quality_profile_id` since jellyfin-tentacle #231, so a pick sent that way was lost (#61).
 	 */
-	suspend fun addToRadarr(tmdbId: Int, qualityProfileId: Int? = null): AddResult = withContext(Dispatchers.IO) {
+	suspend fun addToRadarr(tmdbId: Int, qualityProfileId: Int? = null): AddResult = gatedAdd("radarr", tmdbId, 0) { withContext(Dispatchers.IO) {
 		try {
 			val url = buildUrl("/TentacleDiscover/AddToRadarr")
 			val jsonBody = buildString {
@@ -640,12 +640,12 @@ class TentacleRepository(
 			Timber.w(e, "Failed to add tmdb:$tmdbId to Radarr")
 			AddResult(error = e.message ?: "Unknown error")
 		}
-	}
+	} }
 
 	/**
 	 * Add a series to Sonarr via Tentacle.
 	 */
-	suspend fun addToSonarr(tmdbId: Int, qualityProfileId: Int? = null, tvdbId: Int = 0): AddResult = withContext(Dispatchers.IO) {
+	suspend fun addToSonarr(tmdbId: Int, qualityProfileId: Int? = null, tvdbId: Int = 0): AddResult = gatedAdd("sonarr", tmdbId, tvdbId) { withContext(Dispatchers.IO) {
 		try {
 			val url = buildUrl("/TentacleDiscover/AddToSonarr")
 			val jsonBody = buildString {
@@ -672,7 +672,7 @@ class TentacleRepository(
 			Timber.w(e, "Failed to add tmdb:$tmdbId tvdb:$tvdbId to Sonarr")
 			AddResult(error = e.message ?: "Unknown error")
 		}
-	}
+	} }
 
 	/**
 	 * Find a Jellyfin library item by searching for its title.
@@ -1244,7 +1244,7 @@ class TentacleRepository(
 		selectedEpisodes: List<SelectedEpisode>? = null,
 		autoFollow: Boolean = true,
 		tvdbId: Int = 0,
-	): AddResult = withContext(Dispatchers.IO) {
+	): AddResult = gatedAdd("sonarr", tmdbId, tvdbId) { withContext(Dispatchers.IO) {
 		try {
 			val url = buildUrl("/TentacleDiscover/AddToSonarr")
 			val jsonBody = buildString {
@@ -1279,7 +1279,7 @@ class TentacleRepository(
 			Timber.w(e, "Failed to add tmdb:$tmdbId tvdb:$tvdbId to Sonarr with episodes")
 			AddResult(error = e.message ?: "Unknown error")
 		}
-	}
+	} }
 
 	/**
 	 * Manage episode monitoring for an existing Sonarr series.
@@ -1319,6 +1319,20 @@ class TentacleRepository(
 		synchronized(knownNotificationIds) { knownNotificationIds.clear() }
 		_pendingNotifications.value = emptyList()
 	}
+
+	/** Radarr/Sonarr adds still running from this app (a8/05); see [AddGate]. */
+	val addGate = AddGate()
+
+	/** The in-flight key of an add of this title for the signed-in user; null if nobody is signed in. */
+	fun addKey(arr: String, tmdbId: Int, tvdbId: Int = 0): String? {
+		val server = api.baseUrl?.trimEnd('/') ?: return null
+		val userId = userRepository.currentUser.value?.id ?: return null
+		return AddGate.key(server, userId.toString(), arr, tmdbId, tvdbId)
+	}
+
+	/** One add per title at a time: a second one while the first runs is refused, not sent. */
+	private inline fun gatedAdd(arr: String, tmdbId: Int, tvdbId: Int, block: () -> AddResult): AddResult =
+		addGate.withKey(addKey(arr, tmdbId, tvdbId), busy = { AddResult(detail = ALREADY_ADDING) }, block = block)
 
 	private fun buildUrl(path: String): String {
 		val baseUrl = api.baseUrl?.trimEnd('/') ?: throw IllegalStateException("API base URL not set")
@@ -1519,6 +1533,9 @@ fun qualityProfileLabel(profiles: List<QualityProfile>, choice: Int?): String {
 	}
 	return profiles.firstOrNull { it.id == choice }?.name ?: "Default profile"
 }
+
+/** Shown when the same title is added again while the first add is still running. */
+const val ALREADY_ADDING = "Already being added. See Activity for progress."
 
 @Serializable
 data class AddResult(

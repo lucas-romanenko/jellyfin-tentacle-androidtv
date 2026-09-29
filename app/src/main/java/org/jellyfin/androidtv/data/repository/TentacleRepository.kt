@@ -1662,7 +1662,16 @@ data class ArrActionResult(
 	val detail: String? = null,
 	@SerialName("files_deleted")
 	val filesDeleted: Boolean = false,
+	/** Fix it removed this copy as a duplicate of a film already in the library. */
+	val merged: Boolean = false,
 )
+
+/**
+ * Whether "Fix it" took the item away. Only a copy removed as a duplicate (`merged`) is gone;
+ * otherwise the same item stays and Jellyfin re-reads it as the right film (server #294), or a
+ * library scan swaps it, so hiding it from the rows would lose a title that is still there.
+ */
+fun fixMatchRemovedItem(result: ArrActionResult): Boolean = result.ok && result.merged
 
 @Serializable
 data class ActivitySearching(

@@ -35,7 +35,9 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.data.repository.DiscoverItem
@@ -44,6 +46,7 @@ import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
 import org.jellyfin.androidtv.ui.home.mediabar.SponsorBlockApi
+import org.jellyfin.androidtv.ui.itemdetail.v2.trailerMayOpen
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.shared.toolbar.Navbar
@@ -55,12 +58,18 @@ class DiscoverFragment : Fragment() {
 	private val tentacleRepository by inject<TentacleRepository>()
 	private val navigationRepository by inject<NavigationRepository>()
 
+	private var trailerJob: Job? = null
+
 	private fun playTrailer(videoId: String) {
-		lifecycleScope.launch {
+		// One lookup per press, owned by this page's view: leaving cancels it, and nothing
+		// opens once the page is no longer in front (#45)
+		if (trailerJob?.isActive == true) return
+		trailerJob = viewLifecycleOwner.lifecycleScope.launch {
 			try {
 				val segments = withContext(Dispatchers.IO) {
 					SponsorBlockApi.getSkipSegments(videoId)
 				}
+				if (!trailerMayOpen(lifecycle.currentState)) return@launch
 				val startSeconds = SponsorBlockApi.calculateStartTime(segments)
 				val segmentsJson = segments.joinToString(",", "[", "]") { seg ->
 					"""{"start":${seg.startTime},"end":${seg.endTime},"category":"${seg.category}","action":"${seg.actionType}"}"""
@@ -70,9 +79,13 @@ class DiscoverFragment : Fragment() {
 					startSeconds = startSeconds,
 					segmentsJson = segmentsJson,
 				))
+			} catch (e: CancellationException) {
+				// The page was left: requireContext() would crash here
+				throw e
 			} catch (e: Exception) {
 				Timber.w(e, "Failed to play trailer")
-				Toast.makeText(requireContext(), "Unable to play trailer", Toast.LENGTH_SHORT).show()
+				val context = context ?: return@launch
+				Toast.makeText(context, "Unable to play trailer", Toast.LENGTH_SHORT).show()
 			}
 		}
 	}

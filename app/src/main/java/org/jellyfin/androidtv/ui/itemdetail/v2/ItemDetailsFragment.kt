@@ -83,6 +83,7 @@ import coil3.compose.AsyncImage
 import coil3.toBitmap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -2325,14 +2326,21 @@ class ItemDetailsFragment : Fragment() {
 		}
 	}
 
+	private var trailerJob: Job? = null
+
 	private fun playTrailers(item: BaseItemDto) {
 		val localTrailerCount = item.localTrailerCount ?: 0
+		// One lookup per press; a second press while it runs is ignored
+		if (trailerJob?.isActive == true) return
 
+		// The lookup belongs to this page's view: leaving it (Back, or opening another screen,
+		// which only detaches this fragment) cancels it, and nothing opens once the page is no
+		// longer in front, where the trailer used to start over the next screen (#45).
 		if (localTrailerCount < 1) {
 			// External trailer: a YouTube trailer plays in the in-app player, which resolves its
 			// stream (and says so if it can't). Only an item with no YouTube trailer at all goes
 			// to another app; a failed lookup used to send the user to the YouTube app (#45).
-			lifecycleScope.launch {
+			trailerJob = viewLifecycleOwner.lifecycleScope.launch {
 				val trailerInfo = try {
 					TrailerResolver.resolveTrailerIdFromItem(item)
 				} catch (e: CancellationException) {
@@ -2341,6 +2349,7 @@ class ItemDetailsFragment : Fragment() {
 					Timber.w(e, "Failed to read the trailer of ${item.name}")
 					null
 				}
+				if (!trailerMayOpen(lifecycle.currentState)) return@launch
 
 				if (trailerInfo?.youtubeVideoId != null) {
 					val segmentsJson = trailerInfo.segments.joinToString(",", "[", "]") { seg ->
@@ -2369,11 +2378,12 @@ class ItemDetailsFragment : Fragment() {
 			}
 		} else {
 			// Local trailer
-			lifecycleScope.launch {
+			trailerJob = viewLifecycleOwner.lifecycleScope.launch {
 				try {
 					val trailers = withContext(Dispatchers.IO) {
 						viewModel.effectiveApi.userLibraryApi.getLocalTrailers(itemId = item.id).content
 					}
+					if (!trailerMayOpen(lifecycle.currentState)) return@launch
 					if (trailers.isNotEmpty()) {
 						val trailerIds = trailers.map { it.id }
 						playbackHelper.retrieveAndPlay(trailerIds, false, null, null, requireContext())

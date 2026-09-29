@@ -87,6 +87,13 @@ class AsyncImageView @JvmOverloads constructor(
 				if (blurHashBitmap != null) placeholderOrBlurHash = blurHashBitmap.toDrawable(resources)
 			}
 
+			// Nothing to load (a channel without a logo): clear the view. A request with no data
+			// made Coil log a NullRequestDataException for every such channel in the guide (#56).
+			if (url == null && placeholder == null) {
+				withContext(Dispatchers.Main) { setImageDrawable(null) }
+				return@launch
+			}
+
 			// Start loading image or placeholder
 			val request = if (url == null) {
 				ImageRequest.Builder(context).apply {

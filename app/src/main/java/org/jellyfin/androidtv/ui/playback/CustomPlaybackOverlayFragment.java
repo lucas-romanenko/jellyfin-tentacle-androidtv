@@ -54,6 +54,7 @@ import org.jellyfin.androidtv.ui.ScrollViewListener;
 import org.jellyfin.androidtv.ui.itemhandling.BaseItemPersonBaseRowItem;
 import org.jellyfin.androidtv.ui.itemhandling.ChapterItemInfoBaseRowItem;
 import org.jellyfin.androidtv.ui.itemhandling.ItemRowAdapter;
+import org.jellyfin.androidtv.ui.livetv.ChannelStep;
 import org.jellyfin.androidtv.ui.livetv.LiveTvGuide;
 import org.jellyfin.androidtv.ui.livetv.LiveTvGuideFragment;
 import org.jellyfin.androidtv.ui.livetv.LiveTvGuideFragmentHelperKt;
@@ -472,6 +473,11 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
             PlaybackController playbackController = playbackControllerContainer.getValue().getPlaybackController();
 
             if (playbackController != null) {
+                if ((keyCode == KeyEvent.KEYCODE_CHANNEL_UP || keyCode == KeyEvent.KEYCODE_CHANNEL_DOWN)
+                        && playbackController.isLiveTv() && !mGuideVisible) {
+                    stepChannel(keyCode == KeyEvent.KEYCODE_CHANNEL_UP);
+                    return true;
+                }
                 if (keyCode == KeyEvent.KEYCODE_MEDIA_PLAY) {
                     playbackController.play(0);
                     return true;
@@ -704,6 +710,28 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
 
     public void switchChannel(UUID id) {
         switchChannel(id, true);
+    }
+
+    /**
+     * Channel Up / Channel Down on a TV remote (sent over HDMI-CEC): the next or previous channel
+     * in the guide's order (#56). The channel list is loaded first if the guide hasn't been opened.
+     */
+    private void stepChannel(boolean up) {
+        List<BaseItemDto> channels = TvManager.getAllChannels();
+        if (channels == null || channels.isEmpty()) {
+            TvManager.loadAllChannels(this, ndx -> {
+                List<BaseItemDto> loaded = TvManager.getAllChannels();
+                if (loaded != null && !loaded.isEmpty() && isAdded()) stepChannel(up);
+                return null;
+            });
+            return;
+        }
+        PlaybackController playbackController = playbackControllerContainer.getValue().getPlaybackController();
+        if (playbackController == null || playbackController.getCurrentlyPlayingItem() == null) return;
+        int current = TvManager.getAllChannelsIndex(playbackController.getCurrentlyPlayingItem().getId());
+        int next = ChannelStep.steppedChannelIndex(current, channels.size(), up);
+        if (next < 0 || next == current) return;
+        switchChannel(channels.get(next).getId(), false);
     }
 
     public void switchChannel(UUID id, boolean hideGuide) {

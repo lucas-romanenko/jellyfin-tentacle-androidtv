@@ -606,12 +606,17 @@ class TentacleRepository(
 	/**
 	 * Add a movie to Radarr via Tentacle.
 	 */
+	/**
+	 * [qualityProfileId] is the profile the user picked, sent as `quality_profile_override`;
+	 * null leaves the choice to the server's default. The server ignores the older
+	 * `quality_profile_id` since jellyfin-tentacle #231, so a pick sent that way was lost (#61).
+	 */
 	suspend fun addToRadarr(tmdbId: Int, qualityProfileId: Int? = null): AddResult = withContext(Dispatchers.IO) {
 		try {
 			val url = buildUrl("/TentacleDiscover/AddToRadarr")
 			val jsonBody = buildString {
 				append("""{"tmdb_ids":[$tmdbId]""")
-				if (qualityProfileId != null) append(""","quality_profile_id":$qualityProfileId""")
+				if (qualityProfileId != null) append(""","quality_profile_override":$qualityProfileId""")
 				append("}")
 			}
 			// Don't log the URL — it carries the api_key/access token in query params.
@@ -649,7 +654,7 @@ class TentacleRepository(
 				} else {
 					append("""{"tvdb_ids":[$tvdbId]""")
 				}
-				if (qualityProfileId != null) append(""","quality_profile_id":$qualityProfileId""")
+				if (qualityProfileId != null) append(""","quality_profile_override":$qualityProfileId""")
 				append("}")
 			}
 			val requestBody = jsonBody.toRequestBody("application/json".toMediaType())
@@ -1248,7 +1253,7 @@ class TentacleRepository(
 				} else {
 					append("""{"tvdb_ids":[$tvdbId]""")
 				}
-				if (qualityProfileId != null) append(""","quality_profile_id":$qualityProfileId""")
+				if (qualityProfileId != null) append(""","quality_profile_override":$qualityProfileId""")
 				append(""","monitor":"$monitor"""")
 				if (selectedEpisodes != null) {
 					append(""","selected_episodes":[""")
@@ -1494,7 +1499,26 @@ data class ListsResponse(
 data class QualityProfile(
 	val id: Int = 0,
 	val name: String = "",
+	/** The server's default profile for adds (sent since jellyfin-tentacle #231). */
+	@SerialName("is_default")
+	val isDefault: Boolean = false,
 )
+
+/**
+ * The Add dialog's profile choices: null first (the server's default), then every profile.
+ * The dialog starts on null, so only a profile the user picks is sent as an override (#61).
+ */
+fun qualityProfileChoices(profiles: List<QualityProfile>): List<Int?> =
+	listOf<Int?>(null) + profiles.map { it.id }
+
+/** The label for a choice from [qualityProfileChoices]. */
+fun qualityProfileLabel(profiles: List<QualityProfile>, choice: Int?): String {
+	if (choice == null) {
+		val default = profiles.firstOrNull { it.isDefault }
+		return if (default != null) "Default (${default.name})" else "Default profile"
+	}
+	return profiles.firstOrNull { it.id == choice }?.name ?: "Default profile"
+}
 
 @Serializable
 data class AddResult(

@@ -61,6 +61,8 @@ import org.jellyfin.androidtv.data.repository.DiscoverItem
 import org.jellyfin.androidtv.data.repository.QualityProfile
 import org.jellyfin.androidtv.data.repository.SonarrEpisodesResponse
 import org.jellyfin.androidtv.data.repository.TentacleRepository
+import org.jellyfin.androidtv.data.repository.qualityProfileChoices
+import org.jellyfin.androidtv.data.repository.qualityProfileLabel
 import org.jellyfin.androidtv.ui.base.Text
 import org.jellyfin.androidtv.ui.base.button.Button
 import org.jellyfin.androidtv.ui.base.button.ButtonDefaults
@@ -275,7 +277,6 @@ internal fun DiscoverDetailDialog(
 	var isAdding by remember { mutableStateOf(false) }
 	val scope = rememberCoroutineScope()
 	val buttonFocusRequester = remember { FocusRequester() }
-	val context = LocalContext.current
 
 	// Quality profiles
 	var qualityProfiles by remember { mutableStateOf<List<QualityProfile>>(emptyList()) }
@@ -310,13 +311,8 @@ internal fun DiscoverDetailDialog(
 			tentacleRepository.getSonarrProfiles()
 		}
 		qualityProfiles = profiles
-
-		// Restore last selected profile from prefs
-		val prefKey = if (item.mediaType == "movie") "tentacle_radarr_profile" else "tentacle_sonarr_profile"
-		val prefs = context.getSharedPreferences("tentacle", Context.MODE_PRIVATE)
-		val savedId = prefs.getInt(prefKey, -1)
-		selectedProfileId = if (savedId != -1 && profiles.any { it.id == savedId }) savedId
-			else profiles.firstOrNull()?.id
+		// Start on the server's default: only a profile the user picks here is sent (#61).
+		selectedProfileId = null
 
 		// For in-library series, check if in Sonarr
 		if (item.inLibrary && item.mediaType == "series") {
@@ -689,17 +685,13 @@ internal fun DiscoverDetailDialog(
 									// --- Not-in-library actions ---
 
 									// Quality profile cycling button
-									if (qualityProfiles.size > 1) {
-										val selectedName = qualityProfiles.find { it.id == selectedProfileId }?.name ?: "Default"
+									if (qualityProfiles.isNotEmpty()) {
+										val selectedName = qualityProfileLabel(qualityProfiles, selectedProfileId)
 										Button(
 											onClick = {
-												val currentIndex = qualityProfiles.indexOfFirst { it.id == selectedProfileId }
-												val nextIndex = (currentIndex + 1) % qualityProfiles.size
-												val nextProfile = qualityProfiles[nextIndex]
-												selectedProfileId = nextProfile.id
-												val prefKey = if (item.mediaType == "movie") "tentacle_radarr_profile" else "tentacle_sonarr_profile"
-												context.getSharedPreferences("tentacle", Context.MODE_PRIVATE)
-													.edit().putInt(prefKey, nextProfile.id).apply()
+												val choices = qualityProfileChoices(qualityProfiles)
+												val nextIndex = (choices.indexOf(selectedProfileId) + 1) % choices.size
+												selectedProfileId = choices[nextIndex]
 											},
 											colors = ButtonDefaults.colors(
 												containerColor = Color(0xFF374151),

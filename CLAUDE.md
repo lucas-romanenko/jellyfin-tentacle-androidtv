@@ -21,11 +21,15 @@ credentials, tokens, internal IPs or server paths in it.
 
 ## Build and check
 
-The workbench has no Android SDK, so builds run in CI: App / Build
-(`app-build.yaml`, `./gradlew assembleDebug`) on every branch push and pull
-request. Pushing a branch is the way to check it; read the result with
+Builds run in CI, never on the workbench (a local build exhausts it; only
+if Lucas asks): App / Build (`app-build.yaml`, `./gradlew assembleDebug`) on
+every branch push and pull request. Pushing a branch is the way to check it;
+read the result with
 `gh run list -R lucas-romanenko/jellyfin-tentacle-androidtv --branch <branch> -L 1`.
-Debug APKs are attached to pull requests only. With an SDK:
+Debug APKs are attached to pull requests only: to try a change on the TV,
+open a draft PR and use its run's `build-artifacts`. A coding task on the
+app ends with a TV test (the workbench's tv-test skill) when the TV is
+available. With an SDK:
 
 ```
 ./gradlew assembleDebug            # github + playstore debug APKs

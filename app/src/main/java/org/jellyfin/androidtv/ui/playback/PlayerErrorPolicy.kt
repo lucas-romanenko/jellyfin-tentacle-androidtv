@@ -15,7 +15,7 @@ import kotlinx.serialization.json.jsonPrimitive
 const val LIVE_STALL_MS = 20_000L
 
 /** The same before the first frame: opening a tuner and starting its remux can take a while. */
-const val LIVE_START_STALL_MS = 45_000L
+const val LIVE_START_STALL_MS = 30_000L
 
 /**
  * Whether a live TV error can be retried by preparing the same stream again, before asking the

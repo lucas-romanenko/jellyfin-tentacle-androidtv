@@ -477,11 +477,6 @@ public class VideoManager {
         mExoPlayer.setPlayWhenReady(true);
     }
 
-    public boolean isPlayingOrBuffering() {
-        return mExoPlayer != null && mExoPlayer.getPlayWhenReady()
-                && (mExoPlayer.getPlaybackState() == Player.STATE_READY || mExoPlayer.getPlaybackState() == Player.STATE_BUFFERING);
-    }
-
     public void setMediaStreamInfo(ApiClient api, StreamInfo streamInfo) {
         mLastPlayerError = null;
         String path = streamInfo.getMediaUrl();

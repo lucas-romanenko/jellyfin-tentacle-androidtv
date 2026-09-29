@@ -128,9 +128,15 @@ the seasonal effects.
 
 ## Releasing is Lucas's decision
 
-APKs go to other people's TVs, so only Lucas tags or creates releases. A
-Claude session may prepare release notes (`git log vA.B.C..master`) and say
-"ready to release"; it never creates a tag or release itself.
+APKs go to other people's TVs, so only Lucas tags or creates releases.
+Agents never tag or release (the workbench's guard asks before any tag
+push, `gh release` change or `gh workflow run`). A session ends with draft
+release notes (user-visible changes, issue numbers in brackets;
+`git log vA.B.C..master`) and "ready to release vX.Y.Z". GitHub issues and
+PRs go through the workbench's github-triage skill: bugs are reproduced on
+Lucas's TV (the tv-test skill, with CI's debug APK) before code changes;
+features wait for Lucas's `approved` label (labels `needs-info`,
+`needs-lucas`, `approved`).
 
 Lucas's steps: set `tentacle.version` in `gradle.properties` to the new
 version and merge that to master, then tag it (`git tag -a v1.20.3 -m v1.20.3

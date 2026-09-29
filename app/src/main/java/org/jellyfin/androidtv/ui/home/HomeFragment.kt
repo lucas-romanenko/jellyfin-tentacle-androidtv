@@ -187,12 +187,17 @@ class HomeFragment : Fragment() {
 		setupNotificationToast(view)
 		startNotificationPolling()
 
+		// Everything started here lives as long as this view, not the fragment: the fragment
+		// stays on the back stack while an item, Search or Live TV is open and comes back
+		// through onViewCreated. On the fragment's scope every return added another
+		// notification poller and another copy of each collector below (#63).
+
 		settingsViewModel.settingsClosedCounter
-			.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
+			.flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
 			.onEach {
 				view?.let { setupNavbar(it) }
 			}
-			.launchIn(lifecycleScope)
+			.launchIn(viewLifecycleOwner.lifecycleScope)
 
 		rowsFragment = childFragmentManager.findFragmentById(R.id.rowsFragment) as? HomeRowsFragment
 
@@ -230,7 +235,7 @@ class HomeFragment : Fragment() {
 					true // No hero — rows ready is enough
 				}
 			}
-				.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
+				.flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
 				.onEach { allReady ->
 					if (allReady) {
 						// Short grace hold: the gate confirms the hero backdrop is set,
@@ -241,42 +246,42 @@ class HomeFragment : Fragment() {
 						dismissOverlay()
 					}
 				}
-				.launchIn(lifecycleScope)
+				.launchIn(viewLifecycleOwner.lifecycleScope)
 
 			// Safety timeout — dismiss no matter what so the overlay can never trap the
 			// user. Generous ceiling: the user explicitly prefers the branded loading
 			// screen to hold until the hero is genuinely presentable over an early
 			// reveal of the half-loaded skeleton.
-			lifecycleScope.launch {
+			viewLifecycleOwner.lifecycleScope.launch {
 				delay(8000)
 				dismissOverlay()
 			}
 		}
 
 		rowsFragment?.selectedItemStateFlow
-			?.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
+			?.flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
 			?.onEach { state ->
 				titleView?.text = state.title
 				summaryView?.text = state.summary
 				infoRowView?.setItem(state.baseItem)
 			}
-			?.launchIn(lifecycleScope)
+			?.launchIn(viewLifecycleOwner.lifecycleScope)
 
 		rowsFragment?.selectedPositionFlow
-			?.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
+			?.flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
 			?.onEach { position ->
 				updateMediaBarBackground()
 			}
-			?.launchIn(lifecycleScope)
+			?.launchIn(viewLifecycleOwner.lifecycleScope)
 
 		kotlinx.coroutines.flow.combine(
 			mediaBarViewModel.state,
 			mediaBarViewModel.isFocused,
 			mediaBarViewModel.playbackState,
 		) { _, _, _ -> Unit }
-			.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
+			.flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
 			.onEach { updateMediaBarBackground() }
-			.launchIn(lifecycleScope)
+			.launchIn(viewLifecycleOwner.lifecycleScope)
 
 		trailerWebView?.setContent {
 			val trailerState by mediaBarViewModel.trailerState.collectAsState()
@@ -307,18 +312,18 @@ class HomeFragment : Fragment() {
 		}
 
 		mediaBarViewModel.trailerState
-			.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
+			.flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
 			.onEach { trailerState ->
 				val hasTrailer = trailerState is TrailerPreviewState.Buffering ||
 					trailerState is TrailerPreviewState.Playing
 				trailerWebView?.isVisible = hasTrailer && shouldShowMediaBar()
 				muteButton?.isVisible = trailerState is TrailerPreviewState.Playing && shouldShowMediaBar()
 			}
-			.launchIn(lifecycleScope)
+			.launchIn(viewLifecycleOwner.lifecycleScope)
 
 		// Stop trailers when the in-app screensaver activates
 		interactionTrackerViewModel.visible
-			.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
+			.flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
 			.onEach { screensaverVisible ->
 				if (screensaverVisible) {
 					mediaBarViewModel.stopTrailer()
@@ -326,7 +331,7 @@ class HomeFragment : Fragment() {
 					mediaBarViewModel.restartTrailerForCurrentSlide()
 				}
 			}
-			.launchIn(lifecycleScope)
+			.launchIn(viewLifecycleOwner.lifecycleScope)
 	}
 
 	private fun updateMediaBarBackground() {
@@ -418,8 +423,8 @@ class HomeFragment : Fragment() {
 	}
 
 	private fun startNotificationPolling() {
-		lifecycleScope.launch {
-			lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+		viewLifecycleOwner.lifecycleScope.launch {
+			viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
 				var wait = NOTIFICATION_POLL_MS
 				while (true) {
 					delay(wait)

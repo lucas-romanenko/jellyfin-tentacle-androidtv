@@ -22,8 +22,10 @@ credentials, tokens, internal IPs or server paths in it.
 ## Build and check
 
 Builds run in CI, never on the workbench (a local build exhausts it; only
-if Lucas asks): App / Build (`app-build.yaml`, `./gradlew assembleDebug`) on
-every branch push and pull request. Pushing a branch is the way to check it;
+if Lucas asks): App / Build (`app-build.yaml`, `./gradlew assembleDebug`, then
+the JVM unit tests `testDebugUnitTest :app:testGithubDebugUnitTest`) on every
+branch push and pull request. Unit tests (kotest, `app/src/test/kotlin`) cover
+pure helpers; put logic worth testing in a pure function so CI can check it. Pushing a branch is the way to check it;
 read the result with
 `gh run list -R lucas-romanenko/jellyfin-tentacle-androidtv --branch <branch> -L 1`.
 Debug APKs are attached to pull requests only: to try a change on the TV,
@@ -113,6 +115,14 @@ the seasonal effects.
 - Tentacle row images come from Jellyfin's image API (the items are plain
   `BaseItemDto`); Discover images come from the TMDB CDN.
 - Jellyfin user ids have dashes; the Tentacle server stores them without.
+- Player errors (`ui/playback/PlayerErrorPolicy.kt`, `PlaybackController.onError`):
+  live TV first re-prepares the same stream (#19); an ended playlist or 20 s
+  without progress is a stream error for live TV (#60); a live retry waits for
+  the previous stop report before reopening, or Jellyfin leaves the tuner
+  stream open (#50). Retries reset only after playback ran again. Never close
+  a live stream id with `LiveStreams/Close`: a recording may share it.
+- Adds to Radarr/Sonarr send `quality_profile_override` only for a profile
+  the user picked; the server ignores `quality_profile_id` (server #231).
 - The Android TV launcher caches banner images hard: a new banner needs
   uninstall, reboot, reinstall.
 

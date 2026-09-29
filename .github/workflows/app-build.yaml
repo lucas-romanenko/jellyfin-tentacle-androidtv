@@ -25,6 +25,9 @@ jobs:
         uses: gradle/actions/setup-gradle@f29f5a9d7b09a7c6b29859002d29d24e1674c884 # v5.0.1
       - name: Assemble debug APKs
         run: ./gradlew assembleDebug
+      # JVM unit tests of every module (the app's github flavour stands for both).
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest :app:testGithubDebugUnitTest
       # The build is the check. Its APKs are attached only to pull requests
       # (for reviewing them): on a public repo a push's artifacts are a
       # download anyone can take, and APKs reach users only by a release.

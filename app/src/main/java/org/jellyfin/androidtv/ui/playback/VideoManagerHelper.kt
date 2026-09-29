@@ -68,3 +68,16 @@ fun applyAudioNightmode(audioSessionId: Int) {
 		}
 	}
 }
+
+/**
+ * Whether the stream at [url] is HLS: its container says so, or the URL's path (not its query)
+ * ends in .m3u8. The player then gets the HLS type up front: a resolver URL without the
+ * extension, or one that redirects, was guessed as a progressive file, failed once and fell
+ * into the retry ladder (#20). Never true for a plain file, which would then fail to parse.
+ */
+fun isHlsStream(container: String?, url: String): Boolean {
+	val type = container?.trim()?.lowercase()
+	if (type == "hls" || type == "m3u8") return true
+	val path = runCatching { java.net.URI(url).path }.getOrNull() ?: return false
+	return path.lowercase().endsWith(".m3u8")
+}

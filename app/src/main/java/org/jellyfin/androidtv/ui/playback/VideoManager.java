@@ -24,6 +24,7 @@ import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.PlaybackParameters;
+import androidx.media3.common.MimeTypes;
 import androidx.media3.common.Player;
 import androidx.media3.common.Timeline;
 import androidx.media3.common.TrackGroup;
@@ -510,10 +511,13 @@ public class VideoManager {
                 }
             }
 
-            MediaItem mediaItem = new MediaItem.Builder()
+            MediaItem.Builder mediaItemBuilder = new MediaItem.Builder()
                     .setUri(Uri.parse(path))
-                    .setSubtitleConfigurations(subtitleConfigurations)
-                    .build();
+                    .setSubtitleConfigurations(subtitleConfigurations);
+            if (VideoManagerHelperKt.isHlsStream(streamInfo.getContainer(), path)) {
+                mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8);
+            }
+            MediaItem mediaItem = mediaItemBuilder.build();
 
             mExoPlayer.setMediaItem(mediaItem);
             mExoPlayer.prepare();

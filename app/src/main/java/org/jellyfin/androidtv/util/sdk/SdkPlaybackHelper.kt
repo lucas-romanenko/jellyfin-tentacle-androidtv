@@ -16,6 +16,7 @@ import org.jellyfin.androidtv.ui.playback.PlaybackLauncher
 import org.jellyfin.androidtv.util.PlaybackHelper
 import org.jellyfin.androidtv.util.UUIDUtils
 import org.jellyfin.androidtv.util.apiclient.Response
+import org.jellyfin.androidtv.ui.playback.segment.youtubeVideoId
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.instantMixApi
 import org.jellyfin.sdk.api.client.extensions.itemsApi
@@ -29,6 +30,7 @@ import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.ItemFilter
 import org.jellyfin.sdk.model.api.ItemSortBy
 import org.jellyfin.sdk.model.api.MediaType
+import org.jellyfin.sdk.model.api.SortOrder
 import org.jellyfin.sdk.model.extensions.ticks
 import java.util.UUID
 import kotlin.time.Duration
@@ -251,6 +253,8 @@ class SdkPlaybackHelper(
 			}
 
 			else -> {
+				youtubeChannelQueue(itemApi, mainItem)?.let { queue -> return@withContext queue.withServerIdPropagated() }
+
 				val parts = getParts(mainItem)
 				val addIntros = allowIntros && userPreferences[UserPreferences.cinemaModeEnabled]
 
@@ -265,6 +269,35 @@ class SdkPlaybackHelper(
 				}
 			}
 		}
+	}
+
+	/**
+	 * A Tentacle YouTube video, with media queuing on: the channel's videos from this one on,
+	 * newest first as the library lists them, so the next one starts when it ends (#42).
+	 * Null for anything else, or when the channel can't be read (then it plays alone).
+	 */
+	private suspend fun youtubeChannelQueue(itemApi: ApiClient, mainItem: BaseItemDto): List<BaseItemDto>? {
+		if (!userPreferences[UserPreferences.mediaQueuingEnabled]) return null
+		if (mainItem.type != BaseItemKind.MOVIE || youtubeVideoId(mainItem.providerIds) == null) return null
+
+		return runCatching {
+			val tags = mainItem.tags ?: itemApi.userLibraryApi.getItem(mainItem.id).content.tags
+			val channelTag = youtubeChannelTag(tags) ?: return null
+			val response by itemApi.itemsApi.getItems(
+				tags = listOf(channelTag),
+				includeItemTypes = listOf(BaseItemKind.MOVIE),
+				recursive = true,
+				maxPremiereDate = mainItem.premiereDate,
+				sortBy = listOf(ItemSortBy.PREMIERE_DATE, ItemSortBy.SORT_NAME),
+				sortOrder = listOf(SortOrder.DESCENDING),
+				limit = YOUTUBE_QUEUE_LIMIT,
+				fields = ItemRepository.itemFields,
+			)
+			val queue = queueFrom(response.items) { it.id == mainItem.id } ?: return null
+			Timber.i("YouTube channel $channelTag: queued ${queue.size} videos")
+			// Keep the item as launched (its resume position) at the head of the queue
+			listOf(mainItem) + queue.drop(1)
+		}.onFailure { Timber.w(it, "Could not queue the YouTube channel of ${mainItem.name}") }.getOrNull()
 	}
 
 	private suspend fun getParts(item: BaseItemDto): List<BaseItemDto> = buildList {

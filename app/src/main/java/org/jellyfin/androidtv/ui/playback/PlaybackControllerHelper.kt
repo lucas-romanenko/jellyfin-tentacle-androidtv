@@ -9,7 +9,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentAction
+import org.jellyfin.androidtv.ui.home.mediabar.SponsorBlockApi
 import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentRepository
+import org.jellyfin.androidtv.ui.playback.segment.sponsorBlockCategories
+import org.jellyfin.androidtv.ui.playback.segment.sponsorBlockSegmentType
+import org.jellyfin.androidtv.ui.playback.segment.sponsorBlockToMediaSegments
+import org.jellyfin.androidtv.ui.playback.segment.youtubeVideoId
 import org.jellyfin.androidtv.util.sdk.end
 import org.jellyfin.androidtv.util.sdk.start
 import org.jellyfin.sdk.api.client.ApiClient
@@ -176,6 +181,29 @@ fun PlaybackController.applyMediaSegments(
 		}
 
 		callback()
+
+		// A Tentacle YouTube video without server segments: use SponsorBlock's (#43). Only after
+		// playback has started, so the request never delays it, and only for the categories the
+		// user acts on (Commercial is "Nothing" by default, so no request is made at all then).
+		// Never on top of server segments, which a SponsorBlock plugin on the server may provide.
+		val videoId = youtubeVideoId(item.providerIds)
+		if (mediaSegments.isEmpty() && videoId != null) {
+			val categories = sponsorBlockCategories.filter { category ->
+				val type = sponsorBlockSegmentType(category)
+				type != null && mediaSegmentRepository.getDefaultSegmentTypeAction(type) != MediaSegmentAction.NOTHING
+			}
+			if (categories.isEmpty()) return@launch
+			val segments = sponsorBlockToMediaSegments(item.id, SponsorBlockApi.getSkipSegments(videoId, categories))
+			if (currentlyPlayingItem?.id != item.id) return@launch
+			Timber.i("SponsorBlock: ${segments.size} segments for $videoId")
+			for (mediaSegment in segments) {
+				when (mediaSegmentRepository.getMediaSegmentAction(mediaSegment)) {
+					MediaSegmentAction.SKIP -> addSkipAction(mediaSegment)
+					MediaSegmentAction.ASK_TO_SKIP -> addAskToSkipAction(mediaSegment)
+					MediaSegmentAction.NOTHING -> Unit
+				}
+			}
+		}
 	}
 }
 

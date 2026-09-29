@@ -15,11 +15,16 @@ import coil3.request.ImageRequest
 import coil3.request.error
 import org.jellyfin.androidtv.BuildConfig
 import org.jellyfin.androidtv.R
+import org.jellyfin.androidtv.auth.store.AuthenticationStore
+import org.jellyfin.sdk.api.client.ApiClient
 import org.koin.android.ext.android.inject
+import timber.log.Timber
 import java.io.IOException
 
 class ImageProvider : ContentProvider() {
 	private val imageLoader by inject<ImageLoader>()
+	private val authenticationStore by inject<AuthenticationStore>()
+	private val api by inject<ApiClient>()
 
 	override fun onCreate(): Boolean = true
 
@@ -30,13 +35,18 @@ class ImageProvider : ContentProvider() {
 	override fun delete(uri: Uri, selection: String?, selectionArgs: Array<out String>?) = 0
 
 	override fun openFile(uri: Uri, mode: String): ParcelFileDescriptor? {
-		val src = requireNotNull(uri.getQueryParameter("src")).toUri()
+		val src = requireNotNull(uri.getQueryParameter("src"))
+		// Only artwork from a signed-in server (or this app's own drawables): the provider is
+		// exported for the launcher, so any app can ask it for a URL
+		val servers = authenticationStore.getServers().values.map { it.address } + listOfNotNull(api.baseUrl)
+		val allowed = ImageSourcePolicy.allowedSource(src, servers, context!!.packageName)
+		if (allowed == null) Timber.d("ImageProvider: not a server image, showing the placeholder")
 
 		val (read, write) = ParcelFileDescriptor.createPipe()
 		val outputStream = ParcelFileDescriptor.AutoCloseOutputStream(write)
 
 		imageLoader.enqueue(ImageRequest.Builder(context!!).apply {
-			data(src)
+			data(allowed?.toUri() ?: R.drawable.placeholder_icon)
 			error(R.drawable.placeholder_icon)
 			target(
 				onSuccess = { image -> writeDrawable(image.asDrawable(context!!.resources), outputStream) },

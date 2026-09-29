@@ -99,3 +99,7 @@
 -keep class org.jellyfin.preference.** { *; }
 -keep class org.jellyfin.design.** { *; }
 -keep class org.tentacle.** { *; }
+
+# Exception class names in release logs: "InvalidResponseCodeException: Response code: 500"
+# instead of "o5.z: Response code: 500", so a player error can be read from a report (#24).
+-keepnames class * extends java.lang.Throwable

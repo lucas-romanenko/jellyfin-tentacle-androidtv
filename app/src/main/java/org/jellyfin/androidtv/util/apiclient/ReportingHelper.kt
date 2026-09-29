@@ -3,8 +3,10 @@ package org.jellyfin.androidtv.util.apiclient
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.jellyfin.androidtv.data.compat.StreamInfo
 import org.jellyfin.androidtv.data.model.DataRefreshService
 import org.jellyfin.androidtv.ui.playback.PlaybackController
@@ -21,6 +23,8 @@ import org.jellyfin.sdk.model.api.PlaybackStopInfo
 import org.jellyfin.sdk.model.api.RepeatMode
 import timber.log.Timber
 import java.time.Instant
+
+private const val STOP_REPORT_WAIT_MS = 10_000L
 
 class ReportingHelper(
 	private val dataRefreshService: DataRefreshService,
@@ -101,6 +105,29 @@ class ReportingHelper(
 		}
 	}
 
+	private var lastStopReport: Job? = null
+
+	/**
+	 * Runs [block] on the main thread once the last stop report has been answered (at most
+	 * [STOP_REPORT_WAIT_MS]), unless [lifecycleOwner] is destroyed first.
+	 *
+	 * A live TV retry must not open the channel again before the server has handled the stop
+	 * of the failed attempt. Jellyfin maps each session to one live stream; its stop takes
+	 * seconds (it waits for ffmpeg), so the retry's start report was handled first and the late
+	 * stop then removed the retry's mapping. Leaving the player before the next progress report
+	 * then released nothing, and the tuner kept pulling from the provider for good (#50).
+	 */
+	fun whenStopReported(lifecycleOwner: LifecycleOwner, block: Runnable) {
+		val pending = lastStopReport
+		lifecycleOwner.lifecycleScope.launch {
+			if (pending != null && pending.isActive) {
+				val done = withTimeoutOrNull(STOP_REPORT_WAIT_MS) { pending.join() }
+				if (done == null) Timber.w("Stop report not answered after $STOP_REPORT_WAIT_MS ms, continuing")
+			}
+			block.run()
+		}
+	}
+
 	fun reportStopped(lifecycleOwner: LifecycleOwner, item: BaseItemDto, streamInfo: StreamInfo, position: Long?) {
 		val info = PlaybackStopInfo(
 			itemId = item.id,
@@ -111,7 +138,7 @@ class ReportingHelper(
 			failed = false,
 		)
 
-		lifecycleOwner.lifecycleScope.launch(Dispatchers.IO + NonCancellable) {
+		lastStopReport = lifecycleOwner.lifecycleScope.launch(Dispatchers.IO + NonCancellable) {
 			Timber.i("Reporting ${item.name} playback stopped at $position")
 			val itemApi = getApiClientForItem(item)
 			runCatching {

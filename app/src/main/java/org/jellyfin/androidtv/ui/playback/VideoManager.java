@@ -187,7 +187,7 @@ public class VideoManager {
         mExoPlayer.addListener(new Player.Listener() {
             @Override
             public void onPlayerError(@NonNull PlaybackException error) {
-                Timber.e(error, "***** Player error: code=%d message=%s", error.errorCode, error.getMessage());
+                Timber.e(error, "***** Player error: code=%d message=%s (%s)", error.errorCode, error.getMessage(), PlayerErrorPolicy.describePlayerError(error));
                 if (error.getCause() != null) {
                     Timber.e(error.getCause(), "***** Player error cause");
                 }
@@ -462,6 +462,23 @@ public class VideoManager {
     @Nullable
     public PlaybackException getLastPlayerError() {
         return mLastPlayerError;
+    }
+
+    /**
+     * Prepares the current media item again after an error, without a new stream from the
+     * server (#19). Behind the live window, it goes back to the live edge first.
+     */
+    public void reprepare(boolean toLiveEdge) {
+        if (mExoPlayer == null) return;
+        mLastPlayerError = null;
+        if (toLiveEdge) mExoPlayer.seekToDefaultPosition();
+        mExoPlayer.prepare();
+        mExoPlayer.setPlayWhenReady(true);
+    }
+
+    public boolean isPlayingOrBuffering() {
+        return mExoPlayer != null && mExoPlayer.getPlayWhenReady()
+                && (mExoPlayer.getPlaybackState() == Player.STATE_READY || mExoPlayer.getPlaybackState() == Player.STATE_BUFFERING);
     }
 
     public void setMediaStreamInfo(ApiClient api, StreamInfo streamInfo) {

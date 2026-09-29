@@ -1037,6 +1037,7 @@
     <string name="syncplay_no_groups_description">Create a new group to start a watch party</string>
     <string name="lbl_close">Close</string>
     <string name="lbl_try_again">Try again</string>
+    <string name="msg_live_channel_unavailable">This channel isn\'t available right now. Try again later.</string>
     <string name="lbl_open_in_youtube">Open in YouTube</string>
     <string name="trailer_unavailable_title">Couldn\'t load the trailer</string>
     <string name="trailer_unavailable_message">YouTube didn\'t answer this time. Try again, or open the trailer in the YouTube app.</string>

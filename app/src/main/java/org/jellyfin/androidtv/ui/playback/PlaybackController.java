@@ -124,6 +124,14 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     private boolean directStreamLiveTv;
     private int playbackRetries = 0;
     private long lastPlaybackError = 0;
+    // Playback advanced since the last error: only then does a quiet spell reset the retries.
+    private boolean progressSinceError = false;
+    // Live TV: the in-place re-prepare was used in this burst of errors (#19).
+    private boolean liveReprepareTried = false;
+    // Live TV: when the stream last advanced, or when it was handed to the player (#60).
+    private long liveProgressAt = 0;
+    private boolean liveHasPlayed = false;
+    private Runnable mLiveStallWatch;
 
     private Display.Mode[] mDisplayModes;
     private RefreshRateSwitchingBehavior refreshRateSwitchingBehavior = RefreshRateSwitchingBehavior.DISABLED;
@@ -419,14 +427,17 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     @OptIn(markerClass = UnstableApi.class)
     public void playerErrorEncountered() {
-        // reset the retry count if it's been more than 30s since previous error
-        if (playbackRetries > 0 && Instant.now().toEpochMilli() - lastPlaybackError > 30000) {
+        // Reset the retry count if playback ran again for more than 30 s since the previous error.
+        // Time alone isn't enough: a live stream that never recovers fails about every 30 s
+        // (the server's remux gives up), so it used to retry for ever (#19, #60).
+        if (playbackRetries > 0 && progressSinceError && Instant.now().toEpochMilli() - lastPlaybackError > 30000) {
             Timber.i("playback stabilized - retry count reset to 0 from %s", playbackRetries);
             playbackRetries = 0;
         }
 
         playbackRetries++;
         lastPlaybackError = Instant.now().toEpochMilli();
+        progressSinceError = false;
 
         // Detect the decoder-wedge failure mode: the player is READY with data flowing but makes
         // zero progress until media3's watchdog kills it. This is almost always a hardware decoder
@@ -475,12 +486,24 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             // only needs to hear about it if all retries are exhausted below.
             Timber.i("Player error encountered - retrying (attempt %d)", playbackRetries);
             stop();
-            play(mCurrentPosition);
+            if (isLiveTv && mFragment != null) {
+                // Open the channel again only once the server has handled the stop of this
+                // attempt, or the new stream can be left open for good (#50).
+                final long position = mCurrentPosition;
+                startSpinner();
+                reportingHelper.getValue().whenStopReported(mFragment, () -> {
+                    if (mFragment != null && mPlaybackState == PlaybackState.IDLE) play(position);
+                });
+            } else {
+                play(mCurrentPosition);
+            }
         } else {
             mPlaybackState = PlaybackState.ERROR;
+            stopLiveStallWatch();
             if (mFragment != null) {
                 String message = stuckAudioCodec != null
                         ? mFragment.getString(R.string.too_many_errors_audio, stuckAudioCodec.toUpperCase(Locale.ROOT))
+                        : isLiveTv ? mFragment.getString(R.string.msg_live_channel_unavailable)
                         : mFragment.getString(R.string.too_many_errors);
                 Utils.showToast(mFragment.getContext(), message);
                 mFragment.closePlayer();
@@ -1012,6 +1035,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             }
             mVideoManager.setMediaStreamInfo(subtitleApi, response);
         }
+        if (isLiveTv) startLiveStallWatch();
 
         PlaybackControllerHelperKt.applyMediaSegments(this, item, () -> {
             // Set video start delay
@@ -1228,6 +1252,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         refreshCurrentPosition();
         Timber.i("stop called at %s", mCurrentPosition);
         stopReportLoop();
+        stopLiveStallWatch();
         if (mPlaybackState != PlaybackState.IDLE && mPlaybackState != PlaybackState.UNDEFINED) {
             mPlaybackState = PlaybackState.IDLE;
 
@@ -1274,6 +1299,51 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     private void resetPlayerErrors() {
         playbackRetries = 0;
+        progressSinceError = false;
+        liveReprepareTried = false;
+    }
+
+    /**
+     * Live TV only: a stream that stops advancing without an error or an end (the server's
+     * playlist ended on an empty segment) left a black screen for good. If it doesn't advance
+     * for LIVE_STALL_MS once it has played, or LIVE_START_STALL_MS before the first frame, it
+     * goes through the normal retry path (#60).
+     */
+    private void startLiveStallWatch() {
+        stopLiveStallWatch();
+        liveProgressAt = Instant.now().toEpochMilli();
+        liveHasPlayed = false;
+        mLiveStallWatch = new Runnable() {
+            @Override
+            public void run() {
+                if (!isLiveTv || mVideoManager == null) return;
+                if (mPlaybackState == PlaybackState.PLAYING || mPlaybackState == PlaybackState.BUFFERING) {
+                    long now = Instant.now().toEpochMilli();
+                    if (mVideoManager.isPlaying()) {
+                        liveProgressAt = now;
+                        liveHasPlayed = true;
+                    } else {
+                        long limit = liveHasPlayed ? PlayerErrorPolicy.LIVE_STALL_MS : PlayerErrorPolicy.LIVE_START_STALL_MS;
+                        if (now - liveProgressAt > limit) {
+                            Timber.w("Live stream made no progress for %d s - retrying", (now - liveProgressAt) / 1000);
+                            mLiveStallWatch = null;
+                            playerErrorEncountered();
+                            return;
+                        }
+                    }
+                } else {
+                    // paused, seeking or stopped: not a stall
+                    liveProgressAt = Instant.now().toEpochMilli();
+                }
+                mHandler.postDelayed(this, 5000);
+            }
+        };
+        mHandler.postDelayed(mLiveStallWatch, 5000);
+    }
+
+    private void stopLiveStallWatch() {
+        if (mHandler != null && mLiveStallWatch != null) mHandler.removeCallbacks(mLiveStallWatch);
+        mLiveStallWatch = null;
     }
 
     private void clearPlaybackSessionOptions() {
@@ -1702,6 +1772,36 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             return;
         }
 
+        androidx.media3.common.PlaybackException error =
+                hasInitializedVideoManager() ? mVideoManager.getLastPlayerError() : null;
+
+        // Live TV: prepare the same stream again first. A new PlaybackInfo opens another tuner
+        // consumer and kills the running transcode, which made every hiccup a visible gap (#19).
+        if (isLiveTv && !liveReprepareTried && error != null
+                && PlayerErrorPolicy.canReprepareLiveInPlace(error.errorCode, PlayerErrorPolicy.playerErrorHttpStatus(error))) {
+            liveReprepareTried = true;
+            Timber.i("Live stream error %s - preparing the same stream again", error.getErrorCodeName());
+            mVideoManager.reprepare(error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW);
+            return;
+        }
+
+        // A remote source the app plays itself (a Tentacle YouTube or VOD link) that the server
+        // refused with a reason: say why and stop. Every rung of the retry ladder would ask the
+        // same server again (#24, #44).
+        if (!isLiveTv && error != null && mCurrentStreamInfo != null
+                && mCurrentStreamInfo.getPlayMethod() == PlayMethod.DIRECT_PLAY
+                && mCurrentStreamInfo.getMediaSource() != null
+                && Boolean.TRUE.equals(mCurrentStreamInfo.getMediaSource().isRemote())) {
+            String detail = PlayerErrorPolicy.playerErrorDetail(error);
+            if (detail != null) {
+                Timber.w("Remote source refused: %s", detail);
+                mPlaybackState = PlaybackState.ERROR;
+                Utils.showToast(mFragment.getContext(), detail);
+                mFragment.closePlayer();
+                return;
+            }
+        }
+
         if (isLiveTv && directStreamLiveTv) {
             Utils.showToast(mFragment.getContext(), mFragment.getString(R.string.msg_error_live_stream));
             directStreamLiveTv = false;
@@ -1715,6 +1815,14 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     @Override
     public void onCompletion() {
         Timber.i("On Completion fired");
+        if (isLiveTv && (mPlaybackState == PlaybackState.PLAYING || mPlaybackState == PlaybackState.BUFFERING)) {
+            // A live channel doesn't end: an ended playlist means the server's remux stopped
+            // (the provider dropped out). Retry like any stream error instead of closing the
+            // player without a word (#60).
+            Timber.w("Live stream ended on the server - retrying");
+            playerErrorEncountered();
+            return;
+        }
         itemComplete();
     }
 
@@ -1722,6 +1830,12 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     public void onProgress() {
         refreshCurrentPosition();
         if (isPlaying()) {
+            progressSinceError = true;
+            if (isLiveTv) {
+                liveProgressAt = Instant.now().toEpochMilli();
+                liveHasPlayed = true;
+                liveReprepareTried = false;
+            }
             if (!spinnerOff) {
                 if (mStartPosition > 0) {
                     initialSeek(mStartPosition);

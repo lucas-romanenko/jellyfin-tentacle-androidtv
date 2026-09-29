@@ -3,6 +3,7 @@ package org.jellyfin.androidtv.util.sdk
 import android.content.Context
 import android.content.Intent
 import androidx.core.net.toUri
+import org.jellyfin.androidtv.ui.home.mediabar.TrailerResolver
 import org.jellyfin.sdk.model.api.BaseItemDto
 
 object TrailerUtils {
@@ -41,6 +42,9 @@ object TrailerUtils {
 	fun hasPlayableTrailers(context: Context, item: BaseItemDto): Boolean {
 		// Local trailer
 		if (item.localTrailerCount != null && item.localTrailerCount!! > 0) return true
+
+		// A YouTube trailer plays in the in-app player, with or without a YouTube app
+		if (TrailerResolver.youtubeTrailerId(item) != null) return true
 
 		// External trailer
 		if (getExternalTrailerIntent(context, item) != null) return true

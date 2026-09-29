@@ -119,8 +119,27 @@ object TrailerResolver {
 		}
 	}
 
-	suspend fun resolveTrailerFromItem(item: BaseItemDto): TrailerPreviewInfo? =
-		resolveYouTubeTrailerFromItem(item)
+	/** The first remote trailer that is a YouTube video, as its id. */
+	fun youtubeTrailerId(item: BaseItemDto): String? = item.remoteTrailers.orEmpty()
+		.firstNotNullOfOrNull { trailer -> trailer.url?.let(::extractYoutubeVideoId) }
+
+	/**
+	 * The item's YouTube trailer for the in-app player: id, start and SponsorBlock segments,
+	 * without resolving the stream. The player resolves the stream itself, so resolving it here
+	 * too cost a second lookup, and a lookup that failed once (YouTube throttling, a slow
+	 * network) sent the user to the YouTube app although the trailer was there (#45).
+	 * Null only when the item has no YouTube trailer.
+	 */
+	suspend fun resolveTrailerIdFromItem(item: BaseItemDto): TrailerPreviewInfo? =
+		withContext(Dispatchers.IO) {
+			val youtubeVideoId = youtubeTrailerId(item) ?: return@withContext null
+			val segments = SponsorBlockApi.getSkipSegments(youtubeVideoId)
+			TrailerPreviewInfo(
+				youtubeVideoId = youtubeVideoId,
+				startSeconds = SponsorBlockApi.calculateStartTime(segments),
+				segments = segments,
+			)
+		}
 
 	private suspend fun resolveYouTubeTrailerFromItem(item: BaseItemDto): TrailerPreviewInfo? =
 		withContext(Dispatchers.IO) {
@@ -130,9 +149,7 @@ object TrailerResolver {
 				return@withContext null
 			}
 
-			val youtubeVideoId = trailers
-				.mapNotNull { trailer -> trailer.url?.let { extractYoutubeVideoId(it) } }
-				.firstOrNull()
+			val youtubeVideoId = youtubeTrailerId(item)
 
 			if (youtubeVideoId == null) {
 				Timber.d("TrailerResolver: No YouTube trailers found for ${item.name}")

@@ -81,6 +81,7 @@ import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import coil3.compose.AsyncImage
 import coil3.toBitmap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.launchIn
@@ -2328,45 +2329,42 @@ class ItemDetailsFragment : Fragment() {
 		val localTrailerCount = item.localTrailerCount ?: 0
 
 		if (localTrailerCount < 1) {
-			// External trailer — resolve YouTube video and play in-app WebView
+			// External trailer: a YouTube trailer plays in the in-app player, which resolves its
+			// stream (and says so if it can't). Only an item with no YouTube trailer at all goes
+			// to another app; a failed lookup used to send the user to the YouTube app (#45).
 			lifecycleScope.launch {
-				try {
-					val trailerInfo = withContext(Dispatchers.IO) {
-						TrailerResolver.resolveTrailerFromItem(item)
-					}
-
-					if (trailerInfo?.youtubeVideoId != null) {
-						val segmentsJson = trailerInfo.segments.joinToString(",", "[", "]") { seg ->
-							"""{"start":${seg.startTime},"end":${seg.endTime},"category":"${seg.category}","action":"${seg.actionType}"}"""
-						}
-						navigationRepository.navigate(Destinations.trailerPlayer(
-							videoId = trailerInfo.youtubeVideoId,
-							startSeconds = trailerInfo.startSeconds,
-							segmentsJson = segmentsJson,
-						))
-					} else {
-						// No YouTube trailer found — fall back to external intent
-						val intent = getExternalTrailerIntent(requireContext(), item)
-						if (intent != null) {
-							val chooser = Intent.createChooser(intent, getString(R.string.lbl_play_trailers))
-							startActivity(chooser)
-						} else {
-							Toast.makeText(requireContext(), getString(R.string.no_player_message), Toast.LENGTH_LONG).show()
-						}
-					}
+				val trailerInfo = try {
+					TrailerResolver.resolveTrailerIdFromItem(item)
+				} catch (e: CancellationException) {
+					throw e
 				} catch (e: Exception) {
-					Timber.w(e, "Failed to resolve trailer")
-					// Fall back to external intent
-					try {
-						val intent = getExternalTrailerIntent(requireContext(), item)
-						if (intent != null) {
-							val chooser = Intent.createChooser(intent, getString(R.string.lbl_play_trailers))
-							startActivity(chooser)
-						}
-					} catch (e2: ActivityNotFoundException) {
-						Timber.w(e2, "Unable to open external trailer")
+					Timber.w(e, "Failed to read the trailer of ${item.name}")
+					null
+				}
+
+				if (trailerInfo?.youtubeVideoId != null) {
+					val segmentsJson = trailerInfo.segments.joinToString(",", "[", "]") { seg ->
+						"""{"start":${seg.startTime},"end":${seg.endTime},"category":"${seg.category}","action":"${seg.actionType}"}"""
+					}
+					navigationRepository.navigate(Destinations.trailerPlayer(
+						videoId = trailerInfo.youtubeVideoId,
+						startSeconds = trailerInfo.startSeconds,
+						segmentsJson = segmentsJson,
+					))
+					return@launch
+				}
+
+				// No YouTube trailer: open the trailer's link in an app that can play it
+				try {
+					val intent = getExternalTrailerIntent(requireContext(), item)
+					if (intent != null) {
+						startActivity(Intent.createChooser(intent, getString(R.string.lbl_play_trailers)))
+					} else {
 						Toast.makeText(requireContext(), getString(R.string.no_player_message), Toast.LENGTH_LONG).show()
 					}
+				} catch (e: ActivityNotFoundException) {
+					Timber.w(e, "Unable to open external trailer")
+					Toast.makeText(requireContext(), getString(R.string.no_player_message), Toast.LENGTH_LONG).show()
 				}
 			}
 		} else {

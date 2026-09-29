@@ -312,6 +312,11 @@ class MediaBarSlideshowViewModel(
 			}
 			if (!fromCache) {
 				_state.value = MediaBarState.Loading
+				// Refresh the cached config along with the items: the revalidation above compares
+				// against it. Without this, a hero switched on through a full load kept the cached
+				// "off" config, so switching it off again looked like no change and the old hero
+				// stayed until the app restarted (#62).
+				tentacleRepository.getHeroConfig()
 				heroItems = tentacleRepository.getHeroItems()
 			}
 			if (heroItems.isNotEmpty()) {

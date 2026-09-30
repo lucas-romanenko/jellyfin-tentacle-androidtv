@@ -129,8 +129,12 @@ the seasonal effects.
 ## Releasing is Lucas's decision
 
 APKs go to other people's TVs, so only Lucas tags or creates releases.
-Agents never tag or release (the workbench's guard asks before any tag
-push, `gh release` change or `gh workflow run`). A session ends with draft
+Agents never tag or release: GitHub refuses it (ruleset "release tags": `v*`
+only from a deploy key, and agents have none), and the workbench's guard
+refuses tag pushes, `gh release` changes and `gh workflow run`. master moves
+only through a pull request whose `Build` check passed (ruleset "main"):
+push a branch, `gh pr create`, `gh pr checks <n> --watch`, `gh pr merge <n>
+--squash --delete-branch`. A session ends with draft
 release notes (user-visible changes, issue numbers in brackets;
 `git log vA.B.C..master`) and "ready to release vX.Y.Z". GitHub issues and
 PRs go through the workbench's github-triage skill: bugs are reproduced on
@@ -139,8 +143,13 @@ features wait for Lucas's `approved` label (labels `needs-info`,
 `needs-lucas`, `approved`).
 
 Lucas's steps: set `tentacle.version` in `gradle.properties` to the new
-version and merge that to master, then tag it (`git tag -a v1.20.3 -m v1.20.3
-&& git push origin v1.20.3`) or create a GitHub release on a new tag.
+version and merge that to master (a pull request), then tag it on his
+server's host shell: `tentacle-tag jellyfin-tentacle-androidtv v1.20.3` (the
+one way to make a release tag: it checks the commit is on master and its
+`Build` passed, then pushes an annotated tag with a release deploy key only
+he has; his homelab manual, docs/tentacle.md, has the rest). Release notes
+go on the existing tag afterwards (GitHub UI or `gh release create v1.20.3
+--verify-tag`).
 App / Release (`app-release.yaml`) builds `assembleGithubRelease`, signed
 with the production keystore from the repository secrets (`KEYSTORE_BASE64`,
 `KEYSTORE_PASSWORD`, `KEYSTORE_ALIAS`, `KEYSTORE_KEY_PASSWORD`; it fails

@@ -2,6 +2,9 @@
 lane: server-public      # public repo; its APKs talk to the maintainer's Tentacle server
 # read-only: the unit tests run only in CI (App / Build: testDebugUnitTest), never on the workbench
 verify: gh run list -R lucas-romanenko/jellyfin-tentacle-androidtv -w app-build.yaml -c <sha> --json conclusion -q '.[].conclusion' | grep -qx success
-merge: approved          # agents merge a pull request only after the maintainer approves it, at that head
-deploy: false            # the maintainer tests on the TV and releases
+bugs: auto               # a confirmed bug gets a failing test (in CI), a fix and a review without asking
+features: ask            # each feature waits for the maintainer's Build it / Not now
+merge: auto              # a reviewed pull request merges once its CI is green
+deploy: auto             # nothing deploys it on the server: the verifier checks CI on the merged commit
+release: me              # releases (APKs) are the maintainer's, always
 needs_lucas_labels: [needs-lucas, security]

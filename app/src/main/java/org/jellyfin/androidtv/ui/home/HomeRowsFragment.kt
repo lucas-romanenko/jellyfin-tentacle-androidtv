@@ -17,6 +17,7 @@ import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import org.jellyfin.androidtv.R
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -80,6 +81,20 @@ import org.koin.android.ext.android.inject
 import timber.log.Timber
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+
+/**
+ * The Live TV rows check, run as an `async` child of the home build: a failed request answers
+ * null ("unknown") instead of failing the child, which would fail the home build's coroutine
+ * and, with no handler on lifecycleScope, crash the app. Cancellation still propagates.
+ */
+internal suspend fun liveTvProbe(check: suspend () -> Boolean): Boolean? = try {
+	check()
+} catch (e: CancellationException) {
+	throw e
+} catch (e: Exception) {
+	Timber.w("Live TV check failed: ${e.javaClass.simpleName} (${e.message})")
+	null
+}
 
 class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyListener {
 	private val api by inject<ApiClient>()
@@ -206,13 +221,15 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			val liveTvDeferred = if (homesections.contains(HomeSectionType.LIVE_TV) && currentUser.policy?.enableLiveTvAccess == true) {
 				async {
-					val recommendedPrograms by api.liveTvApi.getRecommendedPrograms(
-						enableTotalRecordCount = false,
-						imageTypeLimit = 1,
-						isAiring = true,
-						limit = 1,
-					)
-					recommendedPrograms.items.isNotEmpty()
+					liveTvProbe {
+						val recommendedPrograms by api.liveTvApi.getRecommendedPrograms(
+							enableTotalRecordCount = false,
+							imageTypeLimit = 1,
+							isAiring = true,
+							limit = 1,
+						)
+						recommendedPrograms.items.isNotEmpty()
+					}
 				}
 			} else null
 
@@ -228,7 +245,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// next launch — the check scans the whole EPG and must never block a render.
 			liveTvDeferred?.let { deferred ->
 				launch {
-					val available = runCatching { deferred.await() }.getOrDefault(false)
+					// No answer keeps the last known value.
+					val available = deferred.await() ?: return@launch
 					systemPreferences[SystemPreferences.liveTvRowsAvailable] = available
 				}
 			}

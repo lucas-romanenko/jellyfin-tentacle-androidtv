@@ -64,13 +64,20 @@ fun getPrograms(
 	fragment.lifecycleScope.launch {
 		runCatching {
 			withContext(Dispatchers.IO) {
-				api.liveTvApi.getLiveTvPrograms(
-					channelIds = channelIds.toList(),
-					enableImages = false,
-					sortBy = setOf(ItemSortBy.START_DATE),
-					maxStartDate = endTime,
-					minEndDate = startTime,
-				).content.items
+				// The ids go in the URL, and a server refuses a request line over 8 KB (about 165 ids).
+				// A filtered guide asks for every channel, so ask one guide page of channels at a time.
+				// Ids not filled yet arrive as nulls from Java: no id asks for every channel, once.
+				val ids = channelIds.filterNotNull()
+				val batches = if (ids.isEmpty()) listOf(ids) else ids.chunked(LiveTvGuideFragment.PAGE_SIZE)
+				batches.flatMap { batch ->
+					api.liveTvApi.getLiveTvPrograms(
+						channelIds = batch,
+						enableImages = false,
+						sortBy = setOf(ItemSortBy.START_DATE),
+						maxStartDate = endTime,
+						minEndDate = startTime,
+					).content.items
+				}
 			}
 		}.fold(
 			onSuccess = { programs -> callback(programs) },

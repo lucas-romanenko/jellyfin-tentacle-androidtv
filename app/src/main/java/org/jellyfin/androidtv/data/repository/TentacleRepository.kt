@@ -315,8 +315,9 @@ class TentacleRepository(
 	 * - [SectionSource.SERVER]: the server's answer, possibly empty;
 	 * - [SectionSource.SAVED_COPY]: the server did not answer (timeout, refused, 5xx), so the
 	 *   row's last good answer from disk — a slow server no longer drops rows (#49);
-	 * - [SectionSource.GONE]: a 4xx — the user can no longer see this playlist, so its saved
-	 *   copy is deleted and never shown again.
+	 * - [SectionSource.GONE]: the plugin's "not yours / not there" answer (400, 403, 404) — the
+	 *   user can no longer see this playlist, so its saved copy is deleted and never shown again.
+	 *   Other 4xx (408, 429 from a proxy or a busy server, 401) are "no answer" and keep it.
 	 */
 	suspend fun fetchSectionItems(playlistId: String): SectionFetch = withContext(Dispatchers.IO) {
 		sectionFetchPermits.withPermit {
@@ -325,7 +326,7 @@ class TentacleRepository(
 				val request = Request.Builder().url(url).get().build()
 				httpClient.newCall(request).execute().use { response ->
 					when {
-						response.code in 400..499 -> {
+						rowGoneOn(response.code) -> {
 							deleteHomeCache("section-$playlistId.json")
 							SectionFetch(emptyList(), SectionSource.GONE)
 						}
@@ -1392,6 +1393,13 @@ data class TentacleSection(
 
 /** Where a home row's items came from (see TentacleRepository.fetchSectionItems). */
 enum class SectionSource { SERVER, SAVED_COPY, GONE }
+
+/**
+ * A home row's playlist is gone for this user only on the plugin's own answers for that:
+ * 400 (bad playlist id), 403 (not the user's) and 404 (no such playlist)
+ * (HomeScreenController.GetSection).
+ */
+internal fun rowGoneOn(code: Int): Boolean = code == 400 || code == 403 || code == 404
 
 data class SectionFetch(val items: List<BaseItemDto>, val source: SectionSource)
 

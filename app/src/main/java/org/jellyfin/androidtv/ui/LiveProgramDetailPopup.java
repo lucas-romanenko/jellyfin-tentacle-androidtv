@@ -268,6 +268,7 @@ public class LiveProgramDetailPopup {
             public void onClick(View v) {
                 LiveProgramDetailPopupHelperKt.toggleFavorite(LiveProgramDetailPopup.this, channel, channel -> {
                     fave.setImageDrawable(ContextCompat.getDrawable(mContext, channel.getUserData().isFavorite() ? R.drawable.ic_heart_red : R.drawable.ic_heart));
+                    TvManager.updateChannel(channel);
                     mTvGuide.refreshFavorite(channel.getId());
                     DataRefreshService dataRefreshService = KoinJavaComponent.<DataRefreshService>get(DataRefreshService.class);
                     dataRefreshService.setLastFavoriteUpdate(Instant.now());

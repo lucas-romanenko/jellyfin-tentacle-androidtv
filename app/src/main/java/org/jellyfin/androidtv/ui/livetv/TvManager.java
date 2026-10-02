@@ -116,11 +116,10 @@ public class TvManager {
         if (allChannels != null) {
             channelIds = new UUID[allChannels.size()];
             UUID last = getLastLiveTvChannel();
-            if (last == null) return ndx;
             int i = 0;
             for (BaseItemDto channel : allChannels) {
                 channelIds[i++] = channel.getId();
-                if (channel.getId().equals(last.toString())) ndx = i;
+                if (channel.getId().equals(last)) ndx = i;
             }
         }
 

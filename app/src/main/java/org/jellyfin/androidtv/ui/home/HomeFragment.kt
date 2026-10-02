@@ -28,6 +28,7 @@ import org.jellyfin.androidtv.preference.UserSettingPreferences
 import org.jellyfin.androidtv.preference.constant.NavbarPosition
 import org.jellyfin.androidtv.ui.InteractionTrackerViewModel
 import org.jellyfin.androidtv.ui.home.mediabar.MediaBarSlideshowViewModel
+import org.jellyfin.androidtv.ui.home.mediabar.HeroPause
 import org.jellyfin.androidtv.ui.home.mediabar.TrailerPreviewState
 import org.jellyfin.androidtv.ui.home.mediabar.ExoPlayerTrailerView
 import org.jellyfin.androidtv.ui.shared.toolbar.LeftSidebarNavigation
@@ -89,6 +90,7 @@ class HomeFragment : Fragment() {
 	private val heroBackdropDrawn = kotlinx.coroutines.flow.MutableStateFlow(false)
 
 	private val mediaBarViewModel by inject<MediaBarSlideshowViewModel>()
+	private val heroPause = HeroPause()
 	private val interactionTrackerViewModel by inject<InteractionTrackerViewModel>()
 	private val userSettingPreferences by inject<UserSettingPreferences>()
 	private val userPreferences by inject<UserPreferences>()
@@ -504,13 +506,24 @@ class HomeFragment : Fragment() {
 		mediaBarViewModel.stopTrailer()
 	}
 
+	override fun onStop() {
+		super.onStop()
+		// Home button, another app, the system screensaver: pause the hero's carousel and
+		// trailer lookups until the user is back (a8/04)
+		if (heroPause.onStop(mediaBarViewModel.isFocused.value, leavingByNavigation = isRemoving || isDetached)) {
+			mediaBarViewModel.setFocused(false)
+		}
+	}
+
 	override fun onResume() {
 		super.onResume()
-		mediaBarViewModel.restartTrailerForCurrentSlide()
+		if (heroPause.onResume()) mediaBarViewModel.setFocused(true)
+		else mediaBarViewModel.restartTrailerForCurrentSlide()
 	}
 
 	override fun onDestroyView() {
 		super.onDestroyView()
+		heroPause.onDestroyView()
 		titleView = null
 		logoView = null
 		summaryView = null

@@ -1,11 +1,16 @@
 package org.jellyfin.androidtv.data.repository
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -204,6 +209,24 @@ class TentacleRepository(
 	private val _pendingNotifications = MutableStateFlow<List<TentacleNotification>>(emptyList())
 	val pendingNotifications: StateFlow<List<TentacleNotification>> = _pendingNotifications.asStateFlow()
 	private val knownNotificationIds = mutableSetOf<Int>()
+
+	// The toasts, their dedupe set, the Activity badge and the cached plugin check belong to the
+	// signed-in user (#81). HomeRowsFragment's reset runs only while its rows are on screen, so a
+	// profile switch (a new Home) kept the previous profile's queued toasts. Unconfined: the reset
+	// runs inside setCurrentUser, before the next profile's Home collects pendingNotifications.
+	private var stateUserId: java.util.UUID? = userRepository.currentUser.value?.id
+
+	init {
+		userRepository.currentUser
+			.filterNotNull()
+			.onEach { user ->
+				if (user.id != stateUserId) {
+					stateUserId = user.id
+					resetAvailabilityCache()
+				}
+			}
+			.launchIn(CoroutineScope(SupervisorJob() + Dispatchers.Unconfined))
+	}
 
 	fun bumpActivityDownloadCount(count: Int) {
 		// Atomic read-modify-write — multiple callers (episode picker, pollers) may bump concurrently.
@@ -1092,6 +1115,7 @@ class TentacleRepository(
 	 * and updates the pendingNotifications flow for UI consumption.
 	 */
 	suspend fun pollNotifications(): NotificationsResponse? = withContext(Dispatchers.IO) {
+		val userId = userRepository.currentUser.value?.id
 		try {
 			val url = buildUrl("/TentacleDiscover/Notifications")
 			val request = Request.Builder().url(url).get().build()
@@ -1102,13 +1126,12 @@ class TentacleRepository(
 			}
 
 			if (result.notificationsEnabled) {
-				val newNotifs = synchronized(knownNotificationIds) {
+				synchronized(knownNotificationIds) {
+					// Asked for a profile that has since been switched away from: not this one's toasts.
+					if (userRepository.currentUser.value?.id != userId) return@synchronized
 					val fresh = result.notifications.filter { it.id !in knownNotificationIds }
 					knownNotificationIds.addAll(fresh.map { it.id })
-					fresh
-				}
-				if (newNotifs.isNotEmpty()) {
-					_pendingNotifications.update { it + newNotifs }
+					if (fresh.isNotEmpty()) _pendingNotifications.update { it + fresh }
 				}
 			}
 			result
@@ -1316,8 +1339,10 @@ class TentacleRepository(
 		availabilityChecked = false
 		isAvailable = false
 		_activityDownloadCount.value = 0
-		synchronized(knownNotificationIds) { knownNotificationIds.clear() }
-		_pendingNotifications.value = emptyList()
+		synchronized(knownNotificationIds) {
+			knownNotificationIds.clear()
+			_pendingNotifications.value = emptyList()
+		}
 	}
 
 	/** Radarr/Sonarr adds still running from this app (a8/05); see [AddGate]. */

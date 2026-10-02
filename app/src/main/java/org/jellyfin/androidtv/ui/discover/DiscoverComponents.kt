@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -275,6 +276,12 @@ internal fun DiscoverDetailDialog(
 	var isLoadingDetail by remember { mutableStateOf(true) }
 	var addStatus by remember { mutableStateOf<String?>(null) }
 	var isAdding by remember { mutableStateOf(false) }
+	// An add of this title that is still running, also one started before the dialog was reopened
+	val addsInFlight by tentacleRepository.addGate.inFlight.collectAsState()
+	val addKey = remember(item.mediaType, item.tmdbId, item.tvdbId) {
+		tentacleRepository.addKey(if (item.mediaType == "movie") "radarr" else "sonarr", item.tmdbId, item.tvdbId)
+	}
+	val adding = isAdding || (addKey != null && addKey in addsInFlight)
 	val scope = rememberCoroutineScope()
 	val buttonFocusRequester = remember { FocusRequester() }
 
@@ -706,7 +713,7 @@ internal fun DiscoverDetailDialog(
 										// Add to Radarr
 										Button(
 											onClick = {
-												if (!isAdding) {
+												if (!adding) {
 													isAdding = true
 													addStatus = null
 													scope.launch {
@@ -730,7 +737,7 @@ internal fun DiscoverDetailDialog(
 											modifier = Modifier.focusRequester(buttonFocusRequester),
 										) {
 											Text(
-												text = if (isAdding) "Adding..." else "Add to Radarr",
+												text = if (adding) "Adding..." else "Add to Radarr",
 												fontSize = 14.sp,
 											)
 										}
@@ -752,7 +759,7 @@ internal fun DiscoverDetailDialog(
 										// Add to Sonarr button
 										Button(
 											onClick = {
-												if (!isAdding) {
+												if (!adding) {
 													val option = MONITOR_OPTIONS[monitorOptionIndex]
 													if (option.key == "pick") {
 														// Open episode picker
@@ -788,7 +795,7 @@ internal fun DiscoverDetailDialog(
 											modifier = Modifier.focusRequester(buttonFocusRequester),
 										) {
 											Text(
-												text = if (isAdding) "Adding..." else "Add to Sonarr",
+												text = if (adding) "Adding..." else "Add to Sonarr",
 												fontSize = 14.sp,
 											)
 										}

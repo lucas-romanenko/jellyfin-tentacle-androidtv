@@ -2427,10 +2427,11 @@ class ItemDetailsFragment : Fragment() {
 			}
 		}
 
-		fun done(message: String) {
+		fun done(message: String, removed: Boolean) {
 			Toast.makeText(requireContext(), message, Toast.LENGTH_LONG).show()
 			onDismiss()
-			dataRefreshService.lastDeletedItemId = item.id
+			// Only a removed copy leaves the home rows; a fixed one stays (same item, right film)
+			if (removed) dataRefreshService.lastDeletedItemId = item.id
 			if (navigationRepository.canGoBack) navigationRepository.goBack()
 			else navigationRepository.navigate(Destinations.home)
 		}
@@ -2508,7 +2509,7 @@ class ItemDetailsFragment : Fragment() {
 												scope.launch {
 													val r = tentacleRepository.fixMatch(tmdbId, c.tmdbId)
 													busy = false
-													if (r.ok) done(r.message ?: "Fixed: ${c.title}") else status = r.detail ?: "Failed"
+													if (r.ok) done(r.message ?: "Fixed: ${c.title}", removed = org.jellyfin.androidtv.data.repository.fixMatchRemovedItem(r)) else status = r.detail ?: "Failed"
 												}
 											}
 											.padding(10.dp),
@@ -2569,7 +2570,7 @@ class ItemDetailsFragment : Fragment() {
 								scope.launch {
 									val r = tentacleRepository.reportWrongMovie(tmdbId)
 									busy = false
-									if (r.ok) done(r.message ?: "Removed the wrong copy") else status = r.detail ?: "Failed"
+									if (r.ok) done(r.message ?: "Removed the wrong copy", removed = true) else status = r.detail ?: "Failed"
 								}
 							},
 							enabled = !busy,

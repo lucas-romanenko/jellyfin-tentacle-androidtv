@@ -93,6 +93,12 @@ public class TvManager {
         }
     }
 
+    /** Replaces the stored copy of a channel, e.g. after its favourite changed. */
+    public static void updateChannel(BaseItemDto channel) {
+        int ndx = getAllChannelsIndex(channel.getId());
+        if (ndx >= 0) allChannels.set(ndx, channel);
+    }
+
     public static void loadAllChannels(Fragment fragment, Function<Integer, Void> outerResponse) {
         TvManagerHelperKt.loadLiveTvChannels(fragment, channels -> {
             if (channels != null) {

@@ -2269,10 +2269,14 @@ class ItemDetailsFragment : Fragment() {
 	}
 
 	private fun handlePlay(item: BaseItemDto, uiState: ItemDetailsUiState) {
+		// Series and season Play pick an episode and start it at its own resume point:
+		// starting a half-watched episode at 0:00 makes the server erase that point (#78).
+		val prerollSeconds = userPreferences[UserPreferences.resumeSubtractDuration].toIntOrNull() ?: 0
 		when (item.type) {
 			BaseItemKind.SERIES -> {
-				if (uiState.nextUp.isNotEmpty()) {
-					play(uiState.nextUp.first(), 0, false)
+				val nextUp = uiState.nextUp.firstOrNull()
+				if (nextUp != null) {
+					play(nextUp, resumeStartMs(nextUp, prerollSeconds), false)
 				} else {
 					playFirstEpisodeOfSeries(item)
 				}
@@ -2281,7 +2285,7 @@ class ItemDetailsFragment : Fragment() {
 				if (uiState.episodes.isNotEmpty()) {
 					val unwatched = uiState.episodes.firstOrNull { !(it.userData?.played ?: false) }
 					val episode = unwatched ?: uiState.episodes.first()
-					play(episode, 0, false)
+					play(episode, resumeStartMs(episode, prerollSeconds), false)
 				}
 			}
 			else -> {
@@ -2293,10 +2297,8 @@ class ItemDetailsFragment : Fragment() {
 
 	private fun handleResume(item: BaseItemDto) {
 		saveSelectedMediaSource(item)
-		val prerollMs = (userPreferences[UserPreferences.resumeSubtractDuration].toIntOrNull() ?: 0) * 1000
-		val posMs = ((item.userData?.playbackPositionTicks ?: 0L) / 10_000).toInt()
-		val position = maxOf(posMs - prerollMs, 0)
-		play(item, position, false)
+		val prerollSeconds = userPreferences[UserPreferences.resumeSubtractDuration].toIntOrNull() ?: 0
+		play(item, resumeStartMs(item, prerollSeconds), false)
 	}
 
 	private fun handleShuffle(item: BaseItemDto) {
@@ -2316,7 +2318,8 @@ class ItemDetailsFragment : Fragment() {
 				}
 				val firstEpisode = episodes.items.firstOrNull()
 				if (firstEpisode != null) {
-					play(firstEpisode, 0, false)
+					val prerollSeconds = userPreferences[UserPreferences.resumeSubtractDuration].toIntOrNull() ?: 0
+					play(firstEpisode, resumeStartMs(firstEpisode, prerollSeconds), false)
 				} else {
 					Timber.w("No episodes found for series ${series.id}")
 				}
@@ -2661,4 +2664,10 @@ class ItemDetailsFragment : Fragment() {
 			}
 		}
 	}
+}
+
+/** Where an item resumes: its saved position minus the preroll, never below 0. */
+internal fun resumeStartMs(item: BaseItemDto, prerollSeconds: Int): Int {
+	val positionMs = ((item.userData?.playbackPositionTicks ?: 0L) / 10_000).toInt()
+	return maxOf(positionMs - prerollSeconds * 1000, 0)
 }

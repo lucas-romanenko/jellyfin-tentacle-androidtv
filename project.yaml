@@ -8,3 +8,4 @@ merge: auto              # a reviewed pull request merges once its CI is green
 deploy: auto             # nothing deploys it on the server: the verifier checks CI on the merged commit
 release: me              # releases (APKs) are the maintainer's, always
 needs_lucas_labels: [needs-lucas, security]
+caps: [reviewer=60, tester=60]  # time caps in minutes: reviews and failing tests here wait on CI

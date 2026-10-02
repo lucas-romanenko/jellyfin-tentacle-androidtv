@@ -39,7 +39,9 @@ class SeriesPlayResumeTests : FunSpec({
 		val fragment = mockk<ItemDetailsFragment>(relaxed = true)
 		val prefs = mockk<UserPreferences>()
 		every { prefs[UserPreferences.resumeSubtractDuration] } returns "0"
-		every { fragment["getUserPreferences"]() } returns prefs
+		ItemDetailsFragment::class.java.getDeclaredField("userPreferences\$delegate")
+			.apply { isAccessible = true }
+			.set(fragment, lazyOf(prefs))
 		every { fragment["handlePlay"](any<BaseItemDto>(), any<ItemDetailsUiState>()) } answers { callOriginal() }
 		every { fragment["handleResume"](any<BaseItemDto>()) } answers { callOriginal() }
 		val played = slot<BaseItemDto>()

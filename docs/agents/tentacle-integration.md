@@ -4,7 +4,7 @@ Reference for the Tentacle parts of this app. The overview is in
 [CLAUDE.md](../../CLAUDE.md); the plugin's full API (every route, who may
 call it) is in jellyfin-tentacle's
 [docs/agents/plugin-api.md](https://github.com/lucas-romanenko/jellyfin-tentacle/blob/main/docs/agents/plugin-api.md).
-Checked against the code on 2026-09-28; the code wins where they differ.
+The code wins where they differ.
 
 ## TentacleRepository
 

@@ -22,6 +22,20 @@ class PrePlaybackTrackSelector(private val context: Context) {
 	}
 	
 	/**
+	 * The choices are kept for one title at a time: a choice for another title starts from
+	 * nothing, so an audio, subtitle or version choice made on one title's details is never
+	 * applied to the next title played.
+	 */
+	private fun SharedPreferences.Editor.forItem(itemId: String) {
+		if (prefs.getString(PREF_ITEM_ID, null) != itemId) {
+			remove(PREF_AUDIO_STREAM_INDEX)
+			remove(PREF_SUBTITLE_STREAM_INDEX)
+			remove(PREF_MEDIA_SOURCE_ID)
+		}
+		putString(PREF_ITEM_ID, itemId)
+	}
+
+	/**
 	 * Get available audio tracks for an item
 	 */
 	fun getAudioTracks(item: BaseItemDto): List<MediaStream> {
@@ -55,7 +69,7 @@ class PrePlaybackTrackSelector(private val context: Context) {
 	 */
 	fun setSelectedAudioTrack(itemId: String, streamIndex: Int?) {
 		prefs.edit().apply {
-			putString(PREF_ITEM_ID, itemId)
+			forItem(itemId)
 			if (streamIndex != null) {
 				putInt(PREF_AUDIO_STREAM_INDEX, streamIndex)
 			} else {
@@ -71,7 +85,7 @@ class PrePlaybackTrackSelector(private val context: Context) {
 	 */
 	fun setSelectedSubtitleTrack(itemId: String, streamIndex: Int?) {
 		prefs.edit().apply {
-			putString(PREF_ITEM_ID, itemId)
+			forItem(itemId)
 			if (streamIndex != null) {
 				putInt(PREF_SUBTITLE_STREAM_INDEX, streamIndex)
 			} else {
@@ -104,7 +118,7 @@ class PrePlaybackTrackSelector(private val context: Context) {
 	
 	fun setSelectedMediaSource(itemId: String, sourceId: String?) {
 		prefs.edit().apply {
-			putString(PREF_ITEM_ID, itemId)
+			forItem(itemId)
 			if (sourceId != null) {
 				putString(PREF_MEDIA_SOURCE_ID, sourceId)
 			} else {

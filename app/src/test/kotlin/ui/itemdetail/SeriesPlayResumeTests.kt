@@ -3,9 +3,7 @@ package org.jellyfin.androidtv.ui.itemdetail.v2
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.every
-import io.mockk.just
 import io.mockk.mockk
-import io.mockk.Runs
 import io.mockk.slot
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.sdk.model.api.BaseItemDto
@@ -46,7 +44,7 @@ class SeriesPlayResumeTests : FunSpec({
 		every { fragment["handleResume"](any<BaseItemDto>()) } answers { callOriginal() }
 		val played = slot<BaseItemDto>()
 		val position = slot<Int>()
-		every { fragment["play"](capture(played), capture(position), any<Boolean>()) } just Runs
+		every { fragment["play"](capture(played), capture(position), any<Boolean>()) } returns Unit
 
 		ItemDetailsFragment::class.java
 			.getDeclaredMethod("handlePlay", BaseItemDto::class.java, ItemDetailsUiState::class.java)

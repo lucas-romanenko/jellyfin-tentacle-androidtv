@@ -1,11 +1,14 @@
-# How agents may work on this repo: read by the maintainer's work tracker.
+# How agents may work on this repo: read by the maintainer's work tracker (rmnk and its runner).
 lane: server-public      # public repo; its APKs talk to the maintainer's Tentacle server
-# read-only: the unit tests run only in CI (App / Build: testDebugUnitTest), never on the workbench
+# read-only: the unit tests run only in CI (App / Build: testDebugUnitTest), never on the workbench; the runner waits for CI on the pull request
 verify: gh run list -R lucas-romanenko/jellyfin-tentacle-androidtv -w app-build.yaml -c <sha> --json conclusion -q '.[].conclusion' | grep -qx success
+engine: runner           # the runner takes its tasks (/agents?r=jellyfin-tentacle-androidtv)
+deploy: no               # nothing of it runs on the server: shipping is the merge (CI builds the debug APK)
+public: yes              # people get it only through a release (APKs): the maintainer's, always
+github_issues: no        # the maintainer's tasks only
 bugs: auto               # a confirmed bug gets a failing test (in CI), a fix and a review without asking
-features: ask            # each feature waits for the maintainer's Build it / Not now
+features: ask            # someone else's feature waits for the maintainer's Build it / Not now
 merge: auto              # a reviewed pull request merges once its CI is green
-deploy: auto             # nothing deploys it on the server: the verifier checks CI on the merged commit
 release: me              # releases (APKs) are the maintainer's, always
 needs_lucas_labels: [needs-lucas, security]
 caps: [reviewer=60, tester=60]  # time caps in minutes: reviews and failing tests here wait on CI

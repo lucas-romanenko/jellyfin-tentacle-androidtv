@@ -2273,19 +2273,12 @@ class ItemDetailsFragment : Fragment() {
 		// starting a half-watched episode at 0:00 makes the server erase that point (#78).
 		val prerollSeconds = userPreferences[UserPreferences.resumeSubtractDuration].toIntOrNull() ?: 0
 		when (item.type) {
-			BaseItemKind.SERIES -> {
-				val nextUp = uiState.nextUp.firstOrNull()
-				if (nextUp != null) {
-					play(nextUp, resumeStartMs(nextUp, prerollSeconds), false)
-				} else {
-					playFirstEpisodeOfSeries(item)
-				}
-			}
-			BaseItemKind.SEASON -> {
-				if (uiState.episodes.isNotEmpty()) {
-					val unwatched = uiState.episodes.firstOrNull { !(it.userData?.played ?: false) }
-					val episode = unwatched ?: uiState.episodes.first()
+			BaseItemKind.SERIES, BaseItemKind.SEASON -> {
+				val episode = playEpisode(item, uiState)
+				if (episode != null) {
 					play(episode, resumeStartMs(episode, prerollSeconds), false)
+				} else if (item.type == BaseItemKind.SERIES) {
+					playFirstEpisodeOfSeries(item)
 				}
 			}
 			else -> {
@@ -2664,6 +2657,16 @@ class ItemDetailsFragment : Fragment() {
 			}
 		}
 	}
+}
+
+/**
+ * The episode series or season Play starts: the series' Next Up episode, or the season's first
+ * unfinished episode (its first one when all are watched). Null when there is none loaded.
+ */
+internal fun playEpisode(item: BaseItemDto, uiState: ItemDetailsUiState): BaseItemDto? = when (item.type) {
+	BaseItemKind.SERIES -> uiState.nextUp.firstOrNull()
+	BaseItemKind.SEASON -> uiState.episodes.firstOrNull { !(it.userData?.played ?: false) } ?: uiState.episodes.firstOrNull()
+	else -> null
 }
 
 /** Where an item resumes: its saved position minus the preroll, never below 0. */

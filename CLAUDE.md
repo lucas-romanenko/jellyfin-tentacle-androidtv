@@ -37,7 +37,9 @@ gh run list -R lucas-romanenko/jellyfin-tentacle-androidtv --branch <branch> -L 
 ```
 
 - Unit tests (kotest, `app/src/test/kotlin`) cover pure helpers: put logic
-  worth testing in a pure function so CI can check it.
+  worth testing in a pure function so CI can check it. Don't drive a
+  fragment's private methods through a relaxed mockk with `callOriginal()`:
+  it flaked with a ClassCastException in CI.
 - Debug APKs are attached to pull requests only: to try a change on the TV,
   open a draft PR and use its run's `build-artifacts`. A coding task on the
   app ends with a TV test (the workbench's tv-test skill) when the TV is

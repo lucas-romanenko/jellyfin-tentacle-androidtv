@@ -11,13 +11,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.data.model.DataRefreshService
+import org.jellyfin.androidtv.data.repository.DeleteOutcome
 import org.jellyfin.androidtv.data.repository.ItemMutationRepository
 import org.jellyfin.androidtv.data.repository.ItemRepository
+import org.jellyfin.androidtv.data.repository.deleteOutcomeMessage
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.playback.PrePlaybackTrackSelector
 import org.jellyfin.androidtv.util.TimeUtils
 import org.jellyfin.androidtv.util.Utils
+import org.jellyfin.androidtv.util.appScope
 import org.jellyfin.androidtv.util.apiclient.getSeriesOverview
 import org.jellyfin.androidtv.util.popupMenu
 import org.jellyfin.androidtv.util.sdk.TrailerUtils.getExternalTrailerIntent
@@ -70,31 +73,32 @@ fun FullDetailsFragment.deleteItem(
 
 	val tmdbId = item.providerIds?.get("Tmdb")?.toIntOrNull()
 	val mediaType = if (item.type == org.jellyfin.sdk.model.api.BaseItemKind.MOVIE) "movie" else "series"
+	val appContext = requireContext().applicationContext
+	val title = item.name.orEmpty()
+	val tentacleRepository: org.jellyfin.androidtv.data.repository.TentacleRepository by inject()
 
-	// Navigate away immediately for snappy UX — delete runs in background
-	dataRefreshService.lastDeletedItemId = item.id
-	if (navigationRepository.canGoBack) navigationRepository.goBack()
-	else navigationRepository.navigate(Destinations.home)
-	Toast.makeText(context, getString(R.string.item_deleted, item.name), Toast.LENGTH_LONG).show()
-
-	// Fire-and-forget: Tentacle handles full cleanup (Radarr/Sonarr, Jellyfin, DB, playlists)
-	lifecycleScope.launch(Dispatchers.IO) {
-		if (tmdbId != null) {
-			val tentacleRepository: org.jellyfin.androidtv.data.repository.TentacleRepository by inject()
-			val deleted = tentacleRepository.deleteLibraryItem(mediaType, tmdbId, item.id.toString())
-			if (!deleted) {
-				Timber.w("Tentacle delete failed for $mediaType $tmdbId, falling back to Jellyfin direct")
-				try {
-					api.libraryApi.deleteItem(item.id)
-				} catch (e: ApiClientException) {
-					Timber.e(e, "Failed to delete item ${item.name} (id=${item.id})")
-				}
-			}
+	// Same as the details page: wait for the answer, never fall back to a Jellyfin delete of a
+	// title Tentacle refused, and don't lose the answer when the page is left (#69)
+	Toast.makeText(appContext, "Deleting $title\u2026", Toast.LENGTH_SHORT).show()
+	appScope.launch {
+		// Tentacle handles full cleanup (Radarr/Sonarr, Jellyfin, DB, playlists)
+		val outcome = if (tmdbId != null) {
+			tentacleRepository.deleteLibraryItem(mediaType, tmdbId, item.id.toString())
 		} else {
 			try {
-				api.libraryApi.deleteItem(item.id)
+				withContext(Dispatchers.IO) { api.libraryApi.deleteItem(item.id) }
+				DeleteOutcome.Deleted
 			} catch (e: ApiClientException) {
 				Timber.e(e, "Failed to delete item ${item.name} (id=${item.id})")
+				DeleteOutcome.Failed
+			}
+		}
+		Toast.makeText(appContext, deleteOutcomeMessage(title, outcome, appContext.getString(R.string.item_deleted, title)), Toast.LENGTH_LONG).show()
+		if (outcome == DeleteOutcome.Deleted) {
+			dataRefreshService.lastDeletedItemId = item.id
+			if (isResumed) {
+				if (navigationRepository.canGoBack) navigationRepository.goBack()
+				else navigationRepository.navigate(Destinations.home)
 			}
 		}
 	}

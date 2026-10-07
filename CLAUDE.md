@@ -136,6 +136,10 @@ seasonal effects.
   the user picked; the server ignores `quality_profile_id`.
 - The Android TV launcher caches banner images hard: a new banner needs
   uninstall, reboot, reinstall.
+- Never fall back to a raw Jellyfin delete after Tentacle refuses or fails
+  a delete of a title it knows (TMDB id): after a failed Radarr/Sonarr
+  delete Tentacle keeps its record, and a Jellyfin delete then removes the
+  file while Radarr still has the movie, so it is downloaded again (#69).
 
 ## Releases
 

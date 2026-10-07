@@ -4,7 +4,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldNotContain
 
-/** What a delete through Tentacle tells the user (a8/03). */
+/** What a delete through Tentacle tells the user (#69). */
 class LibraryDeleteTests : FunSpec({
 	test("deleted") {
 		deleteOutcome(200, """{"ok":true}""") shouldBe DeleteOutcome.Deleted

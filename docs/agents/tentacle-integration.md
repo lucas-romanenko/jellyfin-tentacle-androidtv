@@ -61,8 +61,16 @@ Checked against the code on 2026-09-28; the code wins where they differ.
   `seriesStatus` and `canDelete` into `DiscoverDetail`, so the detail screen
   shows Follow and Delete without more calls. Delete (downloads only; admin,
   or the user who requested it) calls
-  `DELETE /TentacleDiscover/LibraryItem/{type}/{id}?jellyfinItemId=` and
-  navigates back at once.
+  `DELETE /TentacleDiscover/LibraryItem/{type}/{id}?jellyfinItemId=` in the
+  app's scope (leaving the page doesn't cancel it) and waits for Tentacle's
+  answer (`deleteOutcome()` in `data/repository/LibraryDelete.kt`): a 2xx
+  shows "<title> deleted" and goes back (only if the page is still shown);
+  a 404 says the title is no longer in Tentacle's library; a 4xx or 502
+  with a JSON `detail` shows Tentacle's own reason; anything else (no
+  answer, other 5xx, no `detail`) says Tentacle can't be reached. The page
+  stays open on every answer but a 2xx. A title with a TMDB id never falls
+  back to a Jellyfin delete; only an item without one is deleted through
+  Jellyfin directly (#69).
 - **Download notifications**: `pollNotifications()` fills
   `pendingNotifications` (a StateFlow), which `HomeFragment` shows as toasts;
   `dismissNotification(id)`.

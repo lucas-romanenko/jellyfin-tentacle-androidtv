@@ -78,7 +78,7 @@ fun FullDetailsFragment.deleteItem(
 	val tentacleRepository: org.jellyfin.androidtv.data.repository.TentacleRepository by inject()
 
 	// Same as the details page: wait for the answer, never fall back to a Jellyfin delete of a
-	// title Tentacle refused, and don't lose the answer when the page is left (a8/03)
+	// title Tentacle refused, and don't lose the answer when the page is left (#69)
 	Toast.makeText(appContext, "Deleting $title\u2026", Toast.LENGTH_SHORT).show()
 	appScope.launch {
 		// Tentacle handles full cleanup (Radarr/Sonarr, Jellyfin, DB, playlists)

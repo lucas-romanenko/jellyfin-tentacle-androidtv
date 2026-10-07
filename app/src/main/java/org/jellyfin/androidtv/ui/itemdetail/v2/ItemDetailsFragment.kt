@@ -2634,7 +2634,7 @@ class ItemDetailsFragment : Fragment() {
 		val api = viewModel.effectiveApi
 
 		// Wait for the answer, as the web client does: going back at once showed "deleted" before
-		// anything was deleted, and an answer that came after the page was gone was lost (a8/03).
+		// anything was deleted, and an answer that came after the page was gone was lost (#69).
 		// The delete runs in the app's scope, so leaving the page doesn't cancel it.
 		Toast.makeText(appContext, "Deleting $title\u2026", Toast.LENGTH_SHORT).show()
 		deleteJob = appScope.launch {

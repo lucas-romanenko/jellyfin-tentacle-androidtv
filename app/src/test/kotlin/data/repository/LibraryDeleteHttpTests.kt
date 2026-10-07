@@ -15,7 +15,7 @@ import java.net.ServerSocket
 import java.util.UUID
 import kotlin.concurrent.thread
 
-/** deleteLibraryItem against a local server answering like the plugin (a8/03). */
+/** deleteLibraryItem against a local server answering like the plugin (#69). */
 class LibraryDeleteHttpTests : FunSpec({
 	fun serve(status: String, body: String): ServerSocket {
 		val sock = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))

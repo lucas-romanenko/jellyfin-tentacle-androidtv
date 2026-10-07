@@ -132,6 +132,15 @@ seasonal effects.
   the previous stop report before reopening, or Jellyfin leaves the tuner
   stream open. Retries reset only after playback ran again. Never close
   a live stream id with `LiveStreams/Close`: a recording may share it.
+- Item details Play (`ui/itemdetail/v2/ItemDetailsFragment.kt`, `handlePlay`):
+  on a series or season it picks an episode (Next Up, the season's first
+  unplayed one, else the first episode) and starts it at its own resume
+  point via `resumeStartMs`, the same math as Resume (#78). Play on a movie
+  or episode is Restart: 0:00. Starting a half-watched item at 0:00 makes
+  Jellyfin overwrite its resume point for every client, so never pass 0
+  where the user didn't ask to restart. `SeriesPlayResumeTests` drives the
+  private `handlePlay` on a mockk fragment by reflection: a pattern for
+  testing fragment logic that isn't a pure function yet.
 - Adds to Radarr/Sonarr send `quality_profile_override` only for a profile
   the user picked; the server ignores `quality_profile_id`.
 - The Android TV launcher caches banner images hard: a new banner needs

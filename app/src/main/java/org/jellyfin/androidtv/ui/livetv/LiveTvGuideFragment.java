@@ -258,11 +258,13 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     public void onResume() {
         super.onResume();
 
-        mFilters.load();
         doLoad();
     }
 
     protected void doLoad() {
+        // Read the filters every time: the Filters panel saves them and then calls doLoad(),
+        // and with the load in onResume only, a change applied after leaving the guide.
+        mFilters.load();
         if (TvManager.shouldForceReload() || mCurrentGuideStart.plusMinutes(30).isBefore(LocalDateTime.now()) || mChannels.getChildCount() == 0) {
             load();
 

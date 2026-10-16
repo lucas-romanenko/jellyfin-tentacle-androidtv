@@ -630,24 +630,8 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
             return false;
         }
 
-        boolean retrieve = false;
         DataRefreshService dataRefreshService = KoinJavaComponent.get(DataRefreshService.class);
-        for (ChangeTriggerType trigger : reRetrieveTriggers) {
-            switch (trigger) {
-                case LibraryUpdated:
-                    retrieve |= dataRefreshService.getLastLibraryChange() != null && lastFullRetrieve.isBefore(dataRefreshService.getLastLibraryChange());
-                    break;
-                case MoviePlayback:
-                    retrieve |= dataRefreshService.getLastMoviePlayback() != null && lastFullRetrieve.isBefore(dataRefreshService.getLastMoviePlayback());
-                    break;
-                case TvPlayback:
-                    retrieve |= dataRefreshService.getLastTvPlayback() != null && lastFullRetrieve.isBefore(dataRefreshService.getLastTvPlayback());
-                    break;
-                case FavoriteUpdate:
-                    retrieve |= dataRefreshService.getLastFavoriteUpdate() != null && lastFullRetrieve.isBefore(dataRefreshService.getLastFavoriteUpdate());
-                    break;
-            }
-        }
+        boolean retrieve = RowReRetrieve.isDue(reRetrieveTriggers, lastFullRetrieve, dataRefreshService);
 
         if (retrieve) {
             Timber.i("Re-retrieving row of type %s", queryType.toString());

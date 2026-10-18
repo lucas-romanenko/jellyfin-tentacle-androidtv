@@ -136,6 +136,11 @@ seasonal effects.
   the user picked; the server ignores `quality_profile_id`.
 - The Android TV launcher caches banner images hard: a new banner needs
   uninstall, reboot, reinstall.
+- NewPipe Extractor comes in as a non-transitive jar (`pipeExtractorJar`,
+  for the `Utils.class` shadow), so its runtime deps are listed by hand in
+  `gradle/libs.versions.toml` (`pipeextractor-*`). On every extractor bump,
+  compare them with its POM: a missing one only fails on the TV, as
+  NoClassDefFoundError in trailer resolution (#101).
 - Never fall back to a raw Jellyfin delete after Tentacle refuses or fails
   a delete of a title it knows (TMDB id): after a failed Radarr/Sonarr
   delete Tentacle keeps its record, and a Jellyfin delete then removes the

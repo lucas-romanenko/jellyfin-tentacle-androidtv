@@ -140,6 +140,15 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
         return null;
     }
 
+    /**
+     * The rows adapter this row lives in. A row built into a temporary adapter (the home's
+     * in-place rebuild) must point at the real one, or an empty answer removes it from the
+     * temporary adapter and leaves an empty row on screen.
+     */
+    public void setParent(MutableObjectAdapter<Row> parent) {
+        mParent = parent;
+    }
+
     public void setRow(ListRow row) {
         mRow = row;
     }

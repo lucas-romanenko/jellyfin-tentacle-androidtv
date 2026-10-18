@@ -919,7 +919,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 		val structureChanged = newKeys != currentTentacleSectionKeys
 
-		if (!structureChanged && tentacleRowAdapters.isNotEmpty()) {
+		// Also when the layout has no Tentacle playlist rows (only built-in ones, the default
+		// layout): rebuilding re-created every built-in row on each library change, and an
+		// empty Continue Watching / Next Up then stayed on screen as a header with no cards.
+		if (!structureChanged) {
 			// Structure unchanged — update playlist items in place.
 			val limits = newSections
 				.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }
@@ -1125,6 +1128,13 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				areItemsTheSame = { old, new -> old === new },
 				areContentsTheSame = { old, new -> old === new },
 			)
+
+			// The fresh rows were built into tempAdapter, so their loaders still point at it: an
+			// empty answer (nothing to continue watching, no next up) removed the row from
+			// tempAdapter and left its header on screen, taking D-pad focus with nothing in it.
+			for (row in newContentRows) {
+				((row as? ListRow)?.adapter as? ItemRowAdapter)?.setParent(rowsAdapter)
+			}
 
 			currentRows = newRows
 			resyncSelectedItem()

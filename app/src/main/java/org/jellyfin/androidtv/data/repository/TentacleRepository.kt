@@ -894,20 +894,20 @@ class TentacleRepository(
 	/**
 	 * Notify Tentacle that an item was deleted from Jellyfin, so it can remove the DB record.
 	 */
-	suspend fun deleteLibraryItem(mediaType: String, tmdbId: Int, jellyfinItemId: String? = null): Boolean = withContext(Dispatchers.IO) {
+	suspend fun deleteLibraryItem(mediaType: String, tmdbId: Int, jellyfinItemId: String? = null): DeleteOutcome = withContext(Dispatchers.IO) {
 		try {
 			var url = buildUrl("/TentacleDiscover/LibraryItem/$mediaType/$tmdbId")
 			if (jellyfinItemId != null) url += "&jellyfinItemId=$jellyfinItemId"
 			val request = Request.Builder().url(url).delete().build()
-			val response = httpClient.newCall(request).execute()
-			val success = response.isSuccessful
-			response.close()
-			if (success) Timber.i("Deleted $mediaType $tmdbId from Tentacle DB")
-			else Timber.w("Failed to delete from Tentacle: HTTP ${response.code}")
-			success
+			httpClient.newCall(request).execute().use { response ->
+				val outcome = deleteOutcome(response.code, response.body?.string())
+				if (outcome == DeleteOutcome.Deleted) Timber.i("Deleted $mediaType $tmdbId from Tentacle DB")
+				else Timber.w("Failed to delete from Tentacle: HTTP ${response.code}")
+				outcome
+			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to delete from Tentacle DB")
-			false
+			DeleteOutcome.Unreachable
 		}
 	}
 

@@ -289,8 +289,8 @@ private fun MediaInfoOverlay(
 			modifier = Modifier.fillMaxWidth(),
 			verticalArrangement = Arrangement.spacedBy(8.dp)
 		) {
-			// The logo above the box is the slide's only name. A title without a logo (the
-			// dashboard's "require logo" is off by default) showed year and runtime only.
+			// The logo above the box is the slide's only name. A slide without a logo (the
+			// dashboard's "Require logo" turned off) showed year and runtime only.
 			if (item.logoUrl == null) {
 				Text(
 					text = item.title,

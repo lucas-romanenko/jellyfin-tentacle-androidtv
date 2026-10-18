@@ -550,7 +550,7 @@ class TentacleRepository(
 
 			val result = json.decodeFromString<DiscoverSearchResponse>(body)
 			noteDiscover(result.error, result.message)
-			result.items
+			discoverSearchCards(result.items)
 		} catch (e: kotlinx.coroutines.CancellationException) {
 			// A newer keystroke cancelled this request — propagate cancellation
 			// instead of swallowing it and returning an empty list.
@@ -1425,6 +1425,14 @@ data class DiscoverSection(
 	val title: String = "",
 	val items: List<DiscoverItem> = emptyList(),
 )
+
+/**
+ * Search results the app can show as Discover cards. For type "all" the server puts up to 20
+ * Live TV channels first (`media_type` "channel", a channel id, no TMDB/TVDB id): as cards they
+ * were labelled "Series", had no poster and opened a detail page that could not load.
+ */
+internal fun discoverSearchCards(items: List<DiscoverItem>): List<DiscoverItem> =
+	items.filter { it.mediaType != "channel" }
 
 @Serializable
 data class DiscoverItem(

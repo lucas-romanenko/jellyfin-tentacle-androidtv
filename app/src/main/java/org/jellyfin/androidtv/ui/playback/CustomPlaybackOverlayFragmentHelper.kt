@@ -161,7 +161,11 @@ fun CustomPlaybackOverlayFragment.recordProgram(program: BaseItemDto, isSeries: 
 	lifecycleScope.launch {
 		runCatching {
 			withContext(Dispatchers.IO) {
-				val defaultTimer by api.liveTvApi.getDefaultTimer()
+				// Ask for the defaults of this programme (as the guide popup does). The
+				// programme-less defaults carry DateTime.MinValue start/end dates, which
+				// come back from the SDK as local time and are sent as "0000-12-31T…" on
+				// any device west of UTC — Jellyfin rejects that with 400.
+				val defaultTimer by api.liveTvApi.getDefaultTimer(program.id.toString())
 
 				if (isSeries) {
 					api.liveTvApi.createSeriesTimer(defaultTimer.copy(programId = program.id.toString()))

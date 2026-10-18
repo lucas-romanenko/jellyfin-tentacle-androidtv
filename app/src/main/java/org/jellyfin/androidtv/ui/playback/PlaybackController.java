@@ -1823,6 +1823,17 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             playerErrorEncountered();
             return;
         }
+        // The media source's runtime (the server's probe of this file or stream), not the
+        // item's: a .strm's metadata runtime can be longer than the stream itself.
+        MediaSourceInfo source = getCurrentMediaSource();
+        long runtime = source != null && source.getRunTimeTicks() != null ? source.getRunTimeTicks() / 10000 : -1;
+        long position = hasInitializedVideoManager() ? Math.max(mCurrentPosition, mVideoManager.getCurrentPosition()) : mCurrentPosition;
+        if (mPlaybackState != PlaybackState.IDLE && PlayerErrorPolicy.endedEarly(isLiveTv, position, runtime)) {
+            Timber.w("Stream ended at %d of %d ms - resuming there instead of moving on", position, runtime);
+            mCurrentPosition = position;
+            playerErrorEncountered();
+            return;
+        }
         itemComplete();
     }
 

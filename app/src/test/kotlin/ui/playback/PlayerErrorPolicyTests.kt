@@ -41,4 +41,22 @@ class PlayerErrorPolicyTests : FunSpec({
 		serverErrorDetail("""{"detail": ""}""".toByteArray()) shouldBe null
 		serverErrorDetail("""{"detail": {"loc": ["body"]}}""".toByteArray()) shouldBe null
 	}
+
+	test("a film or episode that ends minutes in ended early") {
+		endedEarly(false, 3_000, 2_593_000) shouldBe true
+		endedEarly(false, 1_200_000, 2_593_000) shouldBe true
+	}
+
+	test("the end credits, or a runtime a little off, are a normal end") {
+		endedEarly(false, 2_570_000, 2_593_000) shouldBe false
+		endedEarly(false, 2_593_000, 2_593_000) shouldBe false
+		endedEarly(false, 2_480_000, 2_593_000) shouldBe false
+		endedEarly(false, 300_000, 330_000) shouldBe false
+	}
+
+	test("live TV and an unknown runtime are never early") {
+		endedEarly(true, 3_000, 2_593_000) shouldBe false
+		endedEarly(false, 3_000, 0) shouldBe false
+		endedEarly(false, 3_000, -1) shouldBe false
+	}
 })

@@ -289,6 +289,19 @@ private fun MediaInfoOverlay(
 			modifier = Modifier.fillMaxWidth(),
 			verticalArrangement = Arrangement.spacedBy(8.dp)
 		) {
+			// The logo above the box is the slide's only name. A title without a logo (the
+			// dashboard's "require logo" is off by default) showed year and runtime only.
+			if (item.logoUrl == null) {
+				Text(
+					text = item.title,
+					fontSize = 28.sp,
+					fontWeight = FontWeight.Bold,
+					color = Color.White,
+					maxLines = 1,
+					overflow = TextOverflow.Ellipsis,
+				)
+			}
+
 			// Metadata + genres row
 			val context = LocalContext.current
 			val infoParts = buildList {

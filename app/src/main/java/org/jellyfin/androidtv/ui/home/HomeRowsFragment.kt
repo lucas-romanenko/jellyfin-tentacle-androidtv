@@ -792,16 +792,24 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			justLoaded = false
 			// Hero content loading is kicked off early in onCreate (as soon as hero
 			// config is confirmed enabled), so no need to call loadInitialContent here.
-		} else if (tentacleDirty) {
-			// A WebSocket event fired while we were paused — catch up now.
-			tentacleDirty = false
-			lifecycleScope.launch {
-				if (tentacleRepository.checkAvailable()) {
-					refreshTentacleRowsInPlace()
+		} else {
+			// Back from the player (or any other screen): Continue Watching, Next Up and the
+			// other built-in rows load again only if something they show changed since they
+			// last loaded (a playback stop, a favourite, a library change); the rest stay as
+			// they are, without a request. The server's UserDataChanged message for a playback
+			// arrives while the player is in front, when Home doesn't listen (RESUMED only),
+			// so without this the row kept the old items until a later library change.
+			refreshRows(force = false, delayed = true)
+			if (tentacleDirty) {
+				// A WebSocket event fired while we were paused — catch up now.
+				tentacleDirty = false
+				lifecycleScope.launch {
+					if (tentacleRepository.checkAvailable()) {
+						refreshTentacleRowsInPlace()
+					}
 				}
 			}
 		}
-		// If !justLoaded && !tentacleDirty: nothing changed, skip the network round-trip.
 
 		// Update audio queue — deferred to avoid calling commitNow() during an active fragment transaction.
 		// isResumed guard prevents "Can not perform this action after onSaveInstanceState" if the

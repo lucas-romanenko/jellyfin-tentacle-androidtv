@@ -264,6 +264,8 @@ dependencies {
 	runtimeOnly(files(stripPipeExtractorUtils))
 	implementation(libs.pipeextractor.nanojson)
 	implementation(libs.pipeextractor.jsoup)
+	implementation(libs.pipeextractor.protobuf) // YouTube audio-track xtags (multi-audio videos)
+	implementation(libs.pipeextractor.rhino) // JavaScript helper used for player-JS deobfuscation
 
 	// Logging
 	implementation(libs.timber)

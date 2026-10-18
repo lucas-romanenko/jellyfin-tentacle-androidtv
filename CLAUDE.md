@@ -136,6 +136,15 @@ seasonal effects.
   the user picked; the server ignores `quality_profile_id`.
 - The Android TV launcher caches banner images hard: a new banner needs
   uninstall, reboot, reinstall.
+- NewPipe Extractor comes in as a non-transitive jar (`pipeExtractorJar`,
+  for the `Utils.class` shadow), so its runtime deps are listed by hand in
+  `gradle/libs.versions.toml` (`pipeextractor-*`). On every extractor bump,
+  compare them with its POM: a missing one only fails on the TV, as
+  NoClassDefFoundError in trailer resolution (#101).
+- Never fall back to a raw Jellyfin delete after Tentacle refuses or fails
+  a delete of a title it knows (TMDB id): after a failed Radarr/Sonarr
+  delete Tentacle keeps its record, and a Jellyfin delete then removes the
+  file while Radarr still has the movie, so it is downloaded again (#69).
 
 ## Releases
 
@@ -144,7 +153,9 @@ Releases (APKs on other people's TVs) are the maintainer's (approval rules:
 session that changed something user-visible ends with draft release notes
 and "ready to release vX.Y.Z": format and the release steps in
 [docs/agents/releasing.md](docs/agents/releasing.md). GitHub issues and pull
-requests go through the workbench's github-triage skill: bugs are
-reproduced on the maintainer's TV (tv-test skill, CI's debug APK) before
-code changes; features wait for the `approved` label (labels `needs-info`,
-`needs-lucas`, `approved`).
+requests go through the workbench's github-triage skill (Dev's GitHub
+pickup, one chat per item): bugs are reproduced on the maintainer's TV
+(tv-test skill, CI's debug APK) before code changes; a contributed pull
+request is read and judged on its CI, never built or run here; features
+wait for Lucas's "Build it" in the item's chat or his `approved` label
+(labels `needs-info`, `needs-lucas`, `approved`).

@@ -792,16 +792,24 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			justLoaded = false
 			// Hero content loading is kicked off early in onCreate (as soon as hero
 			// config is confirmed enabled), so no need to call loadInitialContent here.
-		} else if (tentacleDirty) {
-			// A WebSocket event fired while we were paused — catch up now.
-			tentacleDirty = false
-			lifecycleScope.launch {
-				if (tentacleRepository.checkAvailable()) {
-					refreshTentacleRowsInPlace()
+		} else {
+			// Back from the player (or any other screen): Continue Watching, Next Up and the
+			// other built-in rows load again only if something they show changed since they
+			// last loaded (a playback stop, a favourite, a library change); the rest stay as
+			// they are, without a request. The server's UserDataChanged message for a playback
+			// arrives while the player is in front, when Home doesn't listen (RESUMED only),
+			// so without this the row kept the old items until a later library change.
+			refreshRows(force = false, delayed = true)
+			if (tentacleDirty) {
+				// A WebSocket event fired while we were paused — catch up now.
+				tentacleDirty = false
+				lifecycleScope.launch {
+					if (tentacleRepository.checkAvailable()) {
+						refreshTentacleRowsInPlace()
+					}
 				}
 			}
 		}
-		// If !justLoaded && !tentacleDirty: nothing changed, skip the network round-trip.
 
 		// Update audio queue — deferred to avoid calling commitNow() during an active fragment transaction.
 		// isResumed guard prevents "Can not perform this action after onSaveInstanceState" if the
@@ -911,7 +919,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 		val structureChanged = newKeys != currentTentacleSectionKeys
 
-		if (!structureChanged && tentacleRowAdapters.isNotEmpty()) {
+		// Also when the layout has no Tentacle playlist rows (only built-in ones, the default
+		// layout): rebuilding re-created every built-in row on each library change, and an
+		// empty Continue Watching / Next Up then stayed on screen as a header with no cards.
+		if (!structureChanged) {
 			// Structure unchanged — update playlist items in place.
 			val limits = newSections
 				.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }
@@ -1117,6 +1128,13 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				areItemsTheSame = { old, new -> old === new },
 				areContentsTheSame = { old, new -> old === new },
 			)
+
+			// The fresh rows were built into tempAdapter, so their loaders still point at it: an
+			// empty answer (nothing to continue watching, no next up) removed the row from
+			// tempAdapter and left its header on screen, taking D-pad focus with nothing in it.
+			for (row in newContentRows) {
+				((row as? ListRow)?.adapter as? ItemRowAdapter)?.setParent(rowsAdapter)
+			}
 
 			currentRows = newRows
 			resyncSelectedItem()

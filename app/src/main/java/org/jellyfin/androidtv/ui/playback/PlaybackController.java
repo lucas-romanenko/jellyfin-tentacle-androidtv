@@ -1548,6 +1548,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         final BaseItemDto channel = getCurrentlyPlayingItem();
         if (channel.getType() == BaseItemKind.TV_CHANNEL) {
             PlaybackControllerHelperKt.getLiveTvChannel(this, channel.getId(), updatedChannel -> {
+                mItems = PlaybackControllerHelperKt.withRefreshedProgram(mItems, mCurrentIndex, updatedChannel);
                 BaseItemDto program = updatedChannel.getCurrentProgram();
                 if (program != null) {
                     mCurrentProgramEnd = program.getEndDate();

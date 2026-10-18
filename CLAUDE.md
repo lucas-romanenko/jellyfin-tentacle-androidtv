@@ -148,7 +148,9 @@ Releases (APKs on other people's TVs) are the maintainer's (approval rules:
 session that changed something user-visible ends with draft release notes
 and "ready to release vX.Y.Z": format and the release steps in
 [docs/agents/releasing.md](docs/agents/releasing.md). GitHub issues and pull
-requests go through the workbench's github-triage skill: bugs are
-reproduced on the maintainer's TV (tv-test skill, CI's debug APK) before
-code changes; features wait for the `approved` label (labels `needs-info`,
-`needs-lucas`, `approved`).
+requests go through the workbench's github-triage skill (Dev's GitHub
+pickup, one chat per item): bugs are reproduced on the maintainer's TV
+(tv-test skill, CI's debug APK) before code changes; a contributed pull
+request is read and judged on its CI, never built or run here; features
+wait for Lucas's "Build it" in the item's chat or his `approved` label
+(labels `needs-info`, `needs-lucas`, `approved`).

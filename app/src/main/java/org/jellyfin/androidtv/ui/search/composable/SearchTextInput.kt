@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -28,6 +29,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.input.ImeAction
@@ -53,6 +55,7 @@ fun SearchTextInput(
 	val keyboardController = LocalSoftwareKeyboardController.current
 	var isEditing by remember { mutableStateOf(false) }
 	var isFirstFocus by remember { mutableStateOf(true) }
+	val focusManager = LocalFocusManager.current
 
 	// Auto-open keyboard on first focus
 	LaunchedEffect(focused) {
@@ -87,6 +90,14 @@ fun SearchTextInput(
 						// Explicit hop into the results row — default Compose focus search
 						// does not reliably cross from the text field into the LazyRow below
 						onNavigateDown.invoke()
+						true
+					} else if (focused && event.type == KeyEventType.KeyDown && event.key == Key.DirectionUp) {
+						// Up has no meaning in a single-line field either, but the field swallowed
+						// it (editing or not), so the toolbar above could not be reached with the
+						// remote: only Back left the screen.
+						isEditing = false
+						keyboardController?.hide()
+						focusManager.moveFocus(FocusDirection.Up)
 						true
 					} else false
 				}

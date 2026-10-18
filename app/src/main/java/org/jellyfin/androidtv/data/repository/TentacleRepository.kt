@@ -550,7 +550,7 @@ class TentacleRepository(
 
 			val result = json.decodeFromString<DiscoverSearchResponse>(body)
 			noteDiscover(result.error, result.message)
-			result.items
+			discoverSearchCards(result.items)
 		} catch (e: kotlinx.coroutines.CancellationException) {
 			// A newer keystroke cancelled this request — propagate cancellation
 			// instead of swallowing it and returning an empty list.
@@ -894,20 +894,20 @@ class TentacleRepository(
 	/**
 	 * Notify Tentacle that an item was deleted from Jellyfin, so it can remove the DB record.
 	 */
-	suspend fun deleteLibraryItem(mediaType: String, tmdbId: Int, jellyfinItemId: String? = null): Boolean = withContext(Dispatchers.IO) {
+	suspend fun deleteLibraryItem(mediaType: String, tmdbId: Int, jellyfinItemId: String? = null): DeleteOutcome = withContext(Dispatchers.IO) {
 		try {
 			var url = buildUrl("/TentacleDiscover/LibraryItem/$mediaType/$tmdbId")
 			if (jellyfinItemId != null) url += "&jellyfinItemId=$jellyfinItemId"
 			val request = Request.Builder().url(url).delete().build()
-			val response = httpClient.newCall(request).execute()
-			val success = response.isSuccessful
-			response.close()
-			if (success) Timber.i("Deleted $mediaType $tmdbId from Tentacle DB")
-			else Timber.w("Failed to delete from Tentacle: HTTP ${response.code}")
-			success
+			httpClient.newCall(request).execute().use { response ->
+				val outcome = deleteOutcome(response.code, response.body?.string())
+				if (outcome == DeleteOutcome.Deleted) Timber.i("Deleted $mediaType $tmdbId from Tentacle DB")
+				else Timber.w("Failed to delete from Tentacle: HTTP ${response.code}")
+				outcome
+			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to delete from Tentacle DB")
-			false
+			DeleteOutcome.Unreachable
 		}
 	}
 
@@ -1425,6 +1425,14 @@ data class DiscoverSection(
 	val title: String = "",
 	val items: List<DiscoverItem> = emptyList(),
 )
+
+/**
+ * Search results the app can show as Discover cards. For type "all" the server puts up to 20
+ * Live TV channels first (`media_type` "channel", a channel id, no TMDB/TVDB id): as cards they
+ * were labelled "Series", had no poster and opened a detail page that could not load.
+ */
+internal fun discoverSearchCards(items: List<DiscoverItem>): List<DiscoverItem> =
+	items.filter { it.mediaType != "channel" }
 
 @Serializable
 data class DiscoverItem(

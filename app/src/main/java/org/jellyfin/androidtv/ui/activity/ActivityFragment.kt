@@ -534,10 +534,11 @@ private fun RecentlyDownloadedCard(
 		modifier = Modifier
 			.width(150.dp)
 			.onFocusChanged { isFocused = it.isFocused }
-			.focusable()
+			// clickable is its own focus target: a focusable() in front of it took the focus,
+			// so the remote's OK never reached the click.
 			.then(
 				if (jellyfinUuid != null) Modifier.clickable { onNavigate(jellyfinUuid) }
-				else Modifier
+				else Modifier.focusable()
 			),
 	) {
 		Box(

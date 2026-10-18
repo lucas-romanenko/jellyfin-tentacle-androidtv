@@ -140,6 +140,15 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
         return null;
     }
 
+    /**
+     * The rows adapter this row lives in. A row built into a temporary adapter (the home's
+     * in-place rebuild) must point at the real one, or an empty answer removes it from the
+     * temporary adapter and leaves an empty row on screen.
+     */
+    public void setParent(MutableObjectAdapter<Row> parent) {
+        mParent = parent;
+    }
+
     public void setRow(ListRow row) {
         mRow = row;
     }
@@ -630,24 +639,8 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
             return false;
         }
 
-        boolean retrieve = false;
         DataRefreshService dataRefreshService = KoinJavaComponent.get(DataRefreshService.class);
-        for (ChangeTriggerType trigger : reRetrieveTriggers) {
-            switch (trigger) {
-                case LibraryUpdated:
-                    retrieve |= dataRefreshService.getLastLibraryChange() != null && lastFullRetrieve.isBefore(dataRefreshService.getLastLibraryChange());
-                    break;
-                case MoviePlayback:
-                    retrieve |= dataRefreshService.getLastMoviePlayback() != null && lastFullRetrieve.isBefore(dataRefreshService.getLastMoviePlayback());
-                    break;
-                case TvPlayback:
-                    retrieve |= dataRefreshService.getLastTvPlayback() != null && lastFullRetrieve.isBefore(dataRefreshService.getLastTvPlayback());
-                    break;
-                case FavoriteUpdate:
-                    retrieve |= dataRefreshService.getLastFavoriteUpdate() != null && lastFullRetrieve.isBefore(dataRefreshService.getLastFavoriteUpdate());
-                    break;
-            }
-        }
+        boolean retrieve = RowReRetrieve.isDue(reRetrieveTriggers, lastFullRetrieve, dataRefreshService);
 
         if (retrieve) {
             Timber.i("Re-retrieving row of type %s", queryType.toString());

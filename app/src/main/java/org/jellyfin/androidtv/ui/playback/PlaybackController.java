@@ -131,6 +131,10 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     // Live TV: when the stream last advanced, or when it was handed to the player (#60).
     private long liveProgressAt = 0;
     private boolean liveHasPlayed = false;
+    // The item whose subtitle the user picked (details screen or player): only then is a
+    // subtitle the server must draw onto a remote source's picture used (H1).
+    @Nullable
+    private UUID subtitlePickedFor;
     private Runnable mLiveStallWatch;
 
     private Display.Mode[] mDisplayModes;
@@ -460,8 +464,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             long position = hasInitializedVideoManager() ? mVideoManager.getCurrentPosition() : -1;
             long bufferAhead = buffered >= 0 && position >= 0 ? buffered - position : 0;
             MediaSourceInfo stuckSource = getCurrentMediaSource();
-            boolean remote = stuckSource != null && (Boolean.TRUE.equals(stuckSource.isRemote())
-                    || stuckSource.getProtocol() == org.jellyfin.sdk.model.api.MediaProtocol.HTTP);
+            boolean remote = RemoteSubtitlePolicy.isRemoteSource(stuckSource);
             boolean blame = AudioCodecBlockPolicy.shouldBlockCodec(codec, isTranscoding(), remote, isLiveTv, bufferAhead);
             Timber.w("Stuck playback: audio %s, %s%s, %d ms buffered ahead - %s", codec,
                     isTranscoding() ? "transcode" : "direct", isLiveTv ? ", live" : (remote ? ", remote" : ""),
@@ -859,6 +862,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         } else if (forcedSubtitleIndex != null) {
             internalOptions.setSubtitleStreamIndex(forcedSubtitleIndex);
         }
+        if (preSelectedSubtitle != null || forcedSubtitleIndex != null) subtitlePickedFor = item.getId();
         
         String preSelectedMediaSource = trackSelector.getValue().getSelectedMediaSource(itemIdString);
         if (preSelectedMediaSource != null) {
@@ -923,6 +927,14 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                     Timber.i("Internal player would %s", internalResponse.getPlayMethod().equals(PlayMethod.TRANSCODE) ? "transcode" : "direct stream");
                     if (mVideoManager == null)
                         return;
+                    boolean userPicked = item.getId().equals(subtitlePickedFor);
+                    if (RemoteSubtitlePolicy.skipAutoBurnIn(userPicked, internalResponse.getMediaSource(), internalOptions.getSubtitleStreamIndex())) {
+                        // Ask again without it; the user can still pick it in the player (H1).
+                        Timber.i("Remote source: the default subtitle needs burn-in, starting without subtitles");
+                        internalOptions.setSubtitleStreamIndex(-1);
+                        playInternal(item, position, internalOptions);
+                        return;
+                    }
                     mCurrentOptions = internalOptions;
                     if (internalOptions.getSubtitleStreamIndex() == null) burningSubs = internalResponse.getSubtitleDeliveryMethod() == SubtitleDeliveryMethod.ENCODE;
                     startItem(item, position, internalResponse);

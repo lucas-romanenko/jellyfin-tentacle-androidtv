@@ -13,9 +13,11 @@ import org.jellyfin.androidtv.ui.playback.PlaybackController
 import org.jellyfin.androidtv.util.UUIDUtils
 import org.jellyfin.androidtv.util.sdk.ApiClientFactory
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.client.extensions.hlsSegmentApi
 import org.jellyfin.sdk.api.client.extensions.playStateApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
+import org.jellyfin.sdk.model.api.PlayMethod
 import org.jellyfin.sdk.model.api.PlaybackOrder
 import org.jellyfin.sdk.model.api.PlaybackProgressInfo
 import org.jellyfin.sdk.model.api.PlaybackStartInfo
@@ -125,6 +127,27 @@ class ReportingHelper(
 				if (done == null) Timber.w("Stop report not answered after $STOP_REPORT_WAIT_MS ms, continuing")
 			}
 			block.run()
+		}
+	}
+
+	/**
+	 * Stops the server's encode of [streamInfo] (`DELETE /Videos/ActiveEncodings`) once the stop
+	 * report before it is answered. [whenStopReported] then waits for this too, so a retry
+	 * starts only after the failed attempt's encode is gone (H1): a stream the server was still
+	 * preparing used to start next to the retry's own.
+	 */
+	fun stopEncoding(lifecycleOwner: LifecycleOwner, item: BaseItemDto, streamInfo: StreamInfo) {
+		val playSessionId = streamInfo.playSessionId ?: return
+		if (streamInfo.playMethod == PlayMethod.DIRECT_PLAY) return
+
+		val pending = lastStopReport
+		lastStopReport = lifecycleOwner.lifecycleScope.launch(Dispatchers.IO + NonCancellable) {
+			if (pending != null && pending.isActive) withTimeoutOrNull(STOP_REPORT_WAIT_MS) { pending.join() }
+			Timber.i("Stopping the server's encode of ${item.name}")
+			val itemApi = getApiClientForItem(item)
+			runCatching {
+				itemApi.hlsSegmentApi.stopEncodingProcess(itemApi.deviceInfo.id, playSessionId)
+			}.onFailure { error -> Timber.w(error, "Failed to stop the server's encode") }
 		}
 	}
 

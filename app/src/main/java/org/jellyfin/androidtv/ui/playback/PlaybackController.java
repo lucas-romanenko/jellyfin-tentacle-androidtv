@@ -135,6 +135,10 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     // subtitle the server must draw onto a remote source's picture used (H1).
     @Nullable
     private UUID subtitlePickedFor;
+    // The current stream advanced at least once; before that, a server stream may still be
+    // preparing, and is waited for in place up to SERVER_START_WAITS times per item (H1).
+    private boolean streamHasPlayed = false;
+    private int serverStartWaits = 0;
     private Runnable mLiveStallWatch;
 
     private Display.Mode[] mDisplayModes;
@@ -488,11 +492,24 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             // error" toast right before playback starts is just noise. The user
             // only needs to hear about it if all retries are exhausted below.
             Timber.i("Player error encountered - retrying (attempt %d)", playbackRetries);
+            StreamInfo failedStream = mCurrentStreamInfo;
+            BaseItemDto failedItem = getCurrentlyPlayingItem();
             stop();
             if (isLiveTv && mFragment != null) {
                 // Open the channel again only once the server has handled the stop of this
                 // attempt, or the new stream can be left open for good (#50).
                 final long position = mCurrentPosition;
+                startSpinner();
+                reportingHelper.getValue().whenStopReported(mFragment, () -> {
+                    if (mFragment != null && mPlaybackState == PlaybackState.IDLE) play(position);
+                });
+            } else if (mFragment != null && failedItem != null && failedStream != null
+                    && failedStream.getPlayMethod() != PlayMethod.DIRECT_PLAY) {
+                // Stop the failed attempt's encode on the server first, and ask for the next
+                // stream only once that is answered: a stream still being prepared otherwise
+                // started next to the retry's (H1).
+                final long position = mCurrentPosition;
+                reportingHelper.getValue().stopEncoding(mFragment, failedItem, failedStream);
                 startSpinner();
                 reportingHelper.getValue().whenStopReported(mFragment, () -> {
                     if (mFragment != null && mPlaybackState == PlaybackState.IDLE) play(position);
@@ -984,6 +1001,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
         mStartPosition = position;
         mCurrentStreamInfo = response;
+        streamHasPlayed = false;
         mCurrentOptions.setMediaSourceId(response.getMediaSource().getId());
 
         if (response.getMediaUrl() == null) {
@@ -1313,6 +1331,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         playbackRetries = 0;
         progressSinceError = false;
         liveReprepareTried = false;
+        serverStartWaits = 0;
     }
 
     /**
@@ -1798,6 +1817,25 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             return;
         }
 
+        // A server stream that timed out before its first frame may still be in preparation
+        // (subtitles cut out of a remote file took minutes): prepare the same stream again, which
+        // joins the server's pending encode instead of starting another one (H1).
+        boolean serverStream = mCurrentStreamInfo != null && mCurrentStreamInfo.getPlayMethod() != PlayMethod.DIRECT_PLAY;
+        if (error != null && PlayerErrorPolicy.canWaitForServerStart(isLiveTv, serverStream, streamHasPlayed, serverStartWaits, error.errorCode)) {
+            boolean subtitles = burningSubs || RemoteSubtitlePolicy.subtitleDelivery(getCurrentMediaSource(),
+                    mCurrentOptions != null ? mCurrentOptions.getSubtitleStreamIndex() : null) == SubtitleDeliveryMethod.ENCODE;
+            StartWaitMessage message = PlayerErrorPolicy.startWaitMessage(serverStartWaits, subtitles);
+            serverStartWaits++;
+            Timber.i("Server stream not ready (%s) - preparing it again, wait %d of %d",
+                    error.getErrorCodeName(), serverStartWaits, PlayerErrorPolicy.SERVER_START_WAITS);
+            int text = message == StartWaitMessage.SUBTITLES ? R.string.msg_preparing_subtitles
+                    : message == StartWaitMessage.STREAM ? R.string.msg_preparing_stream
+                    : R.string.msg_still_preparing;
+            Utils.showToast(mFragment.getContext(), mFragment.getString(text));
+            mVideoManager.reprepare(false);
+            return;
+        }
+
         // A remote source the app plays itself (a Tentacle YouTube or VOD link) that the server
         // refused with a reason: say why and stop. Every rung of the retry ladder would ask the
         // same server again (#24, #44).
@@ -1855,6 +1893,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         refreshCurrentPosition();
         if (isPlaying()) {
             progressSinceError = true;
+            streamHasPlayed = true;
             if (isLiveTv) {
                 liveProgressAt = Instant.now().toEpochMilli();
                 liveHasPlayed = true;

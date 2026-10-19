@@ -2,10 +2,6 @@ package org.jellyfin.androidtv.ui.itemdetail.v2
 
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import io.mockk.every
-import io.mockk.mockk
-import io.mockk.slot
-import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.UserItemDataDto
@@ -34,26 +30,10 @@ class SeriesPlayResumeTests : FunSpec({
 		)
 	}
 
-	/** Runs the real handlePlay on a mocked fragment; returns what play() got. */
+	/** What Play on [item] starts, and where (ms), as handlePlay plays it. */
 	fun pressPlay(item: BaseItemDto, uiState: ItemDetailsUiState): Pair<BaseItemDto, Int> {
-		val fragment = mockk<ItemDetailsFragment>(relaxed = true)
-		val prefs = mockk<UserPreferences>()
-		every { prefs[UserPreferences.resumeSubtractDuration] } returns "0"
-		ItemDetailsFragment::class.java.getDeclaredField("userPreferences\$delegate")
-			.apply { isAccessible = true }
-			.set(fragment, lazyOf(prefs))
-		every { fragment["handlePlay"](any<BaseItemDto>(), any<ItemDetailsUiState>()) } answers { callOriginal() }
-		every { fragment["handleResume"](any<BaseItemDto>()) } answers { callOriginal() }
-		val played = slot<BaseItemDto>()
-		val position = slot<Int>()
-		every { fragment["play"](capture(played), capture(position), any<Boolean>()) } returns Unit
-
-		ItemDetailsFragment::class.java
-			.getDeclaredMethod("handlePlay", BaseItemDto::class.java, ItemDetailsUiState::class.java)
-			.apply { isAccessible = true }
-			.invoke(fragment, item, uiState)
-
-		return played.captured to position.captured
+		val episode = playEpisode(item, uiState)!!
+		return episode to resumeStartMs(episode, prerollSeconds = 0)
 	}
 
 	test("series Play resumes the in-progress Next Up episode") {
@@ -79,5 +59,18 @@ class SeriesPlayResumeTests : FunSpec({
 
 		item.id shouldBe inProgress.id
 		positionMs shouldBe 20 * 60_000
+	}
+
+	test("a watched season starts again at its first episode") {
+		val season = BaseItemDto(id = UUID.randomUUID(), type = BaseItemKind.SEASON)
+		val first = episode(played = true)
+
+		playEpisode(season, ItemDetailsUiState(item = season, episodes = listOf(first, episode(played = true))))?.id shouldBe first.id
+	}
+
+	test("a series without Next Up has no loaded episode (Play fetches the first one)") {
+		val series = BaseItemDto(id = UUID.randomUUID(), type = BaseItemKind.SERIES)
+
+		playEpisode(series, ItemDetailsUiState(item = series)) shouldBe null
 	}
 })

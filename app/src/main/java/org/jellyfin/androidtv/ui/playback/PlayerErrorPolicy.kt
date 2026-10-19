@@ -18,6 +18,16 @@ const val LIVE_STALL_MS = 20_000L
 const val LIVE_START_STALL_MS = 30_000L
 
 /**
+ * Whether a film or episode that the player says has ended stopped well before its end (a
+ * transcode or a provider stream that died). The player only sees end of stream, so this used
+ * to count as watched and start the next episode a few minutes in. Credits and a runtime that
+ * is a little off stay a normal end: the margin is a minute, or 5 % of the runtime if longer.
+ * Unknown runtime (0 or less) is never early.
+ */
+fun endedEarly(isLive: Boolean, positionMs: Long, runtimeMs: Long): Boolean =
+	!isLive && runtimeMs > 0 && positionMs >= 0 && positionMs < runtimeMs - maxOf(60_000L, runtimeMs / 20)
+
+/**
  * Whether a live TV error can be retried by preparing the same stream again, before asking the
  * server for a new one (#19). Asking again opens another consumer on the tuner, kills the
  * running transcode and can cost an upstream connection. Network errors, a 5xx on a segment and

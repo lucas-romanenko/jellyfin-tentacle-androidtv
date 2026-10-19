@@ -231,47 +231,33 @@ Your session is saved securely and will reconnect automatically.
 2. Transfer the APK to your device or download it directly
 3. Use a file manager app to install the APK
 
-## Building from Source
+## How to build
 
-### Prerequisites
-- Android Studio Arctic Fox or newer
-- JDK 11 or newer
-- Android SDK with API 23+ installed
+You need JDK 21 and the Android SDK (API 36). Point Gradle at the SDK with
+`ANDROID_HOME` or `sdk.dir` in `local.properties`; Android Studio does this for you.
 
-### Steps
-
-1. **Clone the repository:**
 ```bash
 git clone https://github.com/lucas-romanenko/jellyfin-tentacle-androidtv.git
-cd AndroidTV-FireTV
+cd jellyfin-tentacle-androidtv
+./gradlew assembleGithubDebug
 ```
 
-2. **Build debug version:**
-```bash
-./gradlew assembleDebug
-```
+The APK ends up in `app/build/outputs/apk/github/debug/`, named
+`tentacle-androidtv-v<version>-github-debug.apk` (the version is
+`tentacle.version` in `gradle.properties`). It installs as "Tentacle Debug",
+next to the release app. To install it on a device connected over ADB:
+`./gradlew installGithubDebug`.
 
-3. **Install to connected device:**
-```bash
-./gradlew installDebug
-```
+| Command | APK |
+|---|---|
+| `./gradlew assembleGithubDebug` | `app/build/outputs/apk/github/debug/tentacle-androidtv-v<version>-github-debug.apk` |
+| `./gradlew assembleGithubRelease` | `app/build/outputs/apk/github/release/tentacle-androidtv-v<version>-github-release.apk` |
+| `./gradlew assembleDebug` | both flavors (`github` and `playstore`), each in `app/build/outputs/apk/<flavor>/debug/` |
 
-4. **Build release version:**
-
-First, create a `keystore.properties` file in the root directory (use `keystore.properties.template` as a guide):
-```properties
-storeFile=/path/to/your/keystore.jks
-storePassword=your_store_password
-keyAlias=your_key_alias
-keyPassword=your_key_password
-```
-
-Then build:
-```bash
-./gradlew assembleRelease
-```
-
-The APK will be in `app/build/outputs/apk/release/`
+The `github` flavor updates itself from GitHub releases; `playstore` doesn't.
+A release build is signed with the key in `keystore.properties` (copy
+`keystore.properties.template` and fill it in); without that file it falls
+back to the debug key, which is fine for sideloading.
 
 ## Development
 

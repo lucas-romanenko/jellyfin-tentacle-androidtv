@@ -44,6 +44,17 @@ fun PlaybackController.getLiveTvChannel(
 	}
 }
 
+/**
+ * The playlist with the playing channel's current programme taken from [fresh], the channel as the
+ * server has it now: a timer just created or cancelled shows on the Record button and decides
+ * what its next press does (#123). Anything else playing is left as it is.
+ */
+fun withRefreshedProgram(items: List<BaseItemDto>, index: Int, fresh: BaseItemDto): List<BaseItemDto> {
+	val playing = items.getOrNull(index)
+	if (playing == null || playing.id != fresh.id) return items
+	return items.toMutableList().also { it[index] = playing.copy(currentProgram = fresh.currentProgram) }
+}
+
 @OptIn(UnstableApi::class)
 fun PlaybackController.disableDefaultSubtitles() {
 	Timber.i("Disabling non-baked subtitles")

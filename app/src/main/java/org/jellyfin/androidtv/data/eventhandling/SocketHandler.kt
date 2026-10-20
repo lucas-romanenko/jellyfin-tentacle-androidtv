@@ -6,9 +6,12 @@ import android.widget.Toast
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.coroutineScope
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -55,6 +58,7 @@ import org.tentacle.server.emby.socket.EmbyWebSocketClient
 import timber.log.Timber
 import java.time.Instant
 import java.util.UUID
+import kotlin.time.Duration.Companion.seconds
 
 class SocketHandler(
 	private val context: Context,
@@ -158,9 +162,22 @@ class SocketHandler(
 			}
 			.launchIn(coroutineScope)
 
-		subscribe<LibraryChangedMessage>()
-			.onEach { message -> message.data?.let(::onLibraryChanged) }
-			.launchIn(coroutineScope)
+		// Home's live settings depend on this one, so it resubscribes if the flow ever ends: the
+		// app stays in front for days, and Home's own listeners (which this replaces) saw it end
+		// silently after a Jellyfin restart.
+		coroutineScope.launch {
+			while (isActive) {
+				try {
+					subscribe<LibraryChangedMessage>().collect { message -> message.data?.let(::onLibraryChanged) }
+				} catch (e: CancellationException) {
+					throw e
+				} catch (e: Exception) {
+					Timber.w(e, "WS: LibraryChanged subscription error")
+				}
+				Timber.w("WS: LibraryChanged subscription ended — resubscribing in 5s")
+				delay(5.seconds)
+			}
+		}
 
 		subscribe<PlayMessage>()
 			.onEach { message -> onPlayMessage(message) }

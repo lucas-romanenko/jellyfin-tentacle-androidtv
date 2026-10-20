@@ -278,12 +278,17 @@ class ExoPlayerBackend(
 	}
 
 	override fun pause() {
+		// Nothing to pause before the first playback: don't build a player for it.
+		if (!lazyExoPlayer.isInitialized()) return
 		exoPlayer.pause()
 	}
 
 	override fun stop() {
-		exoPlayer.stop()
 		currentStream = null
+		// At app start the playback manager stops an empty queue: building an ExoPlayer just to
+		// stop it cost the main thread about a second while Home loaded. Nothing to stop yet.
+		if (!lazyExoPlayer.isInitialized()) return
+		exoPlayer.stop()
 	}
 
 	override fun seekTo(position: Duration) {

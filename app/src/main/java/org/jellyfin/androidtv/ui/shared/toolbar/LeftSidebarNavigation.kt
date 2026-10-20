@@ -122,12 +122,15 @@ fun LeftSidebarNavigation(
 	// Fetch toolbar config from Tentacle plugin (same pattern as Navbar.kt).
 	// Start with the documented defaults so the sidebar is never empty while loading
 	// or if the fetch fails. A successful non-empty response replaces them.
-	var toolbarButtons by remember { mutableStateOf(DEFAULT_TOOLBAR_BUTTONS) }
+	val sessionToolbar = remember { tentacleRepository.lastToolbar }
+	var toolbarButtons by remember { mutableStateOf(sessionToolbar?.buttons?.takeIf { it.isNotEmpty() } ?: DEFAULT_TOOLBAR_BUTTONS) }
 	var toolbarRefreshKey by remember { mutableIntStateOf(0) }
 	// The home version of the buttons shown (0: unknown, an older plugin).
-	var shownToolbarVersion by remember { mutableLongStateOf(0L) }
+	var shownToolbarVersion by remember { mutableLongStateOf(sessionToolbar?.homeVersion ?: 0L) }
 	val homeVersionTracker = koinInject<HomeVersionTracker>()
 	LaunchedEffect(toolbarRefreshKey) {
+		// A new screen's sidebar with this session's toolbar still current: no request (M9).
+		if (toolbarRefreshKey == 0 && toolbarIsCurrent(sessionToolbar, homeVersionTracker.known.value)) return@LaunchedEffect
 		repeat(3) { attempt ->
 			val toolbar = tentacleRepository.fetchToolbar()
 			// An empty list means the user has no Tentacle home config yet (a new user, or one

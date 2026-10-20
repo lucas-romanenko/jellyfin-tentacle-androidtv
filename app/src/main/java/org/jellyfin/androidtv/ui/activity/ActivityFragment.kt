@@ -74,7 +74,7 @@ import org.jellyfin.androidtv.data.repository.ActivityResponse
 import org.jellyfin.androidtv.data.repository.ActivitySearching
 import org.jellyfin.androidtv.data.repository.ActivityUnreleased
 import org.jellyfin.androidtv.data.repository.TentacleRepository
-import org.jellyfin.androidtv.util.pollDelay
+import org.jellyfin.androidtv.data.repository.ActivityPoller
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
 import org.jellyfin.androidtv.ui.navigation.Destinations
@@ -120,11 +120,9 @@ private fun PosterImage(path: String?, contentDescription: String?) {
 	)
 }
 
-private const val ACTIVITY_POLL_INTERVAL_MS = 3_000L
-private const val ACTIVITY_POLL_MAX_INTERVAL_MS = 60_000L
-
 class ActivityFragment : Fragment() {
 	private val tentacleRepository by inject<TentacleRepository>()
+	private val activityPoller by inject<ActivityPoller>()
 	private val navigationRepository by inject<NavigationRepository>()
 
 	override fun onCreateView(
@@ -142,28 +140,24 @@ class ActivityFragment : Fragment() {
 			// The Searching card whose actions (search again / remove) are open.
 			var actionItem by remember { mutableStateOf<ActivitySearching?>(null) }
 
-			// Poll for activity updates every 3s while the screen is visible.
-			// repeatOnLifecycle stops polling when the fragment is not STARTED.
-			// While the server is unreachable the interval backs off (to at most a minute)
-			// instead of retrying every 3s through the whole outage.
+			// Activity updates every 3 s while the screen is visible, from the app's one activity
+			// poller (its navbar's badge uses the same polls, M9). repeatOnLifecycle stops them
+			// when the fragment is not STARTED. While the server is unreachable the interval
+			// backs off (to at most a minute) instead of retrying every 3 s through the outage.
 			val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 			LaunchedEffect(lifecycleOwner) {
 				lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-					var failures = 0
-					while (true) {
-						val response = tentacleRepository.getActivity()
+					launch { activityPoller.watchClosely() }
+					activityPoller.activity.collect { response ->
 						unreachable = response == null
 						if (response != null && response.error.isNullOrBlank()) {
 							activity = response
-							failures = 0
 						} else {
 							// A failed poll (the plugin says why in `error`) keeps what is on
 							// screen; the reason only shows when there is nothing to keep.
 							if (response != null && activity == null) activity = response
-							failures++
 						}
 						isLoading = false
-						delay(pollDelay(ACTIVITY_POLL_INTERVAL_MS, failures, ACTIVITY_POLL_MAX_INTERVAL_MS))
 					}
 				}
 			}

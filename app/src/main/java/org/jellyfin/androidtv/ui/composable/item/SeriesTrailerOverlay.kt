@@ -12,7 +12,6 @@ import androidx.compose.ui.draw.clip
 import androidx.media3.datasource.HttpDataSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
@@ -27,7 +26,6 @@ import org.jellyfin.sdk.model.api.BaseItemKind
 import org.koin.compose.koinInject
 import timber.log.Timber
 
-private const val TRAILER_START_DELAY_MS = 500L
 @Composable
 fun SeriesTrailerOverlay(
 	item: BaseItemDto,
@@ -53,7 +51,8 @@ fun SeriesTrailerOverlay(
 			return@LaunchedEffect
 		}
 
-		delay(TRAILER_START_DELAY_MS)
+		// As for episode previews: only once focus and the D-pad have rested (H6).
+		awaitPreviewRest()
 
 		try {
 			val userId = userRepository.currentUser.value?.id ?: return@LaunchedEffect

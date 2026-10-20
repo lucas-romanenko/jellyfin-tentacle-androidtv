@@ -29,7 +29,7 @@ class HomeFragmentLatestRow(
 			.map { item ->
 				// Create query and add it to a new row
 				val request = GetLatestMediaRequest(
-					fields = ItemRepository.itemFields,
+					fields = ItemRepository.browseFields,
 					imageTypeLimit = 1,
 					parentId = item.id,
 					groupItems = true,
@@ -59,6 +59,6 @@ class HomeFragmentLatestRow(
 		private const val ITEM_CHUNK_SIZE = 15
 		// Maximum total items to fetch from the server
 		// (client-side pagination displays them in ITEM_CHUNK_SIZE chunks)
-		private const val ITEM_MAX_LIMIT = 50
+		private const val ITEM_MAX_LIMIT = 20
 	}
 }

@@ -224,7 +224,7 @@ class MultiServerRepositoryImpl(
 					withTimeoutOrNull(SERVER_TIMEOUT) {
 						val query = GetResumeItemsRequest(
 							limit = perServerLimit,
-							fields = ItemRepository.itemFields,
+							fields = ItemRepository.browseFields,
 							imageTypeLimit = 1,
 							enableTotalRecordCount = false,
 						)
@@ -280,7 +280,7 @@ class MultiServerRepositoryImpl(
 					withTimeoutOrNull(SERVER_TIMEOUT) {
 						val query = GetLatestMediaRequest(
 							parentId = parentId,
-							fields = ItemRepository.itemFields,
+							fields = ItemRepository.browseFields,
 							imageTypeLimit = 1,
 							limit = perServerLimit,
 							groupItems = true,
@@ -337,7 +337,7 @@ class MultiServerRepositoryImpl(
 						val query = GetNextUpRequest(
 							imageTypeLimit = 1,
 							limit = perServerLimit,
-							fields = ItemRepository.itemFields,
+							fields = ItemRepository.browseFields,
 						)
 
 						val response = session.apiClient.tvShowsApi.getNextUp(query)
@@ -386,7 +386,7 @@ class MultiServerRepositoryImpl(
 					withTimeoutOrNull(SERVER_TIMEOUT) {
 						val query = GetResumeItemsRequest(
 							limit = perServerLimit,
-							fields = ItemRepository.itemFields,
+							fields = ItemRepository.browseFields,
 							imageTypeLimit = 1,
 							enableTotalRecordCount = false,
 						)
@@ -413,7 +413,7 @@ class MultiServerRepositoryImpl(
 						val query = GetNextUpRequest(
 							imageTypeLimit = 1,
 							limit = perServerLimit,
-							fields = ItemRepository.itemFields,
+							fields = ItemRepository.browseFields,
 						)
 						session.apiClient.tvShowsApi.getNextUp(query).content.items.map { item ->
 							AggregatedItem(

@@ -105,3 +105,15 @@ class SerialRefresher<T : Any>(
 		wake.trySend(Unit)
 	}
 }
+
+/** How many content rows below the hero the loading screen waits for (H4). */
+internal const val FIRST_SCREEN_ROWS = 2
+
+/**
+ * The Tentacle rows the loading screen waits for at the first load: those among the first
+ * [FIRST_SCREEN_ROWS] content rows (the hero left out), by playlist id. [rowPlaylists] lists the
+ * content rows in order, a Tentacle row by its playlist id, any other row as null. The rows
+ * further down fill in after the loading screen has gone.
+ */
+internal fun firstScreenRows(rowPlaylists: List<String?>): Set<String> =
+	rowPlaylists.take(FIRST_SCREEN_ROWS).filterNotNull().toSet()

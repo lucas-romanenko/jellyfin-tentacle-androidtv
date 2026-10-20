@@ -1,6 +1,8 @@
 package org.jellyfin.androidtv.data.service
 
+import android.app.ActivityManager
 import android.content.Context
+import androidx.core.content.getSystemService
 import android.os.Build
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -12,6 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -74,11 +78,20 @@ class BackgroundService(
 	val enabled get() = _enabled.asStateFlow()
 	
 	/**
-	 * Returns true if blur should be applied via Compose modifier (Android 12+),
-	 * false if blur is pre-applied to bitmap (Android 11 and below).
+	 * Returns true if blur should be applied via Compose modifier (Android 12+, outside Home and
+	 * the other browsing screens), false if blur is pre-applied to the bitmap. While browsing the
+	 * background changes with every card, and a fullscreen GPU blur redrawn through each
+	 * crossfade costs weak TV chips frames: there the small bitmap is blurred once (H5).
 	 */
-	val useComposeBlur: Boolean
-		get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+	fun usesComposeBlur(blurContext: BlurContext): Boolean =
+		Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurContext != BlurContext.BROWSING
+
+	// Background art is drawn dimmed and blurred behind everything: 960 px wide is plenty, 480
+	// on a low-memory TV. Without a size Jellyfin sent the original, often 4K, for every card
+	// focused while browsing (H5).
+	private val backdropMaxWidth by lazy {
+		if (context.getSystemService<ActivityManager>()?.isLowRamDevice == true) 480 else 960
+	}
 
 	/**
 	 * Use all available backdrops from [baseItem] as background.
@@ -96,9 +109,11 @@ class BackgroundService(
 		// Get the appropriate API client for this item's server
 		val itemApi = apiClientFactory.getApiClientForItemOrFallback(baseItem, api)
 		
-		// Get all backdrop urls
+		// Get all backdrop urls; while browsing only the first (each focused card loaded all of
+		// them for a slideshow nobody waits 30 s for)
 		val backdropUrls = (baseItem.itemBackdropImages + baseItem.parentBackdropImages)
-			.map { it.getUrl(itemApi) }
+			.let { if (blurContext == BlurContext.BROWSING) it.take(1) else it }
+			.map { it.getUrl(itemApi, maxWidth = backdropMaxWidth) }
 			.toSet()
 
 		loadBackgrounds(backdropUrls)
@@ -161,7 +176,8 @@ class BackgroundService(
 				val item = response.items.firstOrNull()
 				if (item != null) {
 					val backdropUrls = (item.itemBackdropImages + item.parentBackdropImages)
-						.map { it.getUrl(api) }
+						.take(1)
+						.map { it.getUrl(api, maxWidth = backdropMaxWidth) }
 						.toSet()
 					if (backdropUrls.isNotEmpty()) {
 						loadBackgrounds(backdropUrls)
@@ -182,6 +198,7 @@ class BackgroundService(
 					val primaryUrl = api.imageApi.getItemImageUrl(
 						itemId = fallbackItem.id,
 						imageType = ImageType.PRIMARY,
+						maxWidth = backdropMaxWidth,
 					)
 					loadBackgrounds(setOf(primaryUrl))
 					return@launch
@@ -204,31 +221,51 @@ class BackgroundService(
 			BlurContext.NONE -> 0
 		}
 
-		// Legacy devices (API < 31) blur on the CPU. Decode at quarter size there — the
-		// heavy blur hides the resolution loss and it cuts decode + blur + GPU upload
-		// cost ~4x, which matters while these loads race D-pad scrolling.
-		val decodeSize = if (!useComposeBlur && blurAmount > 0) Size(480, 270) else Size(960, 540)
+		// Blurring on the CPU (legacy devices, and every device while browsing): decode at
+		// quarter size — the heavy blur hides the resolution loss and it cuts decode + blur +
+		// GPU upload cost ~4x, which matters while these loads race D-pad scrolling.
+		val cpuBlur = !usesComposeBlur(_blurContext.value) && blurAmount > 0
+		val decodeSize = if (cpuBlur) Size(480, 270) else Size(960, 540)
 
 		loadBackgroundsJob?.cancel()
 		loadBackgroundsJob = scope.launch(Dispatchers.IO) {
-			_backgrounds = backdropUrls.mapNotNull { url ->
+			// The first picture shows as soon as it is ready; the others (a details screen's
+			// slideshow) follow without holding it back.
+			val loaded = mutableListOf<ImageBitmap>()
+			for (url in backdropUrls) {
 				val bitmap = imageLoader.execute(
 					request = ImageRequest.Builder(context).data(url)
 						// Downscale for background use — full resolution is unnecessary
 						// and significantly slows blur processing on TV hardware
 						.size(decodeSize)
 						.build()
-				).image?.toBitmap()
-				
-				if (bitmap != null && !useComposeBlur && blurAmount > 0) {
-					BitmapBlur.blur(bitmap, blurAmount).asImageBitmap()
-				} else {
-					bitmap?.asImageBitmap()
+				).image?.toBitmap() ?: continue
+
+				loaded += if (cpuBlur) BitmapBlur.blur(bitmap, blurAmount).asImageBitmap() else bitmap.asImageBitmap()
+				// Published on the main thread, and never by a load a newer one replaced (the blur
+				// can't be cancelled midway).
+				ensureActive()
+				val published = loaded.toList()
+				withContext(Dispatchers.Main) {
+					_backgrounds = published
+					if (published.size == 1) {
+						_currentIndex = 0
+						update()
+					} else if (published.size == 2 && _currentBackground.value === published[0]) {
+						// A second backdrop arrived: start the slideshow. (While the first still
+						// waits for the transition guard, that update starts it.)
+						setTimer()
+					}
 				}
 			}
-
-			_currentIndex = 0
-			update()
+			if (loaded.isEmpty()) {
+				ensureActive()
+				withContext(Dispatchers.Main) {
+					_backgrounds = emptyList()
+					_currentIndex = 0
+					update()
+				}
+			}
 		}
 	}
 

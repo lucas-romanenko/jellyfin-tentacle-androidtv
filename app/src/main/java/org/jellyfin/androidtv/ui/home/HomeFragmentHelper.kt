@@ -47,7 +47,7 @@ class HomeFragmentHelper(
 	fun loadRecentlyReleased(): HomeFragmentRow {
 		// Query items sorted by premiere/release date (most recent first)
 		val query = GetItemsRequest(
-			fields = ItemRepository.itemFields,
+			fields = ItemRepository.browseFields,
 			includeItemTypes = setOf(BaseItemKind.MOVIE, BaseItemKind.SERIES),
 			sortBy = setOf(ItemSortBy.PREMIERE_DATE),
 			sortOrder = setOf(SortOrder.DESCENDING),
@@ -71,7 +71,7 @@ class HomeFragmentHelper(
 	fun loadResume(title: String, includeMediaTypes: Collection<MediaType>): HomeFragmentRow {
 		val query = GetResumeItemsRequest(
 			limit = HOME_ROW_MAX_ITEMS,
-			fields = ItemRepository.itemFields,
+			fields = ItemRepository.browseFields,
 			imageTypeLimit = 1,
 			enableTotalRecordCount = false,
 			mediaTypes = includeMediaTypes,
@@ -107,7 +107,7 @@ class HomeFragmentHelper(
 		// Use normal merged row for current server only
 		val resumeQuery = GetResumeItemsRequest(
 			limit = HOME_ROW_MAX_ITEMS,
-			fields = ItemRepository.itemFields,
+			fields = ItemRepository.browseFields,
 			imageTypeLimit = 1,
 			enableTotalRecordCount = false,
 			mediaTypes = listOf(MediaType.VIDEO),
@@ -118,7 +118,7 @@ class HomeFragmentHelper(
 			imageTypeLimit = 1,
 			limit = HOME_ROW_MAX_ITEMS,
 			enableResumable = false,
-			fields = ItemRepository.itemFields
+			fields = ItemRepository.browseFields
 		)
 
 		val browseRowDef = BrowseRowDef(
@@ -164,7 +164,7 @@ class HomeFragmentHelper(
 			imageTypeLimit = 1,
 			limit = HOME_ROW_MAX_ITEMS,
 			enableResumable = false,
-			fields = ItemRepository.itemFields
+			fields = ItemRepository.browseFields
 		)
 
 		val browseRowDef = BrowseRowDef(context.getString(R.string.lbl_next_up), query, HOME_ROW_CHUNK_SIZE, arrayOf(ChangeTriggerType.TvPlayback))

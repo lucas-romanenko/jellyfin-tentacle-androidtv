@@ -79,7 +79,7 @@ fun AppBackground(showThemeFallback: Boolean = true) {
 	val detailsBlurAmount by rememberPreference(userSettingPreferences, UserSettingPreferences.detailsBackgroundBlurAmount)
 	val browsingBlurAmount by rememberPreference(userSettingPreferences, UserSettingPreferences.browsingBackgroundBlurAmount)
 
-	val blurAmount = if (backgroundService.useComposeBlur) {
+	val blurAmount = if (backgroundService.usesComposeBlur(blurContext)) {
 		when (blurContext) {
 			BlurContext.DETAILS -> detailsBlurAmount
 			BlurContext.BROWSING -> browsingBlurAmount

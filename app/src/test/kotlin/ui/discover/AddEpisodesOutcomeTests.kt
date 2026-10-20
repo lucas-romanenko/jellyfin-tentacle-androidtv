@@ -23,6 +23,14 @@ class AddEpisodesOutcomeTests : FunSpec({
 		addEpisodesOutcome(AddResult(failed = 1), 3) shouldBe (false to "Failed to add to Sonarr")
 	}
 
+	test("a request waiting for approval is done and says so in the server's words") {
+		addEpisodesOutcome(
+			AddResult(pending = 1, detail = "Sent to Lucas to approve. You'll see it in Activity."), 3
+		) shouldBe (true to "Sent to Lucas to approve. You'll see it in Activity.")
+		addEpisodesOutcome(AddResult(pending = 1), 3) shouldBe (true to "Sent for approval")
+		addEpisodesOutcome(AddResult(pending = 1, detail = " "), 3) shouldBe (true to "Sent for approval")
+	}
+
 	test("a transport error says so") {
 		addEpisodesOutcome(AddResult(error = "timeout"), 3) shouldBe (false to "Error: timeout")
 	}

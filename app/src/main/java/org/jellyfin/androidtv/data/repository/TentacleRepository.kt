@@ -1349,6 +1349,54 @@ class TentacleRepository(
 		}
 	}
 
+	// Whether this user's adds wait for approval; asked once per session (reset with the user)
+	@Volatile
+	private var requestMode: RequestMode? = null
+
+	/**
+	 * Whether this user's Radarr/Sonarr adds wait for the admin's approval ("ask": the Discover
+	 * buttons read "Request"). An older plugin (404) or a failure is "direct", the old labels.
+	 */
+	suspend fun getRequestMode(): RequestMode {
+		requestMode?.let { return it }
+		return withContext(Dispatchers.IO) {
+			try {
+				val url = buildUrl("/TentacleDiscover/RequestMode")
+				probeClient.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
+					val mode = parseRequestMode(response.code, response.body?.string())
+					// A 5xx may pass: ask again next time. A 404 is an older plugin, for the session.
+					if (response.isSuccessful || response.code == 404) requestMode = mode
+					mode
+				}
+			} catch (e: Exception) {
+				Timber.w(e, "Request mode unavailable")
+				RequestMode.DIRECT
+			}
+		}
+	}
+
+	// FamilyStatus is a hint next to an error: never hold the screen for it
+	private val statusClient: OkHttpClient by lazy {
+		httpClient.newBuilder()
+			.connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+			.readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+			.callTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+			.build()
+	}
+
+	/** What is broken right now, in plain words per area (livetv, requests, library); null if unknown. */
+	suspend fun getFamilyStatus(): FamilyStatus? = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl("/TentacleDiscover/FamilyStatus")
+			statusClient.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
+				parseFamilyStatus(response.code, response.body?.string())
+			}
+		} catch (e: Exception) {
+			Timber.d(e, "Family status unavailable")
+			null
+		}
+	}
+
 	/**
 	 * Reset the availability cache (e.g. after server reconnect).
 	 * Also clears per-user notification state so a switched-in user doesn't
@@ -1357,6 +1405,7 @@ class TentacleRepository(
 	fun resetAvailabilityCache() {
 		availabilityChecked = false
 		isAvailable = false
+		requestMode = null
 		_activityDownloadCount.value = 0
 		lastToolbar = null
 		synchronized(knownNotificationIds) {
@@ -1622,6 +1671,8 @@ data class AddResult(
 	 *  across titles. Shown instead of a bare "Failed to add", which left the
 	 *  user with nothing to act on. */
 	val detail: String? = null,
+	/** Requests that wait for the admin's approval (a family member's add); `detail` says so. */
+	val pending: Int = 0,
 )
 
 @Serializable

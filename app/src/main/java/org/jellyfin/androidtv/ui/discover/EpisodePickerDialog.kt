@@ -49,6 +49,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jellyfin.androidtv.data.repository.AddResult
+import org.jellyfin.androidtv.data.repository.SENT_FOR_APPROVAL
 import org.jellyfin.androidtv.data.repository.SelectedEpisode
 import org.jellyfin.androidtv.data.repository.SonarrEpisode
 import org.jellyfin.androidtv.data.repository.SonarrEpisodesResponse
@@ -83,6 +84,8 @@ fun EpisodePickerContent(
 	tentacleRepository: TentacleRepository,
 	onDismiss: () -> Unit,
 	onComplete: (message: String) -> Unit,
+	/** The add was sent to the admin for approval (a family member's request). */
+	onRequested: () -> Unit = {},
 ) {
 	var isLoading by remember { mutableStateOf(true) }
 	var isSubmitting by remember { mutableStateOf(false) }
@@ -231,7 +234,9 @@ fun EpisodePickerContent(
 											tvdbId = tvdbId,
 										)
 										val outcome = addEpisodesOutcome(result, selectedCount)
-										if (outcome.first) tentacleRepository.bumpActivityDownloadCount(selectedCount)
+										// A request waiting for approval downloads nothing yet
+										if (outcome.first && result.pending > 0) onRequested()
+										else if (outcome.first) tentacleRepository.bumpActivityDownloadCount(selectedCount)
 										outcome
 									}
 									EpisodePickerMode.MANAGE -> {
@@ -636,10 +641,13 @@ private fun isEpisodeUnaired(airDate: String?, today: LocalDate): Boolean {
  * added=0 with failed or already_exists, so the counts decide, as the Discover add button's do.
  * A series already in Sonarr comes back already_exists WITHOUT the picked episodes applied
  * (the server's add returns early), so that is not done: Manage Episodes applies them (#21).
+ * A family member's request that waits for the admin's approval (pending) is done: the
+ * server's `detail` says who approves it.
  */
 internal fun addEpisodesOutcome(result: AddResult, selectedCount: Int): Pair<Boolean, String> = when {
 	result.error != null -> false to "Error: ${result.error}"
 	result.added > 0 -> true to "Added $selectedCount episodes to Sonarr"
 	result.alreadyExists > 0 -> false to "Already in Sonarr, so the picked episodes were not added. Use Manage Episodes."
+	result.pending > 0 -> true to (result.detail?.takeIf { it.isNotBlank() } ?: SENT_FOR_APPROVAL)
 	else -> false to (result.detail ?: "Failed to add to Sonarr")
 }

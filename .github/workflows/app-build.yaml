@@ -32,7 +32,7 @@ jobs:
       # start-up and scrolling are measured on it, and R8 problems show here first.
       - name: Assemble bench APK
         if: github.event_name == 'pull_request'
-        run: ./gradlew assembleGithubBench -Ptentacle.benchDebuggable=true
+        run: ./gradlew assembleGithubBench
       # The build is the check. Its APKs are attached only to pull requests
       # (for reviewing them): on a public repo a push's artifacts are a
       # download anyone can take, and APKs reach users only by a release.

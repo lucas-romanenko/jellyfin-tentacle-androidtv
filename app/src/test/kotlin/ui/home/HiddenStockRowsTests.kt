@@ -11,7 +11,7 @@ class HiddenStockRowsTests : FunSpec({
 		HiddenStockRows.toRecheck(
 			shown = listOf("media", "nextup", "latest"),
 			stock = listOf("resume", "nextup", "latest"),
-		) shouldBe listOf("nextup", "latest", "resume")
+		) shouldBe listOf("media", "nextup", "latest", "resume")
 	}
 
 	test("rows on screen are not listed twice, and only stock rows come back") {

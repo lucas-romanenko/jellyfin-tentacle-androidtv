@@ -32,6 +32,7 @@ import org.jellyfin.androidtv.databinding.ActivityStartupBinding
 import org.jellyfin.androidtv.ui.background.AppBackground
 import org.jellyfin.androidtv.ui.home.HomeTiming
 import org.jellyfin.androidtv.ui.home.mediabar.MediaBarSlideshowViewModel
+import org.jellyfin.androidtv.ui.background.UpdateCheckWorker
 import org.jellyfin.androidtv.ui.browsing.MainActivity
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.navigation.Destinations
@@ -41,6 +42,7 @@ import org.jellyfin.androidtv.ui.startup.fragment.SelectServerFragment
 import org.jellyfin.androidtv.ui.startup.fragment.ServerFragment
 import org.jellyfin.androidtv.ui.startup.fragment.SplashFragment
 import org.jellyfin.androidtv.ui.startup.fragment.StartupToolbarFragment
+import org.jellyfin.androidtv.ui.update.UpdatePrompt
 import org.jellyfin.androidtv.util.applyTheme
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.userLibraryApi
@@ -94,6 +96,9 @@ class StartupActivity : FragmentActivity() {
 		setContentView(binding.root)
 
 		if (!intent.getBooleanExtra(EXTRA_HIDE_SPLASH, false)) showSplash()
+
+		// The new-version notification: MainActivity opens the update dialog once it is up
+		noteUpdateRequest(intent)
 
 		// Ensure basic permissions
 		networkPermissionsRequester.launch(arrayOf(Manifest.permission.INTERNET, Manifest.permission.ACCESS_NETWORK_STATE))
@@ -218,5 +223,10 @@ class StartupActivity : FragmentActivity() {
 	override fun onNewIntent(intent: Intent) {
 		super.onNewIntent(intent)
 		setIntent(intent)
+		noteUpdateRequest(intent)
+	}
+
+	private fun noteUpdateRequest(intent: Intent?) {
+		if (intent?.getBooleanExtra(UpdateCheckWorker.EXTRA_OPEN_UPDATES, false) == true) UpdatePrompt.openRequested = true
 	}
 }

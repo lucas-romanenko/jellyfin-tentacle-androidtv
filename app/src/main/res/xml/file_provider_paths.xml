@@ -4,4 +4,8 @@
     <external-files-path
         name="downloads"
         path="downloads/" />
+    <!-- Fallback when there is no external files directory -->
+    <cache-path
+        name="updates"
+        path="updates/" />
 </paths>

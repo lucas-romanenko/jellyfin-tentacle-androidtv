@@ -6,9 +6,6 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jellyfin.androidtv.BuildConfig
@@ -18,7 +15,8 @@ import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 
 /**
- * Service for checking GitHub releases and downloading updates
+ * Checks GitHub releases for a newer version and downloads it (github flavor). The decisions
+ * are pure functions in UpdateLogic.kt; the dialogs are in UpdatePrompt.
  */
 class UpdateCheckerService(private val context: Context) {
 	private val httpClient = OkHttpClient.Builder()
@@ -26,98 +24,46 @@ class UpdateCheckerService(private val context: Context) {
 		.readTimeout(30, TimeUnit.SECONDS)
 		.build()
 
-	private val json = Json {
-		ignoreUnknownKeys = true
-		isLenient = true
-	}
-
 	companion object {
 		private const val GITHUB_OWNER = "lucas-romanenko"
 		private const val GITHUB_REPO = "jellyfin-tentacle-androidtv"
 		private const val GITHUB_API_URL = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
+		private const val APK_NAME = "update.apk"
 	}
 
-	@Serializable
-	data class GitHubRelease(
-		@SerialName("tag_name") val tagName: String,
-		@SerialName("name") val name: String,
-		@SerialName("body") val body: String?,
-		@SerialName("html_url") val htmlUrl: String,
-		@SerialName("assets") val assets: List<GitHubAsset>,
-		@SerialName("published_at") val publishedAt: String,
-	)
+	/** Whether this build updates itself; debug builds and the playstore flavor don't. */
+	val mode: SelfUpdateMode = selfUpdateMode(BuildConfig.ENABLE_OTA_UPDATES, BuildConfig.DEBUG, BuildConfig.APPLICATION_ID)
 
-	@Serializable
-	data class GitHubAsset(
-		@SerialName("name") val name: String,
-		@SerialName("browser_download_url") val downloadUrl: String,
-		@SerialName("size") val size: Long,
-	)
+	private var oldDownloadDeleted = false
 
-	data class UpdateInfo(
-		val version: String,
-		val releaseNotes: String,
-		val downloadUrl: String,
-		val releaseUrl: String,
-		val isNewer: Boolean,
-		val apkSize: Long,
-	)
+	/** Ask GitHub for the latest release: up to date, a newer version, or no answer. */
+	suspend fun checkForUpdate(): UpdateCheckResult = withContext(Dispatchers.IO) {
+		val request = Request.Builder()
+			.url(GITHUB_API_URL)
+			.addHeader("Accept", "application/vnd.github.v3+json")
+			.build()
 
-	/**
-	 * Check if an update is available via GitHub releases
-	 */
-	suspend fun checkForUpdate(): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
-		runCatching {
-			val request = Request.Builder()
-				.url(GITHUB_API_URL)
-				.addHeader("Accept", "application/vnd.github.v3+json")
-				.build()
-
+		val result = try {
 			httpClient.newCall(request).execute().use { response ->
-				if (!response.isSuccessful) {
-					Timber.e("Failed to check for updates: ${response.code}")
-					return@runCatching null
-				}
-
-				val body = response.body?.string() ?: return@runCatching null
-				val release = json.decodeFromString<GitHubRelease>(body)
-
-				// Find the APK asset
-				val apkAsset = release.assets.firstOrNull { asset ->
-					asset.name.endsWith(".apk", ignoreCase = true) &&
-						(asset.name.contains("debug", ignoreCase = true) ||
-							asset.name.contains("release", ignoreCase = true))
-				}
-
-				if (apkAsset == null) {
-					Timber.w("No APK found in release")
-					return@runCatching null
-				}
-
-				// Compare versions
-				val currentVersion = BuildConfig.VERSION_NAME
-				val latestVersion = release.tagName.removePrefix("v")
-				val isNewer = compareVersions(latestVersion, currentVersion) > 0
-
-				Timber.d("Current version: $currentVersion, Latest version: $latestVersion, Is newer: $isNewer")
-
-				UpdateInfo(
-					version = latestVersion,
-					releaseNotes = release.body ?: "No release notes available",
-					downloadUrl = apkAsset.downloadUrl,
-					releaseUrl = release.htmlUrl,
-					isNewer = isNewer,
-					apkSize = apkAsset.size,
-				)
+				parseUpdateResponse(response.code, response.body?.string(), BuildConfig.VERSION_NAME)
 			}
+		} catch (e: Exception) {
+			Timber.w(e, "Update check: no answer from GitHub")
+			parseUpdateResponse(null, null, BuildConfig.VERSION_NAME)
 		}
+		Timber.i("Update check (installed ${BuildConfig.VERSION_NAME}): $result")
+		result
 	}
 
+	/** Where the download goes: the app's external files, else its cache (both in file_provider_paths.xml). */
+	private fun downloadDirs(): List<File> = listOfNotNull(
+		context.getExternalFilesDir(null)?.let { File(it, "downloads") },
+		File(context.cacheDir, "updates"),
+	)
+
 	/**
-	 * Download the APK update
-	 * @param downloadUrl The URL to download from
-	 * @param onProgress Callback for download progress (0-100)
-	 * @return The file URI of the downloaded APK
+	 * Download the new version's APK, reporting progress 0-100 on the main thread.
+	 * @return a FileProvider URI for the installer
 	 */
 	suspend fun downloadUpdate(
 		downloadUrl: String,
@@ -136,32 +82,25 @@ class UpdateCheckerService(private val context: Context) {
 				val body = response.body ?: throw Exception("Empty response body")
 				val contentLength = body.contentLength()
 
-				// Create downloads directory
-				val downloadsDir = File(context.getExternalFilesDir(null), "downloads")
-				downloadsDir.mkdirs()
+				val downloadsDir = downloadDirs().first { dir -> dir.mkdirs() || dir.isDirectory }
+				val apkFile = File(downloadsDir, APK_NAME)
+				if (apkFile.exists()) apkFile.delete()
 
-				// Create APK file
-				val apkFile = File(downloadsDir, "update.apk")
-				if (apkFile.exists()) {
-					apkFile.delete()
-				}
-
-				// Download with progress
 				FileOutputStream(apkFile).use { output ->
-					val buffer = ByteArray(8192)
+					val buffer = ByteArray(64 * 1024)
 					var bytesRead: Int
 					var totalBytesRead = 0L
+					var lastPercent = -1
 
 					body.byteStream().use { input ->
 						while (input.read(buffer).also { bytesRead = it } != -1) {
 							output.write(buffer, 0, bytesRead)
 							totalBytesRead += bytesRead
 
-							if (contentLength > 0) {
-								val progress = (totalBytesRead * 100 / contentLength).toInt()
-								withContext(Dispatchers.Main) {
-									onProgress(progress)
-								}
+							val percent = downloadPercent(totalBytesRead, contentLength)
+							if (percent != null && percent != lastPercent) {
+								lastPercent = percent
+								withContext(Dispatchers.Main) { onProgress(percent) }
 							}
 						}
 					}
@@ -169,7 +108,6 @@ class UpdateCheckerService(private val context: Context) {
 
 				Timber.d("Update downloaded to: ${apkFile.absolutePath}")
 
-				// Return FileProvider URI
 				FileProvider.getUriForFile(
 					context,
 					"${context.packageName}.fileprovider",
@@ -179,9 +117,17 @@ class UpdateCheckerService(private val context: Context) {
 		}
 	}
 
-	/**
-	 * Install the downloaded APK
-	 */
+	/** Delete a download left from an earlier install attempt; once per process. */
+	fun deleteOldDownload() {
+		if (oldDownloadDeleted) return
+		oldDownloadDeleted = true
+		for (dir in downloadDirs()) {
+			runCatching { File(dir, APK_NAME).takeIf { it.exists() }?.delete() }
+				.onFailure { Timber.w(it, "Could not delete an old update download") }
+		}
+	}
+
+	/** Hand the downloaded APK to the system installer. */
 	fun installUpdate(apkUri: Uri) {
 		val intent = Intent(Intent.ACTION_VIEW).apply {
 			setDataAndType(apkUri, "application/vnd.android.package-archive")
@@ -189,22 +135,5 @@ class UpdateCheckerService(private val context: Context) {
 			addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
 		}
 		context.startActivity(intent)
-	}
-
-	/**
-	 * Compare two semantic version strings
-	 * Returns: negative if v1 < v2, zero if v1 == v2, positive if v1 > v2
-	 */
-	private fun compareVersions(v1: String, v2: String): Int {
-		val parts1 = v1.split(".").map { it.toIntOrNull() ?: 0 }
-		val parts2 = v2.split(".").map { it.toIntOrNull() ?: 0 }
-
-		val maxLength = maxOf(parts1.size, parts2.size)
-		for (i in 0 until maxLength) {
-			val p1 = parts1.getOrNull(i) ?: 0
-			val p2 = parts2.getOrNull(i) ?: 0
-			if (p1 != p2) return p1 - p2
-		}
-		return 0
 	}
 }

@@ -10,7 +10,12 @@ import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import org.jellyfin.androidtv.R
+import org.jellyfin.androidtv.data.service.SelfUpdateMode
+import org.jellyfin.androidtv.data.service.UpdateCheckResult
 import org.jellyfin.androidtv.data.service.UpdateCheckerService
+import org.jellyfin.androidtv.data.service.UpdateInfo
+import org.jellyfin.androidtv.data.service.isUpdateSnoozed
+import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.ui.startup.StartupActivity
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -25,31 +30,37 @@ class UpdateCheckWorker(
 ) : CoroutineWorker(context, params), KoinComponent {
 
 	private val updateChecker by inject<UpdateCheckerService>()
+	private val userPreferences by inject<UserPreferences>()
 
 	companion object {
 		const val NOTIFICATION_CHANNEL_ID = "app_updates"
 		const val NOTIFICATION_ID = 1001
 		const val WORK_NAME = "update_check_work"
+		const val EXTRA_OPEN_UPDATES = "open_updates"
 	}
 
 	override suspend fun doWork(): Result {
 		return try {
-			Timber.d("Checking for app updates...")
-			
-			val result = updateChecker.checkForUpdate()
-			result.fold(
-				onSuccess = { updateInfo ->
-					if (updateInfo != null && updateInfo.isNewer) {
-						Timber.i("Update available: ${updateInfo.version}")
-						showUpdateNotification(updateInfo)
-					} else {
-						Timber.d("No updates available")
+			// Debug builds and the playstore flavor never offer the release; the user can turn it off
+			if (updateChecker.mode != SelfUpdateMode.ENABLED) return Result.success()
+			if (!userPreferences[UserPreferences.updateNotificationsEnabled]) return Result.success()
+
+			when (val result = updateChecker.checkForUpdate()) {
+				is UpdateCheckResult.Available -> {
+					val snoozed = isUpdateSnoozed(
+						version = result.info.version,
+						snoozedVersion = userPreferences[UserPreferences.updateSnoozedVersion],
+						snoozedAtMs = userPreferences[UserPreferences.updateSnoozedAt],
+						nowMs = System.currentTimeMillis(),
+					)
+					if (!snoozed) {
+						Timber.i("Update available: ${result.info.version}")
+						showUpdateNotification(result.info)
 					}
-				},
-				onFailure = { error ->
-					Timber.e(error, "Failed to check for updates")
 				}
-			)
+				UpdateCheckResult.UpToDate -> Timber.d("No updates available")
+				is UpdateCheckResult.Failed -> Timber.w("Update check failed: ${result.reason}")
+			}
 
 			Result.success()
 		} catch (e: Exception) {
@@ -58,7 +69,7 @@ class UpdateCheckWorker(
 		}
 	}
 
-	private fun showUpdateNotification(updateInfo: UpdateCheckerService.UpdateInfo) {
+	private fun showUpdateNotification(updateInfo: UpdateInfo) {
 		val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
 		// Create notification channel for Android O+
@@ -73,10 +84,10 @@ class UpdateCheckWorker(
 			notificationManager.createNotificationChannel(channel)
 		}
 
-		// Create intent to open preferences
+		// Selecting it opens the app with the update dialog (StartupActivity -> UpdatePrompt)
 		val intent = Intent(applicationContext, StartupActivity::class.java).apply {
 			flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-			putExtra("open_updates", true)
+			putExtra(EXTRA_OPEN_UPDATES, true)
 		}
 
 		val pendingIntent = PendingIntent.getActivity(

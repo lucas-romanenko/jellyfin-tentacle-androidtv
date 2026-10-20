@@ -348,6 +348,9 @@
     <string name="seek_error">Unable to seek</string>
     <string name="player_error">Player error encountered. Will re-try…</string>
     <string name="too_many_errors">Too many errors. Giving up</string>
+    <string name="msg_preparing_subtitles">Preparing subtitles…</string>
+    <string name="msg_preparing_stream">Preparing the video…</string>
+    <string name="msg_still_preparing">Still preparing…</string>
     <string name="update_dialog_title">Update available — Tentacle %1$s</string>
     <string name="update_dialog_update_now">Update now</string>
     <string name="update_dialog_later">Later</string>

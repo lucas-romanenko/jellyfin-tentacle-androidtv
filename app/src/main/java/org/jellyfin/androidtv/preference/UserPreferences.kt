@@ -358,9 +358,13 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var pgsDirectPlay = booleanPreference("pgs_enabled", true)
 
 		/**
-		 * Enable ASS/SSA subtitle direct-play.
+		 * Enable ASS/SSA subtitle direct-play. On by default: off, the server can only draw these
+		 * subtitles onto the picture, and for a provider (.strm) title it first reads the whole
+		 * remote file to cut them out, minutes before the first frame. Only a value someone set
+		 * is stored, so installs that never touched it get this default and an explicit "off"
+		 * stays off.
 		 */
-		var assDirectPlay = booleanPreference("ass_enabled", false)
+		var assDirectPlay = booleanPreference("ass_enabled", true)
 	}
 
 	init {

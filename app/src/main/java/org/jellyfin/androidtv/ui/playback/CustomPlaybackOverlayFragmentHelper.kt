@@ -78,6 +78,8 @@ fun CustomPlaybackOverlayFragment.playChannel(id: UUID) {
 				playbackControllerContainer.playbackController?.play(0)
 			},
 			onFailure = {
+				// Back pressed while this request ran: the player is gone, nothing to tell.
+				it.rethrowIfCancelled()
 				Toast.makeText(
 					requireContext(),
 					getString(R.string.msg_video_playback_error),
@@ -110,6 +112,8 @@ fun CustomPlaybackOverlayFragment.cancelTimer(id: String) {
 				TvManager.forceReload()
 			},
 			onFailure = {
+				// Back pressed while this request ran: the player is gone, nothing to tell.
+				it.rethrowIfCancelled()
 				Toast.makeText(
 					requireContext(),
 					getString(R.string.msg_unable_to_cancel),
@@ -142,6 +146,8 @@ fun CustomPlaybackOverlayFragment.cancelSeriesTimer(id: String) {
 				TvManager.forceReload()
 			},
 			onFailure = {
+				// Back pressed while this request ran: the player is gone, nothing to tell.
+				it.rethrowIfCancelled()
 				Toast.makeText(
 					requireContext(),
 					getString(R.string.msg_unable_to_cancel),
@@ -184,6 +190,8 @@ fun CustomPlaybackOverlayFragment.recordProgram(program: BaseItemDto, isSeries: 
 				TvManager.forceReload()
 			},
 			onFailure = {
+				// Back pressed while this request ran: the player is gone, nothing to tell.
+				it.rethrowIfCancelled()
 				Toast.makeText(
 					requireContext(),
 					getString(R.string.msg_unable_to_create_recording),
@@ -245,6 +253,7 @@ fun CustomPlaybackOverlayFragment.loadCastForItem(
 					onComplete(seriesPeople)
 				},
 				onFailure = { error ->
+					error.rethrowIfCancelled()
 					Timber.e(error, "Failed to load series cast")
 					onComplete(emptyList())
 				}

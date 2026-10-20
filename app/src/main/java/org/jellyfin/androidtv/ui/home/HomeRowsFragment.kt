@@ -300,6 +300,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				// reveal is final with no post-launch restructure. The on-device cache
 				// below is only the fallback for an unreachable/slow server.
 				val freshAnswer = sectionsDeferred.await()
+				HomeTiming.mark("sections answered")
 				val freshSections = (freshAnswer as? SectionsAnswer.On)?.response
 				// Home off: the stock rows below, at this version (a switch back on is then seen).
 				if (freshAnswer is SectionsAnswer.Off) {

@@ -206,6 +206,7 @@ class HomeFragment : Fragment() {
 			.launchIn(viewLifecycleOwner.lifecycleScope)
 
 		rowsFragment = childFragmentManager.findFragmentById(R.id.rowsFragment) as? HomeRowsFragment
+		HomeTiming.mark("Home view created")
 
 		// The dashboard's hero trailer sound, from the hero's own settings request. Applied once
 		// per Home and again when the dashboard changes it, not on every return to Home (that
@@ -265,6 +266,7 @@ class HomeFragment : Fragment() {
 						// Rows are ready once their cards are in (HomeRowsFragment waits for the
 						// first rows' items), so no fixed hold here: the 0.6 s grace hold is gone
 						// (H4). dismissOverlay self-guards against repeat calls.
+						if (loadingOverlay?.isVisible == true) HomeTiming.mark("rows and hero ready")
 						dismissOverlay()
 					}
 				}
@@ -276,6 +278,7 @@ class HomeFragment : Fragment() {
 			// reveal of the half-loaded skeleton.
 			viewLifecycleOwner.lifecycleScope.launch {
 				delay(8000)
+				if (loadingOverlay?.isVisible == true) HomeTiming.mark("loading screen safety timeout")
 				dismissOverlay()
 			}
 		}

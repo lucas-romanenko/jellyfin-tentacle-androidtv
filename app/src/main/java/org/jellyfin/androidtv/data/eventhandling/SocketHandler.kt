@@ -6,9 +6,12 @@ import android.widget.Toast
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.coroutineScope
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
@@ -16,6 +19,9 @@ import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.auth.repository.ServerRepository
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.data.model.DataRefreshService
+import org.jellyfin.androidtv.data.repository.HomeChange
+import org.jellyfin.androidtv.data.repository.HomeVersionTracker
+import org.jellyfin.androidtv.data.repository.homePushFrom
 import org.jellyfin.androidtv.data.syncplay.SyncPlayManager
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.navigation.Destinations
@@ -28,6 +34,7 @@ import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.exception.ApiClientException
 import org.jellyfin.sdk.api.client.extensions.sessionApi
 import org.jellyfin.sdk.api.client.extensions.userLibraryApi
+import org.jellyfin.sdk.api.sockets.SocketApiState
 import org.jellyfin.sdk.api.sockets.subscribe
 import org.jellyfin.sdk.api.sockets.subscribeGeneralCommand
 import org.jellyfin.sdk.api.sockets.subscribeGeneralCommands
@@ -51,6 +58,7 @@ import org.tentacle.server.emby.socket.EmbyWebSocketClient
 import timber.log.Timber
 import java.time.Instant
 import java.util.UUID
+import kotlin.time.Duration.Companion.seconds
 
 class SocketHandler(
 	private val context: Context,
@@ -67,7 +75,14 @@ class SocketHandler(
 	private val embyWebSocketClient: EmbyWebSocketClient,
 	private val serverRepository: ServerRepository,
 	private val sessionRepository: SessionRepository,
+	private val homeVersionTracker: HomeVersionTracker,
 ) {
+	// The socket was connected once and then lost: its next Connected is a reconnect.
+	@Volatile
+	private var socketLost = false
+	@Volatile
+	private var socketConnectedOnce = false
+
 	private val activeServerType: ServerType
 		get() = serverRepository.currentServer.value?.serverType ?: ServerType.JELLYFIN
 
@@ -128,9 +143,41 @@ class SocketHandler(
 	}
 
 	private fun subscribeJellyfin(coroutineScope: CoroutineScope) = api.webSocket.apply {
-		subscribe<LibraryChangedMessage>()
-			.onEach { message -> message.data?.let(::onLibraryChanged) }
+		// A push sent while the socket was down is lost (H3): Home and the navbar check the
+		// home version again once it is back. The SDK reconnects by itself while subscribed.
+		state
+			.onEach { state ->
+				when (state) {
+					is SocketApiState.Connected -> {
+						if (socketLost) {
+							Timber.i("WebSocket reconnected")
+							homeVersionTracker.onReconnected()
+						}
+						socketLost = false
+						socketConnectedOnce = true
+					}
+
+					else -> if (socketConnectedOnce) socketLost = true
+				}
+			}
 			.launchIn(coroutineScope)
+
+		// Home's live settings depend on this one, so it resubscribes if the flow ever ends: the
+		// app stays in front for days, and Home's own listeners (which this replaces) saw it end
+		// silently after a Jellyfin restart.
+		coroutineScope.launch {
+			while (isActive) {
+				try {
+					subscribe<LibraryChangedMessage>().collect { message -> message.data?.let(::onLibraryChanged) }
+				} catch (e: CancellationException) {
+					throw e
+				} catch (e: Exception) {
+					Timber.w(e, "WS: LibraryChanged subscription error")
+				}
+				Timber.w("WS: LibraryChanged subscription ended — resubscribing in 5s")
+				delay(5.seconds)
+			}
+		}
 
 		subscribe<PlayMessage>()
 			.onEach { message -> onPlayMessage(message) }
@@ -340,6 +387,12 @@ class SocketHandler(
 
 		if (info.itemsAdded.any() || info.itemsRemoved.any())
 			dataRefreshService.lastLibraryChange = Instant.now()
+
+		// Always on while the app is in front (also in the player and on other screens), so a
+		// home save is remembered even when Home isn't there to hear it (H2).
+		val push = homePushFrom(info.collectionFolders, sessionRepository.currentSession.value?.userId)
+		if (push != null) Timber.i("Tentacle home version ${push.version} (${if (push.everyone) "everyone" else "this user"})")
+		homeVersionTracker.onLibraryChanged(HomeChange(push, itemsAdded = info.itemsAdded.any()))
 	}
 
 	private fun onPlayMessage(message: PlayMessage) {

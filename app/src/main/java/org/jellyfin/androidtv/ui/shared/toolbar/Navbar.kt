@@ -16,6 +16,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -42,16 +43,16 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.jellyfin.sdk.api.sockets.subscribe
-import org.jellyfin.sdk.model.api.LibraryChangedMessage
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.auth.repository.Session
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.data.model.AggregatedLibrary
+import org.jellyfin.androidtv.data.repository.HomeVersionTracker
 import org.jellyfin.androidtv.data.repository.MultiServerRepository
 import org.jellyfin.androidtv.data.repository.UserViewsRepository
 import org.jellyfin.androidtv.util.sdk.ApiClientFactory
@@ -133,15 +134,20 @@ fun Navbar(
 	// if the fetch fails. A successful non-empty response replaces them.
 	var toolbarButtons by remember { mutableStateOf(DEFAULT_TOOLBAR_BUTTONS) }
 	var toolbarRefreshKey by remember { mutableIntStateOf(0) }
+	// The home version of the buttons shown (0: unknown, an older plugin).
+	var shownToolbarVersion by remember { mutableLongStateOf(0L) }
+	val homeVersionTracker = koinInject<HomeVersionTracker>()
 	LaunchedEffect(toolbarRefreshKey) {
 		// Retry a few times on failure, then keep showing the defaults.
 		repeat(3) { attempt ->
-			val config = tentacleRepository.getToolbarConfig()
+			val toolbar = tentacleRepository.fetchToolbar()
 			// An empty list means the user has no Tentacle home config yet (a new user, or one
 			// Tentacle has not written a config for) — not "hide every button". Applying it
 			// removed Search and Libraries, so such a user could not search or browse at all.
-			if (config != null) {
-				if (config.isNotEmpty()) toolbarButtons = config
+			if (toolbar != null) {
+				if (toolbar.buttons.isNotEmpty()) toolbarButtons = toolbar.buttons
+				shownToolbarVersion = toolbar.homeVersion
+				homeVersionTracker.noteVersion(toolbar.homeVersion)
 				return@LaunchedEffect
 			}
 			if (attempt < 2) kotlinx.coroutines.delay(3_000)
@@ -171,22 +177,32 @@ fun Navbar(
 		}
 	}
 
-	// React immediately when Jellyfin library changes — refresh activity badge + toolbar config.
-	// Gated to the STARTED lifecycle so the WebSocket subscription is torn down when the
-	// navbar isn't visible and re-established on return.
-	LaunchedEffect(api, lifecycleOwner) {
-		lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-			try {
-				// Coalesce bursts: the backend fires LibraryChanged on every playlist
-				// mutation, so debounce to one activity/toolbar refresh after events settle.
-				api.webSocket.subscribe<LibraryChangedMessage>().debounce(1000).collect { message ->
-					if (message.data?.itemsAdded?.isNotEmpty() == true) {
+	// Toolbar changes made in Tentacle (androidtv audit H2, H3). SocketHandler hears every push,
+	// also while this screen isn't in front, and keeps the newest home version; the navbar
+	// asks again when it comes back into view (the toolbar answer carries the version), when
+	// it hears of a newer version, and when the WebSocket reconnects.
+	LaunchedEffect(lifecycleOwner) {
+		var firstResume = true
+		lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+			if (!firstResume) toolbarRefreshKey++
+			firstResume = false
+			launch {
+				homeVersionTracker.known.collect { version ->
+					if (version > 0 && version != shownToolbarVersion) toolbarRefreshKey++
+				}
+			}
+			launch { homeVersionTracker.reconnects.collect { toolbarRefreshKey++ } }
+			// A change without a version (an older plugin, a library scan): ask again, as before.
+			// Coalesce bursts: the backend fires LibraryChanged on every playlist mutation.
+			homeVersionTracker.changes
+				.filter { it.push == null }
+				.debounce(1000)
+				.collect { change ->
+					if (change.itemsAdded) {
 						try { tentacleRepository.getActivity() } catch (_: Exception) {}
 					}
-					// Re-fetch toolbar config in case it changed
 					toolbarRefreshKey++
 				}
-			} catch (_: Exception) {}
 		}
 	}
 

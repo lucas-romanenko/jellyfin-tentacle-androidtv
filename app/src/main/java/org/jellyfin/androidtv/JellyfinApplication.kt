@@ -3,6 +3,7 @@ package org.jellyfin.androidtv
 import android.app.Application
 import android.content.Context
 import androidx.lifecycle.ProcessLifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import androidx.work.BackoffPolicy
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
@@ -11,8 +12,8 @@ import androidx.work.await
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import org.acra.ACRA
 import org.jellyfin.androidtv.util.apiclient.ioCall
 import org.jellyfin.androidtv.auth.repository.ServerRepository
@@ -52,9 +53,15 @@ class JellyfinApplication : Application(), SingletonImageLoader.Factory {
 		return imageLoader
 	}
 	/**
-	 * Called from the StartupActivity when the user session is started.
+	 * Called from the StartupActivity when the user session is started. Starts its work in the
+	 * background and returns at once: Home doesn't wait for any of it (awaiting it held the
+	 * handover to Home for about a second on a TV).
 	 */
-	suspend fun onSessionStart() = withContext(Dispatchers.IO) {
+	fun onSessionStart() {
+		ProcessLifecycleOwner.get().lifecycleScope.launch(Dispatchers.IO) { startSessionWork() }
+	}
+
+	private suspend fun startSessionWork() = coroutineScope {
 		val workManager by inject<WorkManager>()
 		val socketListener by inject<SocketHandler>()
 		val serverRepository by inject<ServerRepository>()
@@ -64,10 +71,14 @@ class JellyfinApplication : Application(), SingletonImageLoader.Factory {
 		launch {
 			workManager.cancelAllWork().await()
 
+			// The launcher channels refresh a few minutes after start, not during it: re-enqueued
+			// without a delay, the worker ran at every app start and fetched Next Up and Continue
+			// Watching while Home was loading the same rows.
 			workManager.enqueueUniquePeriodicWork(
 				LeanbackChannelWorker.PERIODIC_UPDATE_REQUEST_NAME,
 				ExistingPeriodicWorkPolicy.UPDATE,
 				PeriodicWorkRequestBuilder<LeanbackChannelWorker>(1, TimeUnit.HOURS)
+					.setInitialDelay(3, TimeUnit.MINUTES)
 					.setBackoffCriteria(BackoffPolicy.LINEAR, 10, TimeUnit.MINUTES)
 					.build()
 			).await()

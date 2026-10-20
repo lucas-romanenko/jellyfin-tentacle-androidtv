@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.ui.home.mediabar
 
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -25,6 +26,7 @@ import org.jellyfin.androidtv.data.repository.ParentalControlsRepository
 import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.UserSettingPreferences
+import org.jellyfin.androidtv.ui.home.HomeTiming
 import org.jellyfin.sdk.api.client.ApiClient
 import android.content.Context
 import coil3.ImageLoader
@@ -50,6 +52,14 @@ import timber.log.Timber
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+
+/**
+ * Whether Home's first hero load ([MediaBarSlideshowViewModel.loadInitialContent]) joins the load
+ * the start-up screen began at [earlyAt] (elapsedRealtime, 0: none) instead of starting another:
+ * only a full load does, and only shortly after.
+ */
+internal fun joinsEarlyLoad(allowCache: Boolean, earlyAt: Long, now: Long): Boolean =
+	!allowCache && earlyAt != 0L && now - earlyAt in 0 until MediaBarSlideshowViewModel.EARLY_LOAD_JOIN_MS
 
 class MediaBarSlideshowViewModel(
 	private val api: ApiClient,
@@ -343,6 +353,7 @@ class MediaBarSlideshowViewModel(
 			if (!fromCache) {
 				_state.value = MediaBarState.Loading
 				heroItems = (freshFetch ?: fetchFresh()).await()
+				HomeTiming.mark("hero answered (${heroItems.size} items)")
 			}
 			if (heroItems.isNotEmpty()) {
 				Timber.d("MediaBar: Using ${heroItems.size} Tentacle hero items")
@@ -414,6 +425,7 @@ class MediaBarSlideshowViewModel(
 						throw e
 					} catch (_: Exception) { /* non-fatal */ }
 
+					HomeTiming.mark("hero first slide cached")
 					_firstSlideReady.value = true
 					_state.value = MediaBarState.Ready(items)
 
@@ -528,7 +540,34 @@ class MediaBarSlideshowViewModel(
 	 * background revalidation reloads only if the server content changed.
 	 */
 	fun loadInitialContent(allowCache: Boolean = false) {
+		val early = earlyLoadAt
+		earlyLoadAt = 0L
+		// Home's first load joins the one the start-up screen began moments ago (startEarly).
+		if (joinsEarlyLoad(allowCache, early, SystemClock.elapsedRealtime())) return
 		loadSlideshowItems(allowCache)
+	}
+
+	// When startEarly began the hero's first load (elapsedRealtime), 0 when none is waiting.
+	private var earlyLoadAt = 0L
+
+	/**
+	 * Starts the hero's first load from the start-up screen, before Home exists, when the last
+	 * session's hero settings (on disk) say the hero is on: its requests and first backdrop then
+	 * run while Home is being created, instead of after Home's sections answer (about a second
+	 * later on a TV). Home's [loadInitialContent] shortly after joins it. If the hero was switched
+	 * off meanwhile, the load ends with the hero disabled and Home leaves its row out as before.
+	 */
+	fun startEarly() {
+		if (loadingJob?.isActive == true || _state.value is MediaBarState.Ready) return
+		viewModelScope.launch {
+			if (!userSettingPreferences[UserSettingPreferences.mediaBarEnabled]) return@launch
+			val config = tentacleRepository.getCachedHeroConfig() ?: return@launch
+			if (!config.enabled || config.playlistId.isEmpty()) return@launch
+			if (loadingJob?.isActive == true || _state.value is MediaBarState.Ready) return@launch
+			HomeTiming.mark("hero: early load")
+			earlyLoadAt = SystemClock.elapsedRealtime()
+			loadSlideshowItems()
+		}
 	}
 
 	/**
@@ -1005,6 +1044,8 @@ class MediaBarSlideshowViewModel(
 	}
 
 	companion object {
+		/** How soon after [startEarly] Home's first load must come to join it instead of starting over (ms) */
+		const val EARLY_LOAD_JOIN_MS = 20_000L
 		/** How long to show the backdrop image before transitioning to trailer (ms) */
 		const val IMAGE_DISPLAY_DELAY_MS = 4000L
 		/** Max additional time to wait for the ExoPlayer video to be ready after the image delay (ms) */

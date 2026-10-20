@@ -382,7 +382,10 @@ class HomeFragment : Fragment() {
 					// The loading overlay dismisses on this signal: "hero state Ready +
 					// bitmap pre-warmed" still runs seconds ahead of the backdrop actually
 					// compositing on slow TV SoCs, which used to reveal a heroless skeleton.
-					listener(onSuccess = { _, _ -> heroBackdropDrawn.value = true })
+					listener(onSuccess = { _, _ ->
+						if (!heroBackdropDrawn.value) HomeTiming.mark("hero backdrop drawn")
+						heroBackdropDrawn.value = true
+					})
 				}
 			} else {
 				backgroundImage?.isVisible = false

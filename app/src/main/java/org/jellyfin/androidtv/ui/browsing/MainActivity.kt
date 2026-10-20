@@ -18,6 +18,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
@@ -48,6 +49,7 @@ import org.jellyfin.playback.core.PlaybackManager
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
 import timber.log.Timber
+import kotlin.time.Duration.Companion.seconds
 
 class MainActivity : FragmentActivity() {
 	companion object {
@@ -58,6 +60,8 @@ class MainActivity : FragmentActivity() {
 		// Update waiting for the "install unknown apps" grant — resumed in onResume once
 		// the user returns from the settings screen
 		private var pendingUpdateInfo: UpdateCheckerService.UpdateInfo? = null
+
+		private val UPDATE_CHECK_DELAY = 20.seconds
 	}
 
 	private val navigationRepository by inject<NavigationRepository>()
@@ -242,6 +246,8 @@ class MainActivity : FragmentActivity() {
 		if (updateDialogShown) return
 
 		lifecycleScope.launch(Dispatchers.IO) {
+			// After Home has loaded, not during it: the check asks GitHub and parses its releases.
+			delay(UPDATE_CHECK_DELAY)
 			try {
 				val result = updateCheckerService.checkForUpdate()
 				result.onSuccess { updateInfo ->

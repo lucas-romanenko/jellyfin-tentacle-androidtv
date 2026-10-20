@@ -311,7 +311,11 @@ class ExoPlayerBackend(
 		exoPlayer.setPlaybackSpeed(speed)
 	}
 
-	override fun getPositionInfo(): PositionInfo = PositionInfo(
+	override fun getPositionInfo(): PositionInfo = if (!lazyExoPlayer.isInitialized()) {
+		// Nothing played yet: reading a position must not build the player (~0.8 s of main
+		// thread at app start, from Home's audio listener).
+		PositionInfo.EMPTY
+	} else PositionInfo(
 		active = exoPlayer.currentPosition.milliseconds,
 		buffer = exoPlayer.bufferedPosition.milliseconds,
 		duration = if (exoPlayer.duration == C.TIME_UNSET) Duration.ZERO else exoPlayer.duration.milliseconds,

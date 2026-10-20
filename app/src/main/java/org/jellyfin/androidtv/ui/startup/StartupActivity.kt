@@ -31,6 +31,7 @@ import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.databinding.ActivityStartupBinding
 import org.jellyfin.androidtv.ui.background.AppBackground
 import org.jellyfin.androidtv.ui.home.HomeTiming
+import org.jellyfin.androidtv.ui.home.mediabar.MediaBarSlideshowViewModel
 import org.jellyfin.androidtv.ui.browsing.MainActivity
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.navigation.Destinations
@@ -63,6 +64,7 @@ class StartupActivity : FragmentActivity() {
 	private val userRepository: UserRepository by inject()
 	private val navigationRepository: NavigationRepository by inject()
 	private val itemLauncher: ItemLauncher by inject()
+	private val mediaBarViewModel: MediaBarSlideshowViewModel by inject()
 
 	private lateinit var binding: ActivityStartupBinding
 
@@ -142,9 +144,8 @@ class StartupActivity : FragmentActivity() {
 		Timber.i("Determining next activity (action=${intent.action}, itemId=$itemId, itemIsUserView=$itemIsUserView)")
 
 		// Start session
-		HomeTiming.mark("StartupActivity: user ready, session start")
+		HomeTiming.mark("StartupActivity: user ready")
 		(application as? JellyfinApplication)?.onSessionStart()
-		HomeTiming.mark("StartupActivity: session started")
 
 		// Create destination
 		val destination = when {
@@ -166,6 +167,9 @@ class StartupActivity : FragmentActivity() {
 			// No destination requested, use default
 			else -> null
 		}
+
+		// Opening Home: its hero starts loading now, while Home is created (when it was on last time).
+		if (destination == null) mediaBarViewModel.startEarly()
 
 		navigationRepository.reset(destination, true)
 

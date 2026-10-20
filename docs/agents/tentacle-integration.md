@@ -38,6 +38,16 @@ The code wins where they differ.
   id (`constant/HomeSectionType.kt`: `latestmedia`, `smalllibrarytiles`,
   `librarybuttons`, `resume`, `resumeaudio`, `activerecordings`, `nextup`,
   `livetv`).
+- **Live settings**: `SocketHandler` (on while the app is in front) reads
+  the home version from the plugin's LibraryChanged push into
+  `HomeVersionTracker`, and reports WebSocket reconnects. Home and both
+  navbars ask again (`/Sections`, `/Toolbar` carry `homeVersion`) when they
+  come back into view, when the app comes back to the front and on a
+  reconnect, and refresh only if the version moved. Home refreshes go
+  through one queue (`SerialRefresher`: one at a time, newest wins, none
+  before the first load). `fetchSections()` tells "home off" (a 200 with
+  `enabled: false`) from "no answer": off shows the stock rows. With an
+  older plugin (no version) everything works as before.
 - **Discover** (`ui/discover/`: `DiscoverFragment`, `DiscoverBrowse`,
   `DiscoverComponents`): TMDB browse and search through the plugin, a detail
   modal, add to Radarr/Sonarr with a quality profile (the last one chosen is

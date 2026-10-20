@@ -40,7 +40,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           mkdir -p build/gh-app-publish/; find app/build/ -iname "*.apk" -exec mv "{}" build/gh-app-publish/ \;
-          cp app/build/outputs/mapping/githubBench/mapping.txt build/gh-app-publish/bench-mapping.txt
+          find app/build/outputs/mapping -path '*Bench*' -name mapping.txt -exec cp {} build/gh-app-publish/bench-mapping.txt \; || true
       - name: Upload artifacts
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0

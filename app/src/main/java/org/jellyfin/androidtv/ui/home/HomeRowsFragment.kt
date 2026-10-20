@@ -189,6 +189,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	// Every Tentacle home refresh goes through here: one at a time, newest wins (M3).
 	private lateinit var homeRefresher: SerialRefresher<HomeRefreshRequest>
 
+	// The first load's Tentacle row requests, by playlist id (filled in as they arrive).
+	private var tentacleRowFetches: Map<String, kotlinx.coroutines.Deferred<List<BaseItemDto>>> = emptyMap()
+
 	// Index in the adapter where content rows start (after notifications + nowPlaying)
 	private var contentRowStartIndex = 0
 
@@ -261,6 +264,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					}
 				} else null
 
+				// Tentacle's sections, asked at once alongside the views: this request also tells
+				// whether the plugin is there, so there is no separate probe of the same endpoint
+				// first (H4). An unreachable server falls back to the on-device cache below.
+				val sectionsDeferred = async { withTimeoutOrNull(8_000) { tentacleRepository.fetchSections() } }
+
 				// Await views (fast /UserViews call) but NOT the Live TV recommended-programs
 				// check — that query scans the whole EPG and can take 10+ seconds on large
 				// setups, and awaiting it here used to block the instant cache render below,
@@ -291,10 +299,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				// from Tentacle and build everything ONCE — rows, hero, order — so the
 				// reveal is final with no post-launch restructure. The on-device cache
 				// below is only the fallback for an unreachable/slow server.
-				val tentacleAvailable = tentacleRepository.checkAvailable()
-				val freshAnswer = if (tentacleAvailable) {
-					withTimeoutOrNull(8_000) { tentacleRepository.fetchSections() }
-				} else null
+				val freshAnswer = sectionsDeferred.await()
 				val freshSections = (freshAnswer as? SectionsAnswer.On)?.response
 				// Home off: the stock rows below, at this version (a switch back on is then seen).
 				if (freshAnswer is SectionsAnswer.Off) {
@@ -372,18 +377,16 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				// the final layout in one pass; no post-render revalidation needed.
 				val tentacleFresh = freshSections != null
 
-				// Only add media bar row if Tentacle hero is actually enabled and configured
+				// Only add media bar row if Tentacle hero is actually enabled and configured. The
+				// sections answer says so (its "hero" section): no separate hero-settings request
+				// before the rows (H4). The hero loads its settings and items itself, in parallel
+				// with the rows, and applies the dashboard's trailer sound (HomeFragment).
 				if (userSettingPreferences[UserSettingPreferences.mediaBarEnabled] && tentacleFresh) {
-					val heroConfig = tentacleRepository.getHeroConfig()
-					Timber.d("Hero config check: config=$heroConfig, enabled=${heroConfig?.enabled}, playlistId=${heroConfig?.playlistId}")
-					if (heroConfig != null && heroConfig.enabled && heroConfig.playlistId.isNotEmpty()) {
+					val heroOn = freshSections?.sections?.any { it.type == "hero" && !it.playlistId.isNullOrEmpty() } == true
+					if (heroOn) {
 						rows.add(mediaBarRow)
-						// Apply trailer audio setting from dashboard config
-						userSettingPreferences[UserSettingPreferences.previewAudioEnabled] = heroConfig.trailerAudio
-						(parentFragment as? HomeFragment)?.applyTrailerAudioSetting(heroConfig.trailerAudio)
-						// Start loading hero content immediately — don't wait for all rows to finish
 						mediaBarViewModel.loadInitialContent()
-						Timber.d("MediaBar row added (hero enabled, trailerAudio=${heroConfig.trailerAudio})")
+						Timber.d("MediaBar row added (hero enabled)")
 					} else {
 						Timber.d("MediaBar row skipped (hero disabled or no config)")
 					}
@@ -397,23 +400,16 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					if (sectionsResponse != null) {
 						tentacleSections = sectionsResponse.sections.filter { it.type == "row" || it.type == "builtin" }
 
-						// Pre-fetch playlist row items in parallel
-						val tentacleRowData = tentacleSections
+						// Every playlist row's items are asked for at once (the repository runs 4 at
+						// a time, in dashboard order) while the rows, the stock rows and the hero go
+						// on screen; each row fills in as its answer arrives (H4). Home used to wait
+						// for the slowest row before showing any, and only then load the stock rows.
+						tentacleRowFetches = tentacleSections
 							.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }
-							.map { section ->
-								async {
-									TentacleRowData(
-										title = section.displayText,
-										playlistId = section.playlistId!!,
-										items = tentacleRepository.getSectionItems(section.playlistId),
-										wide = section.shape == "wide",
-									)
-								}
+							.distinctBy { it.playlistId }
+							.associate { section ->
+								section.playlistId!! to async { tentacleRepository.getSectionItems(section.playlistId) }
 							}
-							.awaitAll()
-							.filter { it.items.isNotEmpty() }
-
-						val tentacleMap = tentacleRowData.associateBy { it.playlistId }
 
 						// Render sections in dashboard order
 						val mergeCw = sectionsResponse.mergeContinueWatching
@@ -423,8 +419,15 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 							when (section.type) {
 								"row" -> {
 									val playlistId = section.playlistId ?: continue
-									tentacleMap[playlistId]?.let { data ->
-										rows.add(HomeFragmentTentacleRow(listOf(data), tentacleRowAdapters))
+									if (playlistId in tentacleRowFetches && rows.none { it is HomeFragmentTentacleRow && playlistId in it.playlistIds }) {
+										// Its items arrive later (fillTentacleRow)
+										rows.add(
+											HomeFragmentTentacleRow(
+												listOf(TentacleRowData(section.displayText, playlistId, emptyList(), section.shape == "wide")),
+												tentacleRowAdapters,
+												placeholder = true,
+											)
+										)
 									}
 								}
 								"builtin" -> {
@@ -497,7 +500,14 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				currentRows = rows
 
 				// Add sections to layout
-				renderInitialRows(rows)
+				val fetches = tentacleRowFetches
+				if (fetches.isEmpty()) {
+					renderInitialRows(rows)
+				} else {
+					renderInitialRows(rows, contentReady = false)
+					fillTentacleRows(rows, fetches)
+				}
+				HomeTiming.mark("all rows filled")
 			} finally {
 				firstLoadDone.complete(Unit)
 			}
@@ -628,7 +638,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	 * flag content ready, and pre-warm poster images. Shared by the instant
 	 * cache render and the fresh network render.
 	 */
-	private suspend fun renderInitialRows(rows: List<HomeFragmentRow>) {
+	private suspend fun renderInitialRows(rows: List<HomeFragmentRow>, contentReady: Boolean = true) {
 		withContext(Dispatchers.Main) {
 			// The fragment may have been detached while we were loading on IO
 			// (fast navigation, or a user-switch / pref-change recreate). Touching
@@ -644,26 +654,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			for (row in rows) row.addToRowsAdapter(requireContext(), sharedCardPresenter, adapter as MutableObjectAdapter<Row>)
 			view?.let { v -> androidx.core.view.OneShotPreDrawListener.add(v) { HomeTiming.mark("rows drawn (${rows.size} rows)") } }
 
-			// Populate info area for the initial selected item — the Leanback
-			// selection callback fires before HomeFragment's observers are ready,
-			// so the first item's title/summary doesn't show without this.
-			view?.post {
-				if (!isAdded) return@post
-				val firstRow = (0 until adapter.size())
-					.map { adapter[it] }
-					.filterIsInstance<ListRow>()
-					.firstOrNull() ?: return@post
-				val firstItem = (firstRow.adapter as? MutableObjectAdapter<*>)
-					?.let { ra -> if (ra.size() > 0) ra[0] else null } as? BaseRowItem
-					?: return@post
-				_selectedItemStateFlow.value = SelectedItemState(
-					title = firstItem.getName(requireContext()) ?: "",
-					summary = firstItem.getSummary(requireContext()) ?: "",
-					baseItem = firstItem.baseItem
-				)
-			}
-
-			_contentReady.value = true
+			if (contentReady) markContentReady()
 
 			// Pre-warm Coil cache for poster images in the FIRST row only.
 			// Leanback already binds/loads visible cards, so warming more rows just
@@ -705,6 +696,73 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				}
 			}
 		}
+	}
+
+	/**
+	 * The rows on screen are ready to show: fill the info area for the first item (the Leanback
+	 * selection callback fires before HomeFragment's observers are ready, so the first item's
+	 * title/summary doesn't show without this) and let the loading screen go. Main thread.
+	 */
+	private fun markContentReady() {
+		if (_contentReady.value) return
+		view?.post {
+			if (!isAdded) return@post
+			val firstRow = (0 until adapter.size())
+				.map { adapter[it] }
+				.filterIsInstance<ListRow>()
+				.firstOrNull { (it.adapter?.size() ?: 0) > 0 } ?: return@post
+			val firstItem = (firstRow.adapter as? MutableObjectAdapter<*>)
+				?.let { ra -> if (ra.size() > 0) ra[0] else null } as? BaseRowItem
+				?: return@post
+			_selectedItemStateFlow.value = SelectedItemState(
+				title = firstItem.getName(requireContext()) ?: "",
+				summary = firstItem.getSummary(requireContext()) ?: "",
+				baseItem = firstItem.baseItem
+			)
+		}
+		_contentReady.value = true
+	}
+
+	/**
+	 * Fills each Tentacle row of the first load as its items arrive (H4): a row with items
+	 * shows them, an empty one leaves. The loading screen waits only for the rows it uncovers
+	 * first ([firstScreenRows]); the rest fill in below. Returns when every row is done.
+	 */
+	private suspend fun fillTentacleRows(rows: List<HomeFragmentRow>, fetches: Map<String, kotlinx.coroutines.Deferred<List<BaseItemDto>>>) {
+		val waitFor = firstScreenRows(
+			rows.filterNot { it is HomeFragmentMediaBarRow }
+				.map { row -> (row as? HomeFragmentTentacleRow)?.playlistIds?.firstOrNull()?.takeIf { it in fetches } }
+		).toMutableSet()
+		if (waitFor.isEmpty()) withContext(Dispatchers.Main) { markContentReady() }
+		kotlinx.coroutines.coroutineScope {
+			for ((playlistId, fetch) in fetches) launch {
+				val items = fetch.await()
+				withContext(Dispatchers.Main) {
+					if (!isAdded) return@withContext
+					fillTentacleRow(playlistId, items)
+					if (waitFor.remove(playlistId) && waitFor.isEmpty()) {
+						view?.let { v -> androidx.core.view.OneShotPreDrawListener.add(v) { HomeTiming.mark("first rows filled") } }
+						markContentReady()
+					}
+				}
+			}
+		}
+		withContext(Dispatchers.Main) { markContentReady() }
+	}
+
+	/** One first-load Tentacle row's answer: its cards, or the row leaves when there are none. */
+	private fun fillTentacleRow(playlistId: String, items: List<BaseItemDto>) {
+		val rowAdapter = tentacleRowAdapters[playlistId] ?: return
+		if (items.isNotEmpty()) {
+			rowAdapter.replaceStaticItems(items)
+			return
+		}
+		val rowsAdapter = adapter as? MutableObjectAdapter<Row> ?: return
+		val listRow = (0 until rowsAdapter.size()).mapNotNull { rowsAdapter[it] as? ListRow }.firstOrNull { it.adapter === rowAdapter }
+		if (listRow != null) rowsAdapter.remove(listRow)
+		tentacleRowAdapters.remove(playlistId)
+		currentRows = currentRows.filterNot { it is HomeFragmentTentacleRow && playlistId in it.playlistIds }.toMutableList()
+		Timber.d("Tentacle row $playlistId is empty, left out")
 	}
 
 	override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

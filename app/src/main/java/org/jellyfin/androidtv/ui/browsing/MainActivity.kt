@@ -397,6 +397,9 @@ class MainActivity : FragmentActivity() {
 
 	@Suppress("RestrictedApi") // False positive
 	override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+		// Card previews wait for the D-pad to rest (H6).
+		org.jellyfin.androidtv.ui.composable.item.KeyActivity.note()
+
 		// Ignore the key event that closes the screensaver
 		if (!event.isMediaSessionKeyEvent() && interactionTrackerViewModel.visible.value) {
 			interactionTrackerViewModel.notifyInteraction(canCancel = event.action == KeyEvent.ACTION_UP, userInitiated = true)

@@ -52,6 +52,7 @@ import org.jellyfin.androidtv.auth.repository.Session
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.data.model.AggregatedLibrary
+import org.jellyfin.androidtv.data.repository.ActivityPoller
 import org.jellyfin.androidtv.data.repository.HomeVersionTracker
 import org.jellyfin.androidtv.data.repository.MultiServerRepository
 import org.jellyfin.androidtv.data.repository.UserViewsRepository
@@ -83,6 +84,7 @@ import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.CollectionType
 import org.jellyfin.androidtv.data.repository.TentacleRepository
+import org.jellyfin.androidtv.data.repository.ToolbarResponse
 import org.jellyfin.androidtv.data.repository.ToolbarButton
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinActivityViewModel
@@ -113,6 +115,14 @@ internal val DEFAULT_TOOLBAR_BUTTONS = listOf(
 )
 
 
+/**
+ * Whether this session's toolbar answer still holds for a new screen's navbar: only when it and
+ * the newest home version heard are the same known version. An older plugin (no version) asks
+ * on every screen, as before.
+ */
+internal fun toolbarIsCurrent(toolbar: ToolbarResponse?, knownVersion: Long): Boolean =
+	toolbar != null && toolbar.homeVersion > 0 && toolbar.homeVersion == knownVersion
+
 @Composable
 fun Navbar(
 	activeButton: NavbarActiveButton = NavbarActiveButton.None,
@@ -130,14 +140,18 @@ fun Navbar(
 	val activityDownloadCount by tentacleRepository.activityDownloadCount.collectAsState()
 
 	// Fetch toolbar config from Tentacle plugin (re-fetches when toolbarRefreshKey changes).
-	// Start with the documented defaults so the toolbar is never empty while loading or
-	// if the fetch fails. A successful non-empty response replaces them.
-	var toolbarButtons by remember { mutableStateOf(DEFAULT_TOOLBAR_BUTTONS) }
+	// Start with this session's last answer, else the documented defaults, so the toolbar is
+	// never empty while loading or if the fetch fails. A successful non-empty response
+	// replaces them.
+	val sessionToolbar = remember { tentacleRepository.lastToolbar }
+	var toolbarButtons by remember { mutableStateOf(sessionToolbar?.buttons?.takeIf { it.isNotEmpty() } ?: DEFAULT_TOOLBAR_BUTTONS) }
 	var toolbarRefreshKey by remember { mutableIntStateOf(0) }
 	// The home version of the buttons shown (0: unknown, an older plugin).
-	var shownToolbarVersion by remember { mutableLongStateOf(0L) }
+	var shownToolbarVersion by remember { mutableLongStateOf(sessionToolbar?.homeVersion ?: 0L) }
 	val homeVersionTracker = koinInject<HomeVersionTracker>()
 	LaunchedEffect(toolbarRefreshKey) {
+		// A new screen's navbar with this session's toolbar still current: no request (M9).
+		if (toolbarRefreshKey == 0 && toolbarIsCurrent(sessionToolbar, homeVersionTracker.known.value)) return@LaunchedEffect
 		// Retry a few times on failure, then keep showing the defaults.
 		repeat(3) { attempt ->
 			val toolbar = tentacleRepository.fetchToolbar()
@@ -155,25 +169,14 @@ fun Navbar(
 		// All attempts failed — leave the default button set in place.
 	}
 
-	// Background polling so badge is populated even before visiting the Activity tab.
-	// Polls every 10s while downloads are active (so badge clears promptly), 30s when idle.
-	// Pauses when the app is not in the foreground, and backs off to at most 5 minutes while
-	// the server is unreachable.
+	// The download badge, filled even before visiting the Activity tab: the app's one activity
+	// poller runs while a navbar is on screen (10 s while downloading, 30 s when idle) and
+	// pauses when the app is not in the foreground (M9).
+	val activityPoller = koinInject<ActivityPoller>()
 	val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 	LaunchedEffect(lifecycleOwner) {
 		lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-			var failures = 0
-			while (true) {
-				val response = try {
-					tentacleRepository.getActivity()
-				} catch (_: Exception) {
-					null
-				}
-				failures = if (response != null) 0 else failures + 1
-				val base = if (tentacleRepository.activityDownloadCount.value > 0) 10_000L else 30_000L
-				// Back off while the server is unreachable rather than polling through the outage.
-				kotlinx.coroutines.delay(org.jellyfin.androidtv.util.pollDelay(base, failures, 300_000L))
-			}
+			activityPoller.activity.collect { }
 		}
 	}
 
@@ -198,9 +201,7 @@ fun Navbar(
 				.filter { it.push == null }
 				.debounce(1000)
 				.collect { change ->
-					if (change.itemsAdded) {
-						try { tentacleRepository.getActivity() } catch (_: Exception) {}
-					}
+					if (change.itemsAdded) activityPoller.pollNow()
 					toolbarRefreshKey++
 				}
 		}

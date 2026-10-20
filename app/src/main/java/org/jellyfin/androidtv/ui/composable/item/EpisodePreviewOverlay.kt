@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.ui.composable.item
 
+import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -41,7 +42,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -61,9 +61,6 @@ import org.koin.compose.koinInject
 import timber.log.Timber
 import java.util.Collections
 import java.util.UUID
-
-/** Delay before starting preview playback to debounce quick scrolling. */
-private const val PREVIEW_START_DELAY_MS = 500L
 
 private const val MAX_PREVIEW_DURATION_MS = 30_000L
 
@@ -138,16 +135,99 @@ private fun runtimeFallbackMs(item: BaseItemDto): Long {
 }
 
 /**
+ * The one player every card preview uses (H6). Each focused card built its own ExoPlayer
+ * (renderers, decoders, buffers), and D-pad browsing paused on cards all the time. A card
+ * [take]s the player, which stops the card that had it; [giveBack] stops it; it is released
+ * when the screen stops. Main thread only.
+ */
+@OptIn(UnstableApi::class)
+internal object CardPreviewPlayer {
+	// An idle player is freed after this long (no preview, e.g. after the 30 s cutoff).
+	private const val IDLE_RELEASE_MS = 15_000L
+
+	private var player: ExoPlayer? = null
+	private var owner: Any? = null
+	private var ownerListener: Player.Listener? = null
+	private var onTakenAway: (() -> Unit)? = null
+	private val handler = Handler(Looper.getMainLooper())
+	private val releaseWhenIdle = Runnable { releaseIfIdle() }
+
+	fun take(context: Context, newOwner: Any, listener: Player.Listener, onLost: () -> Unit): ExoPlayer {
+		handler.removeCallbacks(releaseWhenIdle)
+		val shared = player ?: build(context.applicationContext).also { player = it }
+		if (owner !== newOwner) {
+			val lost = onTakenAway
+			detach(shared)
+			lost?.invoke()
+		} else {
+			ownerListener?.let(shared::removeListener)
+		}
+		owner = newOwner
+		ownerListener = listener
+		onTakenAway = onLost
+		shared.addListener(listener)
+		return shared
+	}
+
+	fun giveBack(oldOwner: Any) {
+		if (owner !== oldOwner) return
+		player?.let(::detach)
+		handler.removeCallbacks(releaseWhenIdle)
+		handler.postDelayed(releaseWhenIdle, IDLE_RELEASE_MS)
+	}
+
+	/** Frees the player when no card holds it (the screen stopped, or no preview for a while). */
+	fun releaseIfIdle() {
+		if (owner != null) return
+		handler.removeCallbacks(releaseWhenIdle)
+		player?.release()
+		player = null
+	}
+
+	private fun detach(shared: ExoPlayer) {
+		ownerListener?.let(shared::removeListener)
+		owner = null
+		ownerListener = null
+		onTakenAway = null
+		shared.stop()
+		shared.clearMediaItems()
+	}
+
+	private fun build(context: Context): ExoPlayer {
+		val renderersFactory = DefaultRenderersFactory(context).apply {
+			setEnableDecoderFallback(true)
+			setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+		}
+		// Previews are always muted: no audio track is decoded at all.
+		val trackSelector = DefaultTrackSelector(context).apply {
+			parameters = parameters.buildUpon()
+				.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+				.setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
+				.build()
+		}
+		return ExoPlayer.Builder(context)
+			.setRenderersFactory(renderersFactory)
+			.setTrackSelector(trackSelector)
+			.build()
+			.apply {
+				volume = 0f
+				repeatMode = Player.REPEAT_MODE_OFF
+				videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
+			}
+	}
+}
+
+/**
  * A composable overlay that plays a muted video preview of an episode/movie
  * directly on top of its card when focused.
  *
  * When [focused] becomes true:
- *  1. Waits [PREVIEW_START_DELAY_MS] to avoid triggering on quick scrolls
- *  2. Resolves a direct play stream URL from Jellyfin
+ *  1. Waits until focus and the D-pad have rested [PREVIEW_REST_MS] (no previews while browsing)
+ *  2. Resolves a transcoded stream URL from Jellyfin
  *  3. Fetches intro segments and seeks past them
- *  4. Starts ExoPlayer muted, fading in over the poster image
+ *  4. Plays it muted on the shared [CardPreviewPlayer], fading in over the poster image
  *
- * When [focused] becomes false, the player is stopped and released.
+ * When [focused] becomes false, the player is stopped and handed back.
  *
  * @param item The BaseItemDto (episode or movie) to preview
  * @param focused Whether the card is currently focused
@@ -158,7 +238,6 @@ private fun runtimeFallbackMs(item: BaseItemDto): Long {
 fun EpisodePreviewOverlay(
 	item: BaseItemDto,
 	focused: Boolean,
-	muted: Boolean = true,
 	modifier: Modifier = Modifier,
 ) {
 	val context = LocalContext.current
@@ -171,6 +250,8 @@ fun EpisodePreviewOverlay(
 	var seekPositionMs by remember { mutableStateOf(0L) }
 	var isPlaying by remember { mutableStateOf(false) }
 	var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
+	// This card's claim on the shared player.
+	val playerToken = remember { Any() }
 
 	val effectiveApi = remember(item.serverId) {
 		val serverId = UUIDUtils.parseUUID(item.serverId)
@@ -187,13 +268,12 @@ fun EpisodePreviewOverlay(
 		if (!focused) {
 			stream = null
 			isPlaying = false
-			exoPlayer?.stop()
-			exoPlayer?.release()
+			CardPreviewPlayer.giveBack(playerToken)
 			exoPlayer = null
 			return@LaunchedEffect
 		}
 
-		delay(PREVIEW_START_DELAY_MS)
+		awaitPreviewRest()
 
 		try {
 			val (primary, introEndMs) = withContext(Dispatchers.IO) {
@@ -232,41 +312,18 @@ fun EpisodePreviewOverlay(
 		val currentUrl = current.url
 
 		DisposableEffect(current) {
-			val renderersFactory = DefaultRenderersFactory(context).apply {
-				setEnableDecoderFallback(true)
-				setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
-			}
-
-			val trackSelector = DefaultTrackSelector(context).apply {
-				parameters = parameters.buildUpon()
-					.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-					.build()
-			}
-
-			val player = ExoPlayer.Builder(context)
-				.setRenderersFactory(renderersFactory)
-				.setTrackSelector(trackSelector)
-				.build()
-				.apply {
-					volume = if (muted) 0f else 1f
-					repeatMode = Player.REPEAT_MODE_OFF
-					playWhenReady = true
-					videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
-				}
-
-			val mediaSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
-				.createMediaSource(MediaItem.fromUri(Uri.parse(currentUrl)))
-
 			var hasSeeked = false
 			val handler = Handler(Looper.getMainLooper())
 			val stopRunnable = Runnable {
 				isPlaying = false
-				player.stop()
+				CardPreviewPlayer.giveBack(playerToken)
+				exoPlayer = null
 				PreviewEncodings.stop(effectiveApi, current.playSessionId)
 			}
 
-			player.addListener(object : Player.Listener {
+			val listener = object : Player.Listener {
 				override fun onPlaybackStateChanged(playbackState: Int) {
+					val player = exoPlayer ?: return
 					when (playbackState) {
 						Player.STATE_READY -> {
 							if (!hasSeeked && seekPositionMs > 0) {
@@ -290,16 +347,25 @@ fun EpisodePreviewOverlay(
 					isPlaying = false
 					handler.removeCallbacks(stopRunnable)
 				}
-			})
+			}
 
+			val player = CardPreviewPlayer.take(context, playerToken, listener) {
+				// Another card's preview took the player.
+				handler.removeCallbacks(stopRunnable)
+				isPlaying = false
+				exoPlayer = null
+				PreviewEncodings.stop(effectiveApi, current.playSessionId)
+			}
+			val mediaSource = ProgressiveMediaSource.Factory(httpDataSourceFactory)
+				.createMediaSource(MediaItem.fromUri(Uri.parse(currentUrl)))
 			player.setMediaSource(mediaSource)
+			player.playWhenReady = true
 			player.prepare()
 			exoPlayer = player
 
 			onDispose {
 				handler.removeCallbacks(stopRunnable)
-				player.stop()
-				player.release()
+				CardPreviewPlayer.giveBack(playerToken)
 				exoPlayer = null
 				isPlaying = false
 				// Focus left the card (or the card went away): end the server side too.
@@ -309,28 +375,25 @@ fun EpisodePreviewOverlay(
 
 		val lifecycleOwner = LocalLifecycleOwner.current
 		DisposableEffect(lifecycleOwner, exoPlayer) {
+			fun stopPreview() {
+				CardPreviewPlayer.giveBack(playerToken)
+				exoPlayer = null
+				isPlaying = false
+				PreviewEncodings.stop(effectiveApi, current.playSessionId)
+			}
 			val observer = LifecycleEventObserver { _, event ->
 				when (event) {
-					Lifecycle.Event.ON_PAUSE,
+					Lifecycle.Event.ON_PAUSE -> stopPreview()
 					Lifecycle.Event.ON_STOP,
 					Lifecycle.Event.ON_DESTROY -> {
-						exoPlayer?.stop()
-						exoPlayer?.release()
-						exoPlayer = null
-						isPlaying = false
-						PreviewEncodings.stop(effectiveApi, current.playSessionId)
+						stopPreview()
+						CardPreviewPlayer.releaseIfIdle()
 					}
 					else -> {}
 				}
 			}
 			lifecycleOwner.lifecycle.addObserver(observer)
-			if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-				exoPlayer?.stop()
-				exoPlayer?.release()
-				exoPlayer = null
-				isPlaying = false
-				PreviewEncodings.stop(effectiveApi, current.playSessionId)
-			}
+			if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) stopPreview()
 			onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
 		}
 
@@ -354,6 +417,7 @@ fun EpisodePreviewOverlay(
 				update = { playerView ->
 					playerView.player = exoPlayer
 				},
+				onRelease = { playerView -> playerView.player = null },
 				modifier = Modifier.fillMaxSize()
 			)
 		}

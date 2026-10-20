@@ -767,14 +767,27 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
 
     /**
      * Replace the static items in this adapter with new items.
-     * Used for in-place refresh of Tentacle home screen rows.
+     * Used for in-place refresh of Tentacle home screen rows: only the cards that changed
+     * are touched (CardDiff, M2).
      */
     public void replaceStaticItems(List<BaseItemDto> newItems) {
-        clear();
         mItems = newItems;
-        itemsLoaded = 0;
+        java.util.List<Object> rowItems = buildStaticRowItems(newItems);
+        replaceAll(rowItems, CardDiff::sameCard, CardDiff::sameContent);
+        itemsLoaded = rowItems.size();
         fullyLoaded = false;
-        loadStaticItems();
+        notifyRetrieveFinished();
+    }
+
+    private java.util.List<Object> buildStaticRowItems(List<BaseItemDto> items) {
+        java.util.List<Object> rowItems = new java.util.ArrayList<>(items.size());
+        for (org.jellyfin.sdk.model.api.BaseItemDto item : items) {
+            if (serverId != null && item.getServerId() == null) {
+                item = JavaCompat.copyWithServerId(item, serverId);
+            }
+            rowItems.add(new BaseItemDtoBaseRowItem(item, false, false, BaseRowItemSelectAction.ShowDetails, false));
+        }
+        return rowItems;
     }
 
     private void loadStaticItems() {
@@ -782,13 +795,7 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
             // Build all row items first, then insert them with a SINGLE range
             // notification instead of one notifyItemRangeInserted per item. A home
             // of 8 rows x 20 items drops from ~160 dispatches to 8 on the UI thread.
-            java.util.List<Object> rowItems = new java.util.ArrayList<>(mItems.size());
-            for (org.jellyfin.sdk.model.api.BaseItemDto item : mItems) {
-                if (serverId != null && item.getServerId() == null) {
-                    item = JavaCompat.copyWithServerId(item, serverId);
-                }
-                rowItems.add(new BaseItemDtoBaseRowItem(item, false, false, BaseRowItemSelectAction.ShowDetails, false));
-            }
+            java.util.List<Object> rowItems = buildStaticRowItems(mItems);
             addAll(rowItems);
             itemsLoaded = mItems.size();
         } else {

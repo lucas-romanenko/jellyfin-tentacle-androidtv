@@ -33,11 +33,29 @@ The code wins where they differ.
 - **Home** (`ui/home/`): `HomeFragment` hosts the Compose overlay (navbar,
   hero, media bar) over the Leanback `HomeRowsFragment`, which asks
   `/TentacleHome/Sections` and renders them in the API's order: `"row"`
-  sections are Tentacle playlists (`HomeFragmentTentacleRow`, items
-  prefetched in parallel), `"builtin"` ones map to Jellyfin's own sections by
-  id (`constant/HomeSectionType.kt`: `latestmedia`, `smalllibrarytiles`,
-  `librarybuttons`, `resume`, `resumeaudio`, `activerecordings`, `nextup`,
-  `livetv`).
+  sections are Tentacle playlists (`HomeFragmentTentacleRow`), `"builtin"`
+  ones map to Jellyfin's own sections by id (`constant/HomeSectionType.kt`:
+  `latestmedia`, `smalllibrarytiles`, `librarybuttons`, `resume`,
+  `resumeaudio`, `activerecordings`, `nextup`, `livetv`).
+- **Home's first load** (audit H4): `/Sections` is asked once, alongside
+  `/UserViews` (no separate availability probe; `fetchSections()` settles
+  it). Its `"hero"` section decides the media bar, which fetches
+  `/HeroConfig` and `/Hero` itself, in parallel, and publishes the
+  dashboard's trailer sound (`heroTrailerAudio`, applied by `HomeFragment`).
+  Every row goes on screen at once: Tentacle rows as empty placeholders whose
+  items are fetched together (4 at a time) and filled in as each arrives
+  (`fillTentacleRows`; an empty one leaves), stock rows loading themselves.
+  The loading screen waits for the hero and the first two content rows
+  (`firstScreenRows`), with no fixed hold. `HomeTiming` logs the milestones
+  (`adb logcat -s HomeTiming`, ms since the process started).
+- **Speed rules** (audit H5, H6, M1, M2): background art is asked at most
+  960 px wide (480 on a low-RAM device), only the first backdrop while
+  browsing, blurred once on the CPU there (`BackgroundService`). Card
+  previews start after focus and the D-pad rested 2 s (`PreviewRest.kt`),
+  play on one shared muted player (`CardPreviewPlayer`). Stock rows ask
+  `ItemRepository.browseFields` (no media sources, streams, chapters,
+  trickplay), Latest 20 per library. A row refresh diffs its cards
+  (`CardDiff`): the same answer changes nothing on screen.
 - **Live settings**: `SocketHandler` (on while the app is in front) reads
   the home version from the plugin's LibraryChanged push into
   `HomeVersionTracker`, and reports WebSocket reconnects. Home and both
@@ -59,14 +77,18 @@ The code wins where they differ.
   `DOWNLOAD_MORE` (VOD series: download missing episodes), `MANAGE` (change
   what Sonarr monitors).
 - **Activity** (`ui/activity/ActivityFragment.kt`): downloads and upcoming
-  releases, polled every 3 s, backing off to 60 s after failures; arr
+  releases, from the app's one `ActivityPoller` (M9; also the navbar's
+  download badge): every 3 s while the tab is open, 10 s while something
+  downloads, else 30 s, backing off after failures; arr
   actions (search, grab, stop missing, remove) go through
   `/TentacleDiscover/Arr*`.
 - **Navbar** (`ui/shared/toolbar/Navbar.kt`, `NavbarActiveButton`: User,
   Home, Library, Search, Discover, Activity, None): which buttons show and in
   what order comes from the Tentacle dashboard (`/TentacleHome/Toolbar`),
   not from local preferences; top bar or left sidebar
-  (`LeftSidebarNavigation.kt`).
+  (`LeftSidebarNavigation.kt`). A new screen's navbar starts from the
+  session's last answer (`TentacleRepository.lastToolbar`) and asks again
+  only when the home version moved (`toolbarIsCurrent`).
 - **Item details**: the plugin's Detail endpoint merges `following`,
   `seriesStatus` and `canDelete` into `DiscoverDetail`, so the detail screen
   shows Follow and Delete without more calls. Delete (downloads only; admin,
@@ -88,7 +110,8 @@ The code wins where they differ.
   `mediaBarEnabled`, `mediaBarSourceType` (`"plugin"` = the Tentacle hero
   playlist only, no random fallback), `mediaBarContentType`,
   `mediaBarItemCount`, `mediaBarExcludedGenres`; `episodePreviewEnabled`,
-  `previewAudioEnabled`. `UserPreferences.navbarPosition` (top or left).
+  `previewAudioEnabled` (the hero trailer's sound; card previews are always
+  muted). `UserPreferences.navbarPosition` (top or left).
   Toolbar buttons come from the dashboard, not preferences; the old
   `showShuffleButton` is still read in two places.
 - Routes: `ui/navigation/Destinations.kt` (`tentacleDiscover` is

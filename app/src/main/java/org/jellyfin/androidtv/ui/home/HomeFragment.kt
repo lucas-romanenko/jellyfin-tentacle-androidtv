@@ -20,6 +20,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import coil3.load
 import coil3.request.crossfade
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import org.jellyfin.androidtv.R
@@ -84,6 +85,9 @@ class HomeFragment : Fragment() {
 	// home rebuilt in full view. Back-navigation only recreates the VIEW of the same
 	// instance, so the flag still prevents the logo flashing when returning to Home.
 	private var overlayShownOnce = false
+
+	// The dashboard trailer sound last applied (null: not yet), kept across view recreation.
+	private var appliedTrailerAudio: Boolean? = null
 
 	// Flipped by the backdrop ImageView's Coil success listener — the only signal that
 	// the hero is truly on screen (state flows fire seconds earlier on slow TV SoCs)
@@ -203,6 +207,20 @@ class HomeFragment : Fragment() {
 
 		rowsFragment = childFragmentManager.findFragmentById(R.id.rowsFragment) as? HomeRowsFragment
 
+		// The dashboard's hero trailer sound, from the hero's own settings request. Applied once
+		// per Home and again when the dashboard changes it, not on every return to Home (that
+		// would undo the mute button).
+		mediaBarViewModel.heroTrailerAudio
+			.filterNotNull()
+			.flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
+			.onEach { audio ->
+				if (audio == appliedTrailerAudio) return@onEach
+				appliedTrailerAudio = audio
+				userSettingPreferences[UserSettingPreferences.previewAudioEnabled] = audio
+				applyTrailerAudioSetting(audio)
+			}
+			.launchIn(viewLifecycleOwner.lifecycleScope)
+
 		// Dismiss loading overlay once rows are rendered and hero is resolved.
 		// Keeps the Tentacle logo visible during loading so users see a polished
 		// transition instead of an empty home screen that pops in piece by piece.
@@ -244,11 +262,9 @@ class HomeFragment : Fragment() {
 				.flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
 				.onEach { allReady ->
 					if (allReady) {
-						// Short grace hold: the gate confirms the hero backdrop is set,
-						// but row cards are still binding/painting for a few frames —
-						// without this, the reveal briefly shows a row title over an
-						// empty row. dismissOverlay self-guards against repeat calls.
-						delay(600)
+						// Rows are ready once their cards are in (HomeRowsFragment waits for the
+						// first rows' items), so no fixed hold here: the 0.6 s grace hold is gone
+						// (H4). dismissOverlay self-guards against repeat calls.
 						dismissOverlay()
 					}
 				}

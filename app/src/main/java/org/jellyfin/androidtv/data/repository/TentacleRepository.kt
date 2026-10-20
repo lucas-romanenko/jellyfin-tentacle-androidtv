@@ -283,8 +283,16 @@ class TentacleRepository(
 			val url = buildUrl("/TentacleHome/Sections")
 			val request = Request.Builder().url(url).get().build()
 			httpClient.newCall(request).execute().use { response ->
+				// The same endpoint as the availability probe: its answer settles that too, so Home's
+				// first load asks once instead of probing first (H4).
+				if (response.code == 404) {
+					isAvailable = false
+					availabilityChecked = true
+				}
 				if (!response.isSuccessful) return@withContext SectionsAnswer.Failed
 				val body = response.body?.string() ?: return@withContext SectionsAnswer.Failed
+				isAvailable = true
+				availabilityChecked = true
 
 				val result = json.decodeFromString<TentacleSectionsResponse>(body)
 				if (!result.enabled) {
@@ -835,6 +843,14 @@ class TentacleRepository(
 	 */
 	suspend fun getToolbarConfig(): List<ToolbarButton>? = fetchToolbar()?.buttons
 
+	/**
+	 * This session's last toolbar answer: a new screen's navbar starts from it, and asks again only
+	 * when the home version moved (M9). Cleared on a profile switch.
+	 */
+	@Volatile
+	var lastToolbar: ToolbarResponse? = null
+		private set
+
 	/** The toolbar answer with its home version; null on a fetch failure (see [getToolbarConfig]). */
 	suspend fun fetchToolbar(): ToolbarResponse? = withContext(Dispatchers.IO) {
 		try {
@@ -845,6 +861,7 @@ class TentacleRepository(
 				val body = response.body?.string() ?: return@withContext null
 				val result = json.decodeFromString<ToolbarResponse>(body)
 				_cardPreviewPolicy.value = result.cardPreviews
+				lastToolbar = result
 				result
 			}
 		} catch (e: Exception) {
@@ -1341,6 +1358,7 @@ class TentacleRepository(
 		availabilityChecked = false
 		isAvailable = false
 		_activityDownloadCount.value = 0
+		lastToolbar = null
 		synchronized(knownNotificationIds) {
 			knownNotificationIds.clear()
 			_pendingNotifications.value = emptyList()

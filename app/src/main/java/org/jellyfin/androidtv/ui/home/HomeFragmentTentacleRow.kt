@@ -16,11 +16,16 @@ import timber.log.Timber
  * Items are pre-fetched on the IO thread and passed in as [TentacleRowData].
  * Each entry becomes a standard Leanback ListRow with Jellyfin BaseItemDto
  * objects, so clicking items navigates to the normal detail screen.
+ *
+ * A [placeholder] row goes on screen before its items arrive: Home's first load fills it in
+ * through its adapter (ItemRowAdapter.replaceStaticItems), or takes it away when it stays empty.
  */
 class HomeFragmentTentacleRow(
 	private val rowDataList: List<TentacleRowData>,
 	private val adapterRegistry: MutableMap<String, ItemRowAdapter>? = null,
+	private val placeholder: Boolean = false,
 ) : HomeFragmentRow {
+	val playlistIds: List<String> get() = rowDataList.map { it.playlistId }
 
 	private companion object {
 		// THUMB is the 16:9 image type; CardPresenter maps it to
@@ -37,7 +42,7 @@ class HomeFragmentTentacleRow(
 		rowsAdapter: MutableObjectAdapter<Row>,
 	) {
 		for (rowData in rowDataList) {
-			if (rowData.items.isEmpty()) continue
+			if (rowData.items.isEmpty() && !placeholder) continue
 
 			// Share a presenter per shape, so the RecycledViewPool is still shared
 			// across rows of the same shape rather than one per row.

@@ -450,7 +450,6 @@ private fun CardViewHolderContent(
 				val userSettingPrefs = koinInject<UserSettingPreferences>()
 				val episodePreviewEnabled = userSettingPrefs[UserSettingPreferences.episodePreviewEnabled]
 				val trailerPreviewEnabled = userSettingPrefs[UserSettingPreferences.mediaBarTrailerPreview]
-				val previewAudioEnabled = userSettingPrefs[UserSettingPreferences.previewAudioEnabled]
 				val baseItem = item.baseItem
 				// Server-side "card previews" policy (androidtv#47): a provider .strm card's
 				// preview opens a real connection to the IPTV backend just from D-pad scrolling
@@ -466,17 +465,16 @@ private fun CardViewHolderContent(
 					else -> true // "all", or an unrecognized value from a newer server
 				}
 				if (episodePreviewEnabled && previewAllowedByServer && baseItem != null && isEligibleForPreview(baseItem)) {
+					// Card previews are always muted (H6); the hero's trailer sound is its own.
 					EpisodePreviewOverlay(
 						item = baseItem,
 						focused = focused,
-						muted = !previewAudioEnabled,
 					)
 				}
 				if (trailerPreviewEnabled && baseItem != null && isEligibleForTrailerPreview(baseItem)) {
 					SeriesTrailerOverlay(
 						item = baseItem,
 						focused = focused,
-						muted = !previewAudioEnabled,
 					)
 				}
 

@@ -84,6 +84,16 @@ class MediaBarSlideshowViewModel(
 	private val _firstSlideReady = MutableStateFlow(false)
 	val firstSlideReady: StateFlow<Boolean> = _firstSlideReady.asStateFlow()
 
+	// The dashboard's hero trailer sound, from the hero settings this view model fetches anyway
+	// (null until the first answer). Home applies it; it used to fetch the settings once more
+	// before loading any row (H4).
+	private val _heroTrailerAudio = MutableStateFlow<Boolean?>(null)
+	val heroTrailerAudio: StateFlow<Boolean?> = _heroTrailerAudio.asStateFlow()
+
+	/** The hero settings from the server (saved on disk as a side effect), noting the trailer sound. */
+	private suspend fun fetchHeroConfig(): org.jellyfin.androidtv.data.repository.TentacleHeroConfig? =
+		tentacleRepository.getHeroConfig()?.also { _heroTrailerAudio.value = it.trailerAudio }
+
 	private val _playbackState = MutableStateFlow(SlideshowPlaybackState())
 	val playbackState: StateFlow<SlideshowPlaybackState> = _playbackState.asStateFlow()
 
@@ -280,7 +290,7 @@ class MediaBarSlideshowViewModel(
 						// warrants a reload. Read the cached config BEFORE the fresh fetch —
 						// fetching overwrites the disk cache.
 						val cached = tentacleRepository.getCachedHeroConfig()
-						val fresh = tentacleRepository.getHeroConfig()
+						val fresh = fetchHeroConfig()
 						if (fresh != null && !fresh.sameContentAs(cached)) {
 							Timber.i("MediaBar: hero config changed, reloading")
 							loadSlideshowItems(allowCache = false)
@@ -315,9 +325,10 @@ class MediaBarSlideshowViewModel(
 				// Refresh the cached config along with the items: the revalidation above compares
 				// against it. Without this, a hero switched on through a full load kept the cached
 				// "off" config, so switching it off again looked like no change and the old hero
-				// stayed until the app restarted (#62).
-				tentacleRepository.getHeroConfig()
+				// stayed until the app restarted (#62). Both requests run at once (H4).
+				val config = async { fetchHeroConfig() }
 				heroItems = tentacleRepository.getHeroItems()
+				config.await()
 			}
 			if (heroItems.isNotEmpty()) {
 				Timber.d("MediaBar: Using ${heroItems.size} Tentacle hero items")
@@ -372,15 +383,18 @@ class MediaBarSlideshowViewModel(
 						// before the backdrop is cached, firstSlideReady flips true with the
 						// image still in flight and the reveal shows a heroless skeleton.
 						withTimeoutOrNull(6500) {
-							listOfNotNull(firstItem.backdropUrl, firstItem.logoUrl).forEach { url ->
-								try {
-									imageLoader.execute(
-										ImageRequest.Builder(context).data(url).build()
-									)
-								} catch (e: CancellationException) {
-									throw e
-								} catch (_: Exception) { /* non-fatal */ }
-							}
+							// Backdrop and logo at once, not one after the other (H4).
+							listOfNotNull(firstItem.backdropUrl, firstItem.logoUrl).map { url ->
+								async {
+									try {
+										imageLoader.execute(
+											ImageRequest.Builder(context).data(url).build()
+										)
+									} catch (e: CancellationException) {
+										throw e
+									} catch (_: Exception) { /* non-fatal */ }
+								}
+							}.awaitAll()
 						} ?: Timber.d("MediaBar: First slide pre-warm timed out, continuing with async load")
 					} catch (e: CancellationException) {
 						throw e
@@ -404,7 +418,7 @@ class MediaBarSlideshowViewModel(
 								// fetch — comparing them tears the hero down for no reason).
 								// Cached config must be read before the fresh fetch overwrites it.
 								val cachedConfig = tentacleRepository.getCachedHeroConfig()
-								val freshConfig = tentacleRepository.getHeroConfig()
+								val freshConfig = fetchHeroConfig()
 								if (freshConfig != null && !freshConfig.sameContentAs(cachedConfig)) {
 									Timber.i("MediaBar: hero config changed on server, reloading")
 									loadSlideshowItems(allowCache = false)

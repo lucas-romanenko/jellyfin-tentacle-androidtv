@@ -18,6 +18,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import org.jellyfin.androidtv.R
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -25,7 +26,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
@@ -42,9 +42,12 @@ import org.jellyfin.androidtv.constant.HomeSectionType
 import org.jellyfin.androidtv.constant.QueryType
 import org.jellyfin.androidtv.data.model.DataRefreshService
 import org.jellyfin.androidtv.data.repository.CustomMessageRepository
+import org.jellyfin.androidtv.data.repository.HomeVersionTracker
+import org.jellyfin.androidtv.data.repository.SectionsAnswer
 import org.jellyfin.androidtv.data.repository.NotificationsRepository
 import org.jellyfin.androidtv.data.repository.SectionSource
 import org.jellyfin.androidtv.data.repository.TentacleRepository
+import org.jellyfin.androidtv.data.repository.TentacleSectionsResponse
 import org.jellyfin.androidtv.data.repository.UserViewsRepository
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.data.service.BlurContext
@@ -75,7 +78,6 @@ import org.jellyfin.sdk.api.client.extensions.imageApi
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
 import org.jellyfin.sdk.api.sockets.subscribe
 import org.jellyfin.sdk.model.api.BaseItemDto
-import org.jellyfin.sdk.model.api.LibraryChangedMessage
 import org.jellyfin.sdk.model.api.UserDataChangedMessage
 import org.koin.android.ext.android.inject
 import timber.log.Timber
@@ -116,6 +118,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val mediaBarViewModel by inject<MediaBarSlideshowViewModel>()
 	private val themeMusicPlayer by inject<ThemeMusicPlayer>()
 	private val tentacleRepository by inject<TentacleRepository>()
+	private val homeVersionTracker by inject<HomeVersionTracker>()
 
 	private val helper by lazy { HomeFragmentHelper(requireContext(), userRepository) }
 
@@ -167,6 +170,25 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	@Volatile
 	private var tentacleDirty = false
 
+	// The home version on screen (0: unknown, an older plugin), and whether the rows on screen
+	// are Tentacle's home (false: the stock rows, without the plugin or with its home off).
+	@Volatile
+	private var shownHomeVersion = 0L
+	@Volatile
+	private var showingTentacleHome = false
+
+	// Whether the user's layout may show Live TV rows (set by the first load): a rebuild
+	// keeps them instead of dropping them (M3).
+	@Volatile
+	private var liveTvRowsWanted = false
+
+	// Completed when the first load is done: no refresh runs before it (a push during the
+	// first load duplicated rows, M3).
+	private val firstLoadDone = CompletableDeferred<Unit>()
+
+	// Every Tentacle home refresh goes through here: one at a time, newest wins (M3).
+	private lateinit var homeRefresher: SerialRefresher<HomeRefreshRequest>
+
 	// Index in the adapter where content rows start (after notifications + nowPlaying)
 	private var contentRowStartIndex = 0
 
@@ -205,262 +227,280 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 		adapter = MutableObjectAdapter<Row>(presenterSelector)
 
+		homeRefresher = SerialRefresher<HomeRefreshRequest>(lifecycleScope, firstLoadDone, HomeRefreshRequest::merge, { it.settle }) { request ->
+			runHomeRefresh(request)
+		}
+
 		lifecycleScope.launch(Dispatchers.IO) {
-			val currentUser = withTimeout(30.seconds) {
-				userRepository.currentUser.filterNotNull().first()
-			}
-
-			// Start out with default sections
-			val homesections = userSettingPreferences.activeHomesections
-			var includeLiveTvRows = false
-
-			// Pre-fetch views and check live TV support in parallel
-			val viewsDeferred = if (homesections.contains(HomeSectionType.LATEST_MEDIA)) {
-				async { userViewsRepository.views.first() }
-			} else null
-
-			val liveTvDeferred = if (homesections.contains(HomeSectionType.LIVE_TV) && currentUser.policy?.enableLiveTvAccess == true) {
-				async {
-					liveTvProbe {
-						val recommendedPrograms by api.liveTvApi.getRecommendedPrograms(
-							enableTotalRecordCount = false,
-							imageTypeLimit = 1,
-							isAiring = true,
-							limit = 1,
-						)
-						recommendedPrograms.items.isNotEmpty()
-					}
+			// The body's end, not its children's: the Live TV check below may run on.
+			try {
+				val currentUser = withTimeout(30.seconds) {
+					userRepository.currentUser.filterNotNull().first()
 				}
-			} else null
 
-			// Await views (fast /UserViews call) but NOT the Live TV recommended-programs
-			// check — that query scans the whole EPG and can take 10+ seconds on large
-			// setups, and awaiting it here used to block the instant cache render below,
-			// leaving the home screen blank. Use the persisted result from the previous
-			// run for the cache render; the real check revalidates in the background.
-			val cachedViews = viewsDeferred?.await()
-			includeLiveTvRows = liveTvDeferred != null && systemPreferences[SystemPreferences.liveTvRowsAvailable]
+				// Start out with default sections
+				val homesections = userSettingPreferences.activeHomesections
+				var includeLiveTvRows = false
 
-			// Revalidate Live TV availability in the background and persist for the
-			// next launch — the check scans the whole EPG and must never block a render.
-			liveTvDeferred?.let { deferred ->
-				launch {
-					// No answer keeps the last known value.
-					val available = deferred.await() ?: return@launch
-					systemPreferences[SystemPreferences.liveTvRowsAvailable] = available
-				}
-			}
+				// Pre-fetch views and check live TV support in parallel
+				val viewsDeferred = if (homesections.contains(HomeSectionType.LATEST_MEDIA)) {
+					async { userViewsRepository.views.first() }
+				} else null
 
-			// Make sure the rows are empty
-			val rows = mutableListOf<HomeFragmentRow>()
-
-			// Check for coroutine cancellation
-			if (!isActive) return@launch
-
-			// ── Fresh-first load ────────────────────────────────────────────
-			// While the loading overlay holds, fetch the authoritative home config
-			// from Tentacle and build everything ONCE — rows, hero, order — so the
-			// reveal is final with no post-launch restructure. The on-device cache
-			// below is only the fallback for an unreachable/slow server.
-			val tentacleAvailable = tentacleRepository.checkAvailable()
-			val freshSections = if (tentacleAvailable) {
-				withTimeoutOrNull(8_000) { tentacleRepository.getSections() }
-			} else null
-
-			// ── Fallback: render from on-device cache ───────────────────────
-			// Only when the fresh fetch failed. Renders the last session's layout,
-			// then a background refresh revalidates and updates rows in place.
-			val cachedSections = if (freshSections == null) tentacleRepository.getCachedSections() else null
-			if (cachedSections != null) {
-				val sections = cachedSections.sections.filter { it.type == "row" || it.type == "builtin" }
-				if (sections.isNotEmpty()) {
-					if (userSettingPreferences[UserSettingPreferences.mediaBarEnabled]) {
-						val heroConfig = tentacleRepository.getCachedHeroConfig()
-						if (heroConfig != null && heroConfig.enabled && heroConfig.playlistId.isNotEmpty()) {
-							rows.add(mediaBarRow)
-							mediaBarViewModel.loadInitialContent(allowCache = true)
+				val liveTvDeferred = if (homesections.contains(HomeSectionType.LIVE_TV) && currentUser.policy?.enableLiveTvAccess == true) {
+					async {
+						liveTvProbe {
+							val recommendedPrograms by api.liveTvApi.getRecommendedPrograms(
+								enableTotalRecordCount = false,
+								imageTypeLimit = 1,
+								isAiring = true,
+								limit = 1,
+							)
+							recommendedPrograms.items.isNotEmpty()
 						}
 					}
-					val cachedMergeCw = cachedSections.mergeContinueWatching
-					val cachedHasResume = sections.any { it.type == "builtin" && (it.sectionId == "resume" || it.sectionId == "resumevideo") }
-					for (section in sections) {
-						when (section.type) {
-							"row" -> {
-								val playlistId = section.playlistId ?: continue
-								val items = tentacleRepository.getCachedSectionItems(playlistId)
-								if (items.isNotEmpty()) {
-									rows.add(
-										HomeFragmentTentacleRow(
-											listOf(
-												TentacleRowData(
-													title = section.displayText,
-													playlistId = playlistId,
-													items = items,
-													wide = section.shape == "wide",
-												)
-											),
-											tentacleRowAdapters,
+				} else null
+
+				// Await views (fast /UserViews call) but NOT the Live TV recommended-programs
+				// check — that query scans the whole EPG and can take 10+ seconds on large
+				// setups, and awaiting it here used to block the instant cache render below,
+				// leaving the home screen blank. Use the persisted result from the previous
+				// run for the cache render; the real check revalidates in the background.
+				val cachedViews = viewsDeferred?.await()
+				includeLiveTvRows = liveTvDeferred != null && systemPreferences[SystemPreferences.liveTvRowsAvailable]
+				liveTvRowsWanted = liveTvDeferred != null
+
+				// Revalidate Live TV availability in the background and persist for the
+				// next launch — the check scans the whole EPG and must never block a render.
+				liveTvDeferred?.let { deferred ->
+					launch {
+						// No answer keeps the last known value.
+						val available = deferred.await() ?: return@launch
+						systemPreferences[SystemPreferences.liveTvRowsAvailable] = available
+					}
+				}
+
+				// Make sure the rows are empty
+				val rows = mutableListOf<HomeFragmentRow>()
+
+				// Check for coroutine cancellation
+				if (!isActive) return@launch
+
+				// ── Fresh-first load ────────────────────────────────────────────
+				// While the loading overlay holds, fetch the authoritative home config
+				// from Tentacle and build everything ONCE — rows, hero, order — so the
+				// reveal is final with no post-launch restructure. The on-device cache
+				// below is only the fallback for an unreachable/slow server.
+				val tentacleAvailable = tentacleRepository.checkAvailable()
+				val freshAnswer = if (tentacleAvailable) {
+					withTimeoutOrNull(8_000) { tentacleRepository.fetchSections() }
+				} else null
+				val freshSections = (freshAnswer as? SectionsAnswer.On)?.response
+				// Home off: the stock rows below, at this version (a switch back on is then seen).
+				if (freshAnswer is SectionsAnswer.Off) {
+					shownHomeVersion = freshAnswer.homeVersion
+					homeVersionTracker.noteVersion(freshAnswer.homeVersion)
+				}
+
+				// ── Fallback: render from on-device cache ───────────────────────
+				// Only when the fresh fetch failed. Renders the last session's layout,
+				// then a background refresh revalidates and updates rows in place.
+				val cachedSections = if (freshSections == null) tentacleRepository.getCachedSections() else null
+				if (cachedSections != null) {
+					val sections = cachedSections.sections.filter { it.type == "row" || it.type == "builtin" }
+					if (sections.isNotEmpty()) {
+						if (userSettingPreferences[UserSettingPreferences.mediaBarEnabled]) {
+							val heroConfig = tentacleRepository.getCachedHeroConfig()
+							if (heroConfig != null && heroConfig.enabled && heroConfig.playlistId.isNotEmpty()) {
+								rows.add(mediaBarRow)
+								mediaBarViewModel.loadInitialContent(allowCache = true)
+							}
+						}
+						val cachedMergeCw = cachedSections.mergeContinueWatching
+						val cachedHasResume = sections.any { it.type == "builtin" && (it.sectionId == "resume" || it.sectionId == "resumevideo") }
+						for (section in sections) {
+							when (section.type) {
+								"row" -> {
+									val playlistId = section.playlistId ?: continue
+									val items = tentacleRepository.getCachedSectionItems(playlistId)
+									if (items.isNotEmpty()) {
+										rows.add(
+											HomeFragmentTentacleRow(
+												listOf(
+													TentacleRowData(
+														title = section.displayText,
+														playlistId = playlistId,
+														items = items,
+														wide = section.shape == "wide",
+													)
+												),
+												tentacleRowAdapters,
+											)
 										)
+									}
+								}
+								"builtin" -> {
+									val sectionId = section.sectionId ?: continue
+									// Merge on: Next Up folds into the Continue Watching row
+									if (cachedMergeCw && sectionId == "nextup" && cachedHasResume) continue
+									addBuiltInSection(rows, sectionId, includeLiveTvRows, cachedViews, cachedMergeCw)
+								}
+							}
+						}
+						if (rows.any { it !is HomeFragmentMediaBarRow }) {
+							// merge flag is part of the structure key so toggling it in the
+							// dashboard triggers a structural rebuild on the next refresh
+							currentTentacleSectionKeys = sections.map(::sectionKey) + "merge:$cachedMergeCw"
+							currentRows = rows
+							showingTentacleHome = true
+							renderInitialRows(rows)
+							Timber.i("Home rendered from cache fallback (${rows.size} rows), revalidating in background")
+
+							// Background revalidation — fetches fresh sections + items and diffs
+							// against what's on screen (or shows the stock rows if the home is off).
+							runHomeRefresh(HomeRefreshRequest(force = true))
+							return@launch
+						}
+						// Cache produced no content rows — reset and fall through to the network path
+						rows.clear()
+						tentacleRowAdapters.clear()
+					}
+				}
+
+				// ── Fresh render path ───────────────────────────────────────────
+				// freshSections was fetched above while the loading overlay holds. Build
+				// the final layout in one pass; no post-render revalidation needed.
+				val tentacleFresh = freshSections != null
+
+				// Only add media bar row if Tentacle hero is actually enabled and configured
+				if (userSettingPreferences[UserSettingPreferences.mediaBarEnabled] && tentacleFresh) {
+					val heroConfig = tentacleRepository.getHeroConfig()
+					Timber.d("Hero config check: config=$heroConfig, enabled=${heroConfig?.enabled}, playlistId=${heroConfig?.playlistId}")
+					if (heroConfig != null && heroConfig.enabled && heroConfig.playlistId.isNotEmpty()) {
+						rows.add(mediaBarRow)
+						// Apply trailer audio setting from dashboard config
+						userSettingPreferences[UserSettingPreferences.previewAudioEnabled] = heroConfig.trailerAudio
+						(parentFragment as? HomeFragment)?.applyTrailerAudioSetting(heroConfig.trailerAudio)
+						// Start loading hero content immediately — don't wait for all rows to finish
+						mediaBarViewModel.loadInitialContent()
+						Timber.d("MediaBar row added (hero enabled, trailerAudio=${heroConfig.trailerAudio})")
+					} else {
+						Timber.d("MediaBar row skipped (hero disabled or no config)")
+					}
+				} else {
+					Timber.d("MediaBar row skipped (mediaBarEnabled=${userSettingPreferences[UserSettingPreferences.mediaBarEnabled]}, tentacleFresh=$tentacleFresh)")
+				}
+				var tentacleSections: List<org.jellyfin.androidtv.data.repository.TentacleSection> = emptyList()
+
+				if (tentacleFresh) {
+					val sectionsResponse = freshSections
+					if (sectionsResponse != null) {
+						tentacleSections = sectionsResponse.sections.filter { it.type == "row" || it.type == "builtin" }
+
+						// Pre-fetch playlist row items in parallel
+						val tentacleRowData = tentacleSections
+							.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }
+							.map { section ->
+								async {
+									TentacleRowData(
+										title = section.displayText,
+										playlistId = section.playlistId!!,
+										items = tentacleRepository.getSectionItems(section.playlistId),
+										wide = section.shape == "wide",
 									)
 								}
 							}
-							"builtin" -> {
-								val sectionId = section.sectionId ?: continue
-								// Merge on: Next Up folds into the Continue Watching row
-								if (cachedMergeCw && sectionId == "nextup" && cachedHasResume) continue
-								addBuiltInSection(rows, sectionId, includeLiveTvRows, cachedViews, cachedMergeCw)
-							}
-						}
-					}
-					if (rows.any { it !is HomeFragmentMediaBarRow }) {
-						// merge flag is part of the structure key so toggling it in the
-						// dashboard triggers a structural rebuild on the next refresh
-						currentTentacleSectionKeys = sections.map(::sectionKey) + "merge:$cachedMergeCw"
-						currentRows = rows
-						renderInitialRows(rows)
-						Timber.i("Home rendered from cache fallback (${rows.size} rows), revalidating in background")
+							.awaitAll()
+							.filter { it.items.isNotEmpty() }
 
-						// Background revalidation — refreshTentacleRowsInPlace fetches
-						// fresh sections + items and diffs against what's on screen.
-						if (tentacleRepository.checkAvailable()) {
-							refreshTentacleRowsInPlace()
-						}
-						return@launch
-					}
-					// Cache produced no content rows — reset and fall through to the network path
-					rows.clear()
-					tentacleRowAdapters.clear()
-				}
-			}
+						val tentacleMap = tentacleRowData.associateBy { it.playlistId }
 
-			// ── Fresh render path ───────────────────────────────────────────
-			// freshSections was fetched above while the loading overlay holds. Build
-			// the final layout in one pass; no post-render revalidation needed.
-			val tentacleFresh = freshSections != null
-
-			// Only add media bar row if Tentacle hero is actually enabled and configured
-			if (userSettingPreferences[UserSettingPreferences.mediaBarEnabled] && tentacleFresh) {
-				val heroConfig = tentacleRepository.getHeroConfig()
-				Timber.d("Hero config check: config=$heroConfig, enabled=${heroConfig?.enabled}, playlistId=${heroConfig?.playlistId}")
-				if (heroConfig != null && heroConfig.enabled && heroConfig.playlistId.isNotEmpty()) {
-					rows.add(mediaBarRow)
-					// Apply trailer audio setting from dashboard config
-					userSettingPreferences[UserSettingPreferences.previewAudioEnabled] = heroConfig.trailerAudio
-					(parentFragment as? HomeFragment)?.applyTrailerAudioSetting(heroConfig.trailerAudio)
-					// Start loading hero content immediately — don't wait for all rows to finish
-					mediaBarViewModel.loadInitialContent()
-					Timber.d("MediaBar row added (hero enabled, trailerAudio=${heroConfig.trailerAudio})")
-				} else {
-					Timber.d("MediaBar row skipped (hero disabled or no config)")
-				}
-			} else {
-				Timber.d("MediaBar row skipped (mediaBarEnabled=${userSettingPreferences[UserSettingPreferences.mediaBarEnabled]}, tentacleFresh=$tentacleFresh)")
-			}
-			var tentacleSections: List<org.jellyfin.androidtv.data.repository.TentacleSection> = emptyList()
-
-			if (tentacleFresh) {
-				val sectionsResponse = freshSections
-				if (sectionsResponse != null) {
-					tentacleSections = sectionsResponse.sections.filter { it.type == "row" || it.type == "builtin" }
-
-					// Pre-fetch playlist row items in parallel
-					val tentacleRowData = tentacleSections
-						.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }
-						.map { section ->
-							async {
-								TentacleRowData(
-									title = section.displayText,
-									playlistId = section.playlistId!!,
-									items = tentacleRepository.getSectionItems(section.playlistId),
-									wide = section.shape == "wide",
-								)
-							}
-						}
-						.awaitAll()
-						.filter { it.items.isNotEmpty() }
-
-					val tentacleMap = tentacleRowData.associateBy { it.playlistId }
-
-					// Render sections in dashboard order
-					val mergeCw = sectionsResponse.mergeContinueWatching
-					val hasResumeRow = tentacleSections.any { it.type == "builtin" && (it.sectionId == "resume" || it.sectionId == "resumevideo") }
-					for (section in tentacleSections) {
-						if (!isActive) return@launch
-						when (section.type) {
-							"row" -> {
-								val playlistId = section.playlistId ?: continue
-								tentacleMap[playlistId]?.let { data ->
-									rows.add(HomeFragmentTentacleRow(listOf(data), tentacleRowAdapters))
+						// Render sections in dashboard order
+						val mergeCw = sectionsResponse.mergeContinueWatching
+						val hasResumeRow = tentacleSections.any { it.type == "builtin" && (it.sectionId == "resume" || it.sectionId == "resumevideo") }
+						for (section in tentacleSections) {
+							if (!isActive) return@launch
+							when (section.type) {
+								"row" -> {
+									val playlistId = section.playlistId ?: continue
+									tentacleMap[playlistId]?.let { data ->
+										rows.add(HomeFragmentTentacleRow(listOf(data), tentacleRowAdapters))
+									}
+								}
+								"builtin" -> {
+									val sectionId = section.sectionId ?: continue
+									// Merge on: Next Up folds into the Continue Watching row
+									if (mergeCw && sectionId == "nextup" && hasResumeRow) continue
+									addBuiltInSection(rows, sectionId, includeLiveTvRows, cachedViews, mergeCw)
 								}
 							}
-							"builtin" -> {
-								val sectionId = section.sectionId ?: continue
-								// Merge on: Next Up folds into the Continue Watching row
-								if (mergeCw && sectionId == "nextup" && hasResumeRow) continue
-								addBuiltInSection(rows, sectionId, includeLiveTvRows, cachedViews, mergeCw)
+						}
+
+						// Store section keys for detecting structural changes later (the
+						// merge flag is included so toggling it rebuilds rows in place)
+						currentTentacleSectionKeys = tentacleSections.map(::sectionKey) + "merge:$mergeCw"
+						shownHomeVersion = sectionsResponse.homeVersion
+						homeVersionTracker.noteVersion(sectionsResponse.homeVersion)
+						showingTentacleHome = tentacleSections.isNotEmpty()
+					}
+				}
+
+				// If no Tentacle dashboard, fall back to standard home sections
+				if (tentacleSections.isEmpty()) {
+					val mergeContinueWatching = userPreferences[UserPreferences.mergeContinueWatchingNextUp]
+					var mergedRowAdded = false
+
+					for (section in homesections) when (section) {
+						HomeSectionType.MEDIA_BAR -> { /* Now handled by separate toggle above */ }
+						HomeSectionType.LATEST_MEDIA -> rows.add(helper.loadRecentlyAdded(cachedViews ?: userViewsRepository.views.first()))
+						HomeSectionType.RECENTLY_RELEASED -> rows.add(helper.loadRecentlyReleased())
+						HomeSectionType.LIBRARY_TILES_SMALL -> rows.add(HomeFragmentViewsRow(small = false))
+						HomeSectionType.LIBRARY_BUTTONS -> rows.add(HomeFragmentViewsRow(small = true))
+						HomeSectionType.RESUME -> {
+							if (mergeContinueWatching && !mergedRowAdded) {
+								rows.add(helper.loadMergedContinueWatching())
+								mergedRowAdded = true
+							} else if (!mergeContinueWatching) {
+								rows.add(helper.loadResumeVideo())
 							}
 						}
-					}
+						HomeSectionType.RESUME_AUDIO -> rows.add(helper.loadResumeAudio())
+						HomeSectionType.RESUME_BOOK -> Unit // Books are not (yet) supported
+						HomeSectionType.ACTIVE_RECORDINGS -> rows.add(helper.loadLatestLiveTvRecordings())
+						HomeSectionType.NEXT_UP -> {
+							// Skip Next Up if already merged with Continue Watching
+							if (!mergeContinueWatching) {
+								rows.add(helper.loadNextUp())
+							} else if (!mergedRowAdded) {
+								// If user has Next Up but not Resume in their section list, add merged row here
+								rows.add(helper.loadMergedContinueWatching())
+								mergedRowAdded = true
+							}
+						}
+						HomeSectionType.PLAYLISTS -> {
+							val row = helper.loadPlaylists()
+							if (row is HomeFragmentPlaylistsRow) {
+								this@HomeRowsFragment.playlistsRow = row
+								rows.add(row)
+							}
+						}
+						HomeSectionType.LIVE_TV -> if (includeLiveTvRows) {
+							rows.add(liveTVRow)
+							rows.add(helper.loadOnNow())
+						}
 
-					// Store section keys for detecting structural changes later (the
-					// merge flag is included so toggling it rebuilds rows in place)
-					currentTentacleSectionKeys = tentacleSections.map(::sectionKey) + "merge:$mergeCw"
+						HomeSectionType.NONE -> Unit
+					}
 				}
+
+				// Store rows for refreshing
+				currentRows = rows
+
+				// Add sections to layout
+				renderInitialRows(rows)
+			} finally {
+				firstLoadDone.complete(Unit)
 			}
-
-			// If no Tentacle dashboard, fall back to standard home sections
-			if (tentacleSections.isEmpty()) {
-				val mergeContinueWatching = userPreferences[UserPreferences.mergeContinueWatchingNextUp]
-				var mergedRowAdded = false
-
-				for (section in homesections) when (section) {
-					HomeSectionType.MEDIA_BAR -> { /* Now handled by separate toggle above */ }
-					HomeSectionType.LATEST_MEDIA -> rows.add(helper.loadRecentlyAdded(cachedViews ?: userViewsRepository.views.first()))
-					HomeSectionType.RECENTLY_RELEASED -> rows.add(helper.loadRecentlyReleased())
-					HomeSectionType.LIBRARY_TILES_SMALL -> rows.add(HomeFragmentViewsRow(small = false))
-					HomeSectionType.LIBRARY_BUTTONS -> rows.add(HomeFragmentViewsRow(small = true))
-					HomeSectionType.RESUME -> {
-						if (mergeContinueWatching && !mergedRowAdded) {
-							rows.add(helper.loadMergedContinueWatching())
-							mergedRowAdded = true
-						} else if (!mergeContinueWatching) {
-							rows.add(helper.loadResumeVideo())
-						}
-					}
-					HomeSectionType.RESUME_AUDIO -> rows.add(helper.loadResumeAudio())
-					HomeSectionType.RESUME_BOOK -> Unit // Books are not (yet) supported
-					HomeSectionType.ACTIVE_RECORDINGS -> rows.add(helper.loadLatestLiveTvRecordings())
-					HomeSectionType.NEXT_UP -> {
-						// Skip Next Up if already merged with Continue Watching
-						if (!mergeContinueWatching) {
-							rows.add(helper.loadNextUp())
-						} else if (!mergedRowAdded) {
-							// If user has Next Up but not Resume in their section list, add merged row here
-							rows.add(helper.loadMergedContinueWatching())
-							mergedRowAdded = true
-						}
-					}
-					HomeSectionType.PLAYLISTS -> {
-						val row = helper.loadPlaylists()
-						if (row is HomeFragmentPlaylistsRow) {
-							this@HomeRowsFragment.playlistsRow = row
-							rows.add(row)
-						}
-					}
-					HomeSectionType.LIVE_TV -> if (includeLiveTvRows) {
-						rows.add(liveTVRow)
-						rows.add(helper.loadOnNow())
-					}
-
-					HomeSectionType.NONE -> Unit
-				}
-			}
-
-			// Store rows for refreshing
-			currentRows = rows
-
-			// Add sections to layout
-			renderInitialRows(rows)
 		}
 
 		onItemViewClickedListener = CompositeClickedListener().apply {
@@ -501,100 +541,67 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			}
 		})
 
-		// React to Jellyfin WebSocket events for live home screen updates.
-		// LibraryChangedMessage fires when playlists are created/updated/deleted,
-		// so Tentacle row changes appear instantly without polling.
-
-		// Track events at STARTED level so we know if something changed while paused.
-		// This sets tentacleDirty=true for events arriving between onPause and onResume,
-		// so onResume only refreshes if actually needed (avoids full re-fetch on every nav back).
-		// SELF-HEALING SUBSCRIPTIONS: when the underlying WebSocket drops (Jellyfin
-		// restart, network blip, idle timeout), the SDK's subscribe flow COMPLETES
-		// silently. A TV app stays RESUMED for days, so repeatOnLifecycle never
-		// re-subscribes and live updates die permanently — dashboard changes stop
-		// reaching the open app. Each subscription therefore runs in a retry loop
-		// that detects the flow ending and resubscribes (which reconnects the socket).
+		// Live settings (androidtv audit H2, H3, M3). SocketHandler hears every LibraryChanged
+		// message while the app is in front, also while Home isn't on screen, and keeps the
+		// newest home version (HomeVersionTracker). On screen, Home refreshes on a push; off
+		// screen it catches up in onResume, by comparing the version it shows with the
+		// server's. Every refresh goes through homeRefresher: one at a time, newest wins.
 		lifecycleScope.launch {
 			lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-				while (isActive) {
-					Timber.w("WS: LibraryChanged dirty-tracker subscription active")
-					try {
-						api.webSocket.subscribe<LibraryChangedMessage>()
-							.collect {
-								Timber.w("WS: LibraryChangedMessage received (dirty tracker)")
-								tentacleDirty = true
+				launch {
+					homeVersionTracker.changes.collect { change ->
+						val push = change.push
+						if (!isResumed) {
+							// A versioned push is caught up by version in onResume; one without
+							// a version (an older plugin, a library scan) is remembered here.
+							if (push == null) tentacleDirty = true
+							return@collect
+						}
+						Timber.i("WS: LibraryChanged on Home (home version ${push?.version ?: "none"})")
+						homeRefresher.request(
+							when {
+								// Coalesce bursts of events into a single refresh. The backend fires
+								// one on every playlist mutation, and a playlist refresh clears and
+								// re-adds items: waiting until events settle (and Jellyfin indexes)
+								// keeps rows from blanking out and reordering.
+								push == null -> HomeRefreshRequest(stockRows = true, force = true, settle = 3.seconds)
+								push.everyone -> HomeRefreshRequest(stockRows = true, settle = 3.seconds)
+								// A save of this user's home: the stock rows didn't change.
+								else -> HomeRefreshRequest(settle = 1.seconds)
 							}
-					} catch (e: kotlinx.coroutines.CancellationException) {
-						throw e
-					} catch (e: Exception) {
-						Timber.w(e, "WS: dirty-tracker subscription error")
+						)
 					}
-					Timber.w("WS: dirty-tracker subscription ended — resubscribing in 5s")
-					delay(5.seconds)
+				}
+
+				launch {
+					homeVersionTracker.reconnects.collect {
+						// The socket was lost and is back: a save meanwhile wasn't heard (H3).
+						if (isResumed) homeRefresher.request(HomeRefreshRequest())
+					}
 				}
 			}
 		}
 
 		lifecycleScope.launch {
 			lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-				launch {
-					while (isActive) {
-						try {
-							api.webSocket.subscribe<UserDataChangedMessage>()
-								.collect {
-									Timber.w("WS: UserDataChangedMessage received")
-									refreshRows(force = false, delayed = true)
-								}
-						} catch (e: kotlinx.coroutines.CancellationException) {
-							throw e
-						} catch (e: Exception) {
-							Timber.w(e, "WS: userdata subscription error")
-						}
-						Timber.w("WS: userdata subscription ended — resubscribing in 5s")
-						delay(5.seconds)
+				while (isActive) {
+					try {
+						api.webSocket.subscribe<UserDataChangedMessage>()
+							.collect {
+								Timber.w("WS: UserDataChangedMessage received")
+								refreshRows(force = false, delayed = true)
+							}
+					} catch (e: kotlinx.coroutines.CancellationException) {
+						throw e
+					} catch (e: Exception) {
+						Timber.w(e, "WS: userdata subscription error")
 					}
-				}
-
-				launch {
-					while (isActive) {
-						Timber.w("WS: refresh subscription active (RESUMED)")
-						try {
-							api.webSocket.subscribe<LibraryChangedMessage>()
-								// Coalesce bursts of events into a single refresh. The backend fires
-								// LibraryChangedMessage on every playlist mutation (each webhook / sync
-								// / toggle), and the backend playlist refresh clears-and-re-adds items,
-								// so refreshing on every event reads playlists mid-rebuild and makes
-								// rows blank out and reorder. Debouncing waits until events settle
-								// (which also gives Jellyfin time to finish indexing) before refreshing.
-								.debounce(3.seconds)
-								.collect {
-									try {
-										if (!isAdded) return@collect
-										Timber.w("WS: LibraryChangedMessage settled, refreshing rows + Tentacle home")
-										refreshRows(force = true, delayed = false)
-										if (tentacleRepository.checkAvailable()) {
-											if (!isAdded) return@collect
-											refreshTentacleRowsInPlace()
-										}
-										tentacleDirty = false
-									} catch (e: kotlinx.coroutines.CancellationException) {
-										throw e
-									} catch (e: Exception) {
-										Timber.w(e, "Error handling LibraryChangedMessage refresh")
-									}
-								}
-						} catch (e: kotlinx.coroutines.CancellationException) {
-							throw e
-						} catch (e: Exception) {
-							Timber.w(e, "WS: refresh subscription error")
-						}
-						Timber.w("WS: refresh subscription ended — resubscribing in 5s")
-						delay(5.seconds)
-					}
+					Timber.w("WS: userdata subscription ended — resubscribing in 5s")
+					delay(5.seconds)
 				}
 			}
 		}
-		
+
 		// Listen for session/user changes and recreate the fragment with fresh data
 		lifecycleScope.launch {
 			sessionRepository.currentSession
@@ -801,13 +808,14 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// so without this the row kept the old items until a later library change.
 			refreshRows(force = false, delayed = true)
 			if (tentacleDirty) {
-				// A WebSocket event fired while we were paused — catch up now.
+				// A change without a version came while we were away — catch up now.
 				tentacleDirty = false
-				lifecycleScope.launch {
-					if (tentacleRepository.checkAvailable()) {
-						refreshTentacleRowsInPlace()
-					}
-				}
+				homeRefresher.request(HomeRefreshRequest(force = true))
+			} else if (shownHomeVersion > 0 || homeVersionTracker.known.value > 0) {
+				// Back in view (another screen, the player, the app back in front after sleep):
+				// ask for the home version and refresh only if it moved (H2). An older plugin
+				// has no version, and Home only refreshes on a change it heard of, as before.
+				homeRefresher.request(HomeRefreshRequest())
 			}
 		}
 
@@ -885,7 +893,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		else -> "unknown:${section.id}"
 	}
 
-	private suspend fun refreshTentacleRowsInPlace() {
+	private suspend fun refreshTentacleRowsInPlace(fetched: TentacleSectionsResponse? = null) {
 		if (!isAdded) return
 
 		// Refresh hero/media bar — allowCache means it only tears down and reloads
@@ -893,7 +901,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		mediaBarViewModel.loadInitialContent(allowCache = true)
 
 		// Re-fetch sections to check for structural changes
-		val sectionsResponse = withContext(Dispatchers.IO) { tentacleRepository.getSections() }
+		val sectionsResponse = fetched ?: withContext(Dispatchers.IO) { tentacleRepository.getSections() }
 			?: return // Plugin unavailable, skip
 
 		val newSections = sectionsResponse.sections.filter { it.type == "row" || it.type == "builtin" }
@@ -973,6 +981,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				resyncSelectedItem()
 			}
 			if (!returning && !rowLeft) {
+				shownHomeVersion = sectionsResponse.homeVersion
 				Timber.i("Tentacle rows refreshed in-place (${updates.size} rows)")
 				return
 			}
@@ -1003,7 +1012,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		// Build new rows list
 		val newRows = mutableListOf<HomeFragmentRow>()
 		val homesections = userSettingPreferences.activeHomesections
-		val includeLiveTvRows = false // Simplified — live TV state doesn't change mid-session
+		// As at the first load: a rebuild dropped the Live TV rows when this was a fixed false (M3).
+		val includeLiveTvRows = liveTvRowsWanted && systemPreferences[SystemPreferences.liveTvRowsAvailable]
 		val cachedViews = try { userViewsRepository.views.first() } catch (_: Exception) { null }
 
 		val hasResumeRow = newSections.any { it.type == "builtin" && (it.sectionId == "resume" || it.sectionId == "resumevideo") }
@@ -1142,8 +1152,42 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 		// Update tracked section keys
 		currentTentacleSectionKeys = newKeys
+		shownHomeVersion = sectionsResponse.homeVersion
+		showingTentacleHome = true
 
 		Timber.i("Tentacle rows rebuilt in-place (${newRows.size} content rows)")
+	}
+
+	/** One home refresh (through [homeRefresher], or the first load's revalidation). */
+	private suspend fun runHomeRefresh(request: HomeRefreshRequest) {
+		if (!isAdded) return
+		if (request.stockRows) refreshRows(force = true, delayed = false)
+		if (!tentacleRepository.checkAvailable()) return
+
+		val answer = tentacleRepository.fetchSections()
+		when (answer) {
+			is SectionsAnswer.On -> homeVersionTracker.noteVersion(answer.response.homeVersion)
+			is SectionsAnswer.Off -> homeVersionTracker.noteVersion(answer.homeVersion)
+			SectionsAnswer.Failed -> Unit
+		}
+		when (decideHomeRefresh(answer, shownHomeVersion, showingTentacleHome, request.force)) {
+			HomeAnswerAction.APPLY -> refreshTentacleRowsInPlace((answer as SectionsAnswer.On).response)
+			HomeAnswerAction.SKIP -> {
+				if (answer is SectionsAnswer.Off) shownHomeVersion = answer.homeVersion
+				Timber.d("Tentacle home unchanged (version $shownHomeVersion)")
+			}
+			HomeAnswerAction.SWITCH_TO_STOCK -> withContext(Dispatchers.Main) {
+				// The home was switched off in Tentacle: rebuild Home, which then shows the stock
+				// rows. "Off" used to look like "plugin missing" and changed nothing until a restart.
+				if (isAdded && !isStateSaved) {
+					Timber.i("Tentacle home switched off, showing the stock rows")
+					parentFragmentManager.beginTransaction()
+						.replace(R.id.rowsFragment, HomeRowsFragment())
+						.commitNow()
+				}
+			}
+			HomeAnswerAction.KEEP -> Timber.d("Tentacle home: no answer, keeping the rows")
+		}
 	}
 
 	/**

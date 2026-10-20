@@ -273,35 +273,33 @@ class TentacleRepository(
 
 	/**
 	 * Fetch the list of home screen sections from the Tentacle plugin.
-	 * Returns null if the plugin is not available or returns an error.
+	 * Returns null if the plugin is not available, returns an error, or the home is off.
 	 */
-	suspend fun getSections(): TentacleSectionsResponse? = withContext(Dispatchers.IO) {
+	suspend fun getSections(): TentacleSectionsResponse? = (fetchSections() as? SectionsAnswer.On)?.response
+
+	/** The home sections, telling "home is off" apart from "no answer" (see [SectionsAnswer]). */
+	suspend fun fetchSections(): SectionsAnswer = withContext(Dispatchers.IO) {
 		try {
 			val url = buildUrl("/TentacleHome/Sections")
 			val request = Request.Builder().url(url).get().build()
-			val response = httpClient.newCall(request).execute()
+			httpClient.newCall(request).execute().use { response ->
+				if (!response.isSuccessful) return@withContext SectionsAnswer.Failed
+				val body = response.body?.string() ?: return@withContext SectionsAnswer.Failed
 
-			if (!response.isSuccessful) {
-				response.close()
-				return@withContext null
+				val result = json.decodeFromString<TentacleSectionsResponse>(body)
+				if (!result.enabled) {
+					// Home disabled server-side — drop the cache so the next launch
+					// goes straight to the fallback sections instead of stale rows.
+					deleteHomeCache("sections.json")
+					return@withContext SectionsAnswer.Off(result.homeVersion)
+				}
+
+				writeHomeCache("sections.json", body)
+				SectionsAnswer.On(result)
 			}
-
-			val body = response.body?.string() ?: return@withContext null
-			response.close()
-
-			val result = json.decodeFromString<TentacleSectionsResponse>(body)
-			if (!result.enabled) {
-				// Home disabled server-side — drop the cache so the next launch
-				// goes straight to the fallback sections instead of stale rows.
-				deleteHomeCache("sections.json")
-				return@withContext null
-			}
-
-			writeHomeCache("sections.json", body)
-			result
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch Tentacle sections")
-			null
+			SectionsAnswer.Failed
 		}
 	}
 
@@ -835,7 +833,10 @@ class TentacleRepository(
 	 * Returns an actual (possibly empty) list only when the plugin responds successfully,
 	 * so a genuinely-empty config is honoured.
 	 */
-	suspend fun getToolbarConfig(): List<ToolbarButton>? = withContext(Dispatchers.IO) {
+	suspend fun getToolbarConfig(): List<ToolbarButton>? = fetchToolbar()?.buttons
+
+	/** The toolbar answer with its home version; null on a fetch failure (see [getToolbarConfig]). */
+	suspend fun fetchToolbar(): ToolbarResponse? = withContext(Dispatchers.IO) {
 		try {
 			val url = buildUrl("/TentacleHome/Toolbar")
 			val request = Request.Builder().url(url).get().build()
@@ -844,7 +845,7 @@ class TentacleRepository(
 				val body = response.body?.string() ?: return@withContext null
 				val result = json.decodeFromString<ToolbarResponse>(body)
 				_cardPreviewPolicy.value = result.cardPreviews
-				result.buttons
+				result
 			}
 		} catch (e: Exception) {
 			warnPollFailed("Failed to fetch toolbar config", e)
@@ -1374,7 +1375,21 @@ data class TentacleSectionsResponse(
 	val sections: List<TentacleSection> = emptyList(),
 	// Dashboard setting: combine Continue Watching + Next Up into one row
 	val mergeContinueWatching: Boolean = false,
+	/** The user's home version (plugin with live-settings catch-up); 0 from an older plugin. */
+	val homeVersion: Long = 0,
 )
+
+/** What /TentacleHome/Sections answered. */
+sealed interface SectionsAnswer {
+	/** Tentacle's home is on: these sections. */
+	data class On(val response: TentacleSectionsResponse) : SectionsAnswer
+
+	/** A real answer that the home is off (or there is none): the client shows its own rows. */
+	data class Off(val homeVersion: Long) : SectionsAnswer
+
+	/** No answer (network, timeout, 5xx, plugin missing): keep what is shown. */
+	data object Failed : SectionsAnswer
+}
 
 @Serializable
 data class TentacleSection(
@@ -1642,6 +1657,8 @@ data class ToolbarResponse(
 	 * a provider stream, until an admin chooses otherwise (androidtv#47).
 	 */
 	val cardPreviews: String = "local_only",
+	/** The user's home version (see [TentacleSectionsResponse.homeVersion]); 0 from an older plugin. */
+	val homeVersion: Long = 0,
 )
 
 @Serializable

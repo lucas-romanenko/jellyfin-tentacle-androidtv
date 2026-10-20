@@ -24,6 +24,7 @@ interface SearchRepository {
 	suspend fun search(
 		searchTerm: String,
 		itemTypes: Collection<BaseItemKind>,
+		limit: Int = QueryDefaults.SEARCH_PAGE_SIZE,
 	): Result<List<BaseItemDto>>
 
 	suspend fun searchMultiServer(
@@ -43,11 +44,12 @@ class SearchRepositoryImpl(
 	override suspend fun search(
 		searchTerm: String,
 		itemTypes: Collection<BaseItemKind>,
+		limit: Int,
 	): Result<List<BaseItemDto>> = try {
 		if (itemTypes.size == 1 && itemTypes.first() == BaseItemKind.PERSON) {
 			val request = GetPersonsRequest(
 				searchTerm = searchTerm,
-				limit = QueryDefaults.SEARCH_PAGE_SIZE,
+				limit = limit,
 				imageTypeLimit = 1,
 				fields = ItemRepository.itemFields,
 			)
@@ -61,7 +63,7 @@ class SearchRepositoryImpl(
 
 		var request = GetItemsRequest(
 			searchTerm = searchTerm,
-			limit = QueryDefaults.SEARCH_PAGE_SIZE,
+			limit = limit,
 			imageTypeLimit = 1,
 			includeItemTypes = itemTypes,
 			fields = ItemRepository.itemFields,

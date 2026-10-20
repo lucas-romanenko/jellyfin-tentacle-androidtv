@@ -584,7 +584,9 @@ fun createDeviceProfile(
 	subtitleProfile(Codec.Subtitle.PGS, embedded = pgsDirectPlay, encode = true)
 	subtitleProfile(Codec.Subtitle.PGSSUB, embedded = pgsDirectPlay, encode = true)
 
-	// ASS/SSA is supported via libass extension
+	// ASS/SSA: the player shows them itself when assDirectPlay is on (the default; Media3's SSA
+	// parser in the default player, libass in the playback rewrite). Burn-in stays as a last
+	// resort, but a remote source never gets it unasked (RemoteSubtitlePolicy, H1)
 	subtitleProfile(Codec.Subtitle.ASS, encode = true, embedded = assDirectPlay, external = assDirectPlay)
 	subtitleProfile(Codec.Subtitle.SSA, encode = true, embedded = assDirectPlay, external = assDirectPlay)
 }

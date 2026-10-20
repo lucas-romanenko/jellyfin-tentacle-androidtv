@@ -42,6 +42,32 @@ fun canReprepareLiveInPlace(errorCode: Int, httpStatus: Int?): Boolean = when (e
 	else -> false
 }
 
+/** How many times a server stream that hasn't sent its first segment is waited for in place (H1). */
+const val SERVER_START_WAITS = 4
+
+/**
+ * Whether a server stream (remux or transcode) that timed out before its first frame is prepared
+ * again as it is, instead of asking the server for a new one (H1, audit 2026-10-19). The server
+ * may still be preparing it: extracting a subtitle from a remote file took minutes, and every
+ * retry started another encode of the same title, three at once in the end. The same URL joins
+ * the encode the server is already preparing.
+ */
+fun canWaitForServerStart(isLive: Boolean, serverStream: Boolean, hasPlayed: Boolean, waits: Int, errorCode: Int): Boolean =
+	!isLive && serverStream && !hasPlayed && waits < SERVER_START_WAITS && when (errorCode) {
+		PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+		PlaybackException.ERROR_CODE_IO_UNSPECIFIED -> true
+		else -> false
+	}
+
+/** What the player says while it waits for the server ([canWaitForServerStart]). */
+enum class StartWaitMessage { SUBTITLES, STREAM, STILL }
+
+fun startWaitMessage(waitsBefore: Int, burningSubtitles: Boolean): StartWaitMessage = when {
+	waitsBefore > 0 -> StartWaitMessage.STILL
+	burningSubtitles -> StartWaitMessage.SUBTITLES
+	else -> StartWaitMessage.STREAM
+}
+
 /** The HTTP status behind a player error, if the server answered one. */
 @OptIn(UnstableApi::class)
 fun playerErrorHttpStatus(error: PlaybackException?): Int? =

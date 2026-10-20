@@ -212,10 +212,14 @@ class HomeFragment : Fragment() {
 				val overlay = loadingOverlay ?: return
 				if (!overlay.isVisible) return
 				overlayShownOnce = true
+				HomeTiming.mark("loading screen fading out")
 				overlay.animate()
 					.alpha(0f)
 					.setDuration(400)
-					.withEndAction { overlay.isVisible = false }
+					.withEndAction {
+						overlay.isVisible = false
+						HomeTiming.mark("Home usable")
+					}
 					.start()
 			}
 

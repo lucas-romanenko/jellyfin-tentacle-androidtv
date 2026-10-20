@@ -642,6 +642,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			contentRowStartIndex = adapter.size() // Mark where content rows begin
 			hasMediaBarAtPosition0 = rows.firstOrNull() is HomeFragmentMediaBarRow
 			for (row in rows) row.addToRowsAdapter(requireContext(), sharedCardPresenter, adapter as MutableObjectAdapter<Row>)
+			view?.let { v -> androidx.core.view.OneShotPreDrawListener.add(v) { HomeTiming.mark("rows drawn (${rows.size} rows)") } }
 
 			// Populate info area for the initial selected item — the Leanback
 			// selection callback fires before HomeFragment's observers are ready,

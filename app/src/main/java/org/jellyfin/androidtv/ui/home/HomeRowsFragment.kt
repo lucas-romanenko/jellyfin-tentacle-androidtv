@@ -377,6 +377,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				// freshSections was fetched above while the loading overlay holds. Build
 				// the final layout in one pass; no post-render revalidation needed.
 				val tentacleFresh = freshSections != null
+				var heroAdded = false
 
 				// Only add media bar row if Tentacle hero is actually enabled and configured. The
 				// sections answer says so (its "hero" section): no separate hero-settings request
@@ -386,6 +387,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					val heroOn = freshSections?.sections?.any { it.type == "hero" && !it.playlistId.isNullOrEmpty() } == true
 					if (heroOn) {
 						rows.add(mediaBarRow)
+						heroAdded = true
 						mediaBarViewModel.loadInitialContent()
 						Timber.d("MediaBar row added (hero enabled)")
 					} else {
@@ -405,11 +407,21 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						// a time, in dashboard order) while the rows, the stock rows and the hero go
 						// on screen; each row fills in as its answer arrives (H4). Home used to wait
 						// for the slowest row before showing any, and only then load the stock rows.
+						// The hero goes first: the loading screen waits for it, and on a slow TV twenty
+						// row answers decoding at once held its answer back by seconds. The rows on the
+						// first screen start with it, the others once it has its first slide (3 s at most).
+						val firstScreen = firstScreenRows(tentacleSections.map { if (it.type == "row") it.playlistId else null })
+						val heroFirst = if (heroAdded) async {
+							withTimeoutOrNull(3_000) { mediaBarViewModel.firstSlideReady.first { it } }
+						} else null
 						tentacleRowFetches = tentacleSections
 							.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }
 							.distinctBy { it.playlistId }
 							.associate { section ->
-								section.playlistId!! to async { tentacleRepository.getSectionItems(section.playlistId) }
+								section.playlistId!! to async {
+									if (section.playlistId !in firstScreen) heroFirst?.await()
+									tentacleRepository.getSectionItems(section.playlistId)
+								}
 							}
 
 						// Render sections in dashboard order

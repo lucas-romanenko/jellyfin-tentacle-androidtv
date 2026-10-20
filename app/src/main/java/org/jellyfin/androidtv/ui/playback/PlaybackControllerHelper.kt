@@ -5,11 +5,13 @@ import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.util.UnstableApi
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentAction
 import org.jellyfin.androidtv.ui.home.mediabar.SponsorBlockApi
+import org.jellyfin.androidtv.ui.livetv.getOrNullUnlessCancelled
+import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentAction
 import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentRepository
 import org.jellyfin.androidtv.ui.playback.segment.sponsorBlockCategories
 import org.jellyfin.androidtv.ui.playback.segment.sponsorBlockSegmentType
@@ -25,7 +27,6 @@ import org.jellyfin.sdk.model.api.MediaStreamType
 import org.jellyfin.sdk.model.api.SubtitleDeliveryMethod
 import org.koin.android.ext.android.inject
 import timber.log.Timber
-import java.util.UUID
 
 fun PlaybackController.getLiveTvChannel(
 	id: UUID,
@@ -177,9 +178,10 @@ fun PlaybackController.applyMediaSegments(
 
 	fragment?.clearSkipOverlay()
 	fragment.lifecycleScope.launch {
+		// A cancelled request (the player closed meanwhile) ends here instead of starting playback
 		val mediaSegments = runCatching {
 			mediaSegmentRepository.getSegmentsForItem(item)
-		}.getOrNull().orEmpty()
+		}.getOrNullUnlessCancelled().orEmpty()
 
 		for (mediaSegment in mediaSegments) {
 			val action = mediaSegmentRepository.getMediaSegmentAction(mediaSegment)

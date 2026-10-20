@@ -46,7 +46,7 @@ The code wins where they differ.
   items are fetched 4 at a time and filled in as each arrives
   (`fillTentacleRows`; an empty one leaves), stock rows loading themselves.
   The hero and the first two rows are asked first; the other rows wait for
-  the hero's first slide (3 s at most): on the Sony 20 row answers decoding
+  the hero's answer (3 s at most): on the Sony 20 row answers decoding
   at once held the hero, and so the loading screen, back by 5–7 s.
   The loading screen waits for the hero and the first two content rows
   (`firstScreenRows`), with no fixed hold. `HomeTiming` logs the milestones

@@ -82,6 +82,14 @@ class MediaBarSlideshowViewModel(
 	// skeleton that the hero then pops into. This ViewModel is a process-wide singleton,
 	// so the flag also guards against a stale Ready state satisfying a fresh overlay.
 	private val _firstSlideReady = MutableStateFlow(false)
+
+	// The hero's settings and items, asked off the main thread (see loadSlideshowItems).
+	private var heroFetch: kotlinx.coroutines.Deferred<List<BaseItemDto>>? = null
+
+	/** Returns once the hero's current requests have been answered (at once when there are none). */
+	suspend fun awaitHeroRequests() {
+		heroFetch?.join()
+	}
 	val firstSlideReady: StateFlow<Boolean> = _firstSlideReady.asStateFlow()
 
 	// The dashboard's hero trailer sound, from the hero settings this view model fetches anyway
@@ -303,10 +311,22 @@ class MediaBarSlideshowViewModel(
 			}
 		}
 		loadingJob?.cancel()
+		heroFetch?.cancel()
 		trailerJob?.cancel()
 		trailerReadyDeferred = null
 		_trailerState.value = TrailerPreviewState.Idle
 		_firstSlideReady.value = false
+		// The hero's requests start now, off the main thread: the load below runs on Main, which
+		// on a slow TV is busy for seconds with Home's first layout, and the requests waited for
+		// it (H4). The settings are refreshed along with the items: the revalidation above
+		// compares against them. Without this, a hero switched on through a full load kept the
+		// cached "off" config, so switching it off again looked like no change and the old hero
+		// stayed until the app restarted (#62).
+		fun fetchFresh() = viewModelScope.async(Dispatchers.IO) {
+			val config = async { fetchHeroConfig() }
+			tentacleRepository.getHeroItems().also { config.await() }
+		}.also { heroFetch = it }
+		val freshFetch = if (allowCache) null else fetchFresh()
 		loadingJob = viewModelScope.launch {
 		try {
 			usingTentacleHero = false
@@ -322,13 +342,7 @@ class MediaBarSlideshowViewModel(
 			}
 			if (!fromCache) {
 				_state.value = MediaBarState.Loading
-				// Refresh the cached config along with the items: the revalidation above compares
-				// against it. Without this, a hero switched on through a full load kept the cached
-				// "off" config, so switching it off again looked like no change and the old hero
-				// stayed until the app restarted (#62). Both requests run at once (H4).
-				val config = async { fetchHeroConfig() }
-				heroItems = tentacleRepository.getHeroItems()
-				config.await()
+				heroItems = (freshFetch ?: fetchFresh()).await()
 			}
 			if (heroItems.isNotEmpty()) {
 				Timber.d("MediaBar: Using ${heroItems.size} Tentacle hero items")

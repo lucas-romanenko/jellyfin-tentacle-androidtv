@@ -409,10 +409,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						// for the slowest row before showing any, and only then load the stock rows.
 						// The hero goes first: the loading screen waits for it, and on a slow TV twenty
 						// row answers decoding at once held its answer back by seconds. The rows on the
-						// first screen start with it, the others once it has its first slide (3 s at most).
+						// first screen start with it, the others once it is answered (3 s at most).
 						val firstScreen = firstScreenRows(tentacleSections.map { if (it.type == "row") it.playlistId else null })
 						val heroFirst = if (heroAdded) async {
-							withTimeoutOrNull(3_000) { mediaBarViewModel.firstSlideReady.first { it } }
+							withTimeoutOrNull(3_000) { mediaBarViewModel.awaitHeroRequests() }
 						} else null
 						tentacleRowFetches = tentacleSections
 							.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }

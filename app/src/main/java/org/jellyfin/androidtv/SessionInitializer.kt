@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.di.KoinInitializer
+import org.jellyfin.androidtv.ui.home.HomeTiming
 
 @Suppress("unused")
 class SessionInitializer : Initializer<Unit> {
@@ -19,7 +20,9 @@ class SessionInitializer : Initializer<Unit> {
 
 		// Restore system session
 		ProcessLifecycleOwner.get().lifecycleScope.launch(Dispatchers.IO) {
+			HomeTiming.mark("session restore start")
 			koin.get<SessionRepository>().restoreSession(destroyOnly = false)
+			HomeTiming.mark("session restore done")
 		}
 	}
 

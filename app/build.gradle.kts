@@ -121,6 +121,25 @@ android {
 
 			buildConfigField("boolean", "DEVELOPMENT", (defaultConfig.versionCode!! < 100).toString())
 		}
+
+		// The release build (same R8 and resource shrinking) as a side-by-side test app,
+		// "Tentacle Bench", signed with the debug key: what start-up and scrolling are
+		// measured on, since the debug build is several times slower. CI builds it for
+		// pull requests. -Ptentacle.benchDebuggable=true makes it debuggable for a method
+		// trace (am start --start-profiler); don't time that one.
+		create("bench") {
+			initWith(getByName("release"))
+			signingConfig = signingConfigs.getByName("debug")
+			matchingFallbacks += "release"
+			applicationIdSuffix = ".bench"
+			isDebuggable = findProperty("tentacle.benchDebuggable")?.toString() == "true"
+
+			val benchAppId = defaultConfig.applicationId + applicationIdSuffix
+			resValue("string", "app_id", benchAppId)
+			resValue("string", "app_search_suggest_authority", "${benchAppId}.content")
+			resValue("string", "app_search_suggest_intent_data", "content://${benchAppId}.content/intent")
+			resValue("string", "app_name", "Tentacle Bench")
+		}
 	}
 
 	lint {

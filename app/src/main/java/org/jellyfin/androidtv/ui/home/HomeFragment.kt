@@ -12,6 +12,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.platform.ComposeView
+import androidx.core.view.doOnPreDraw
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
@@ -118,6 +119,7 @@ class HomeFragment : Fragment() {
 		container: ViewGroup?,
 		savedInstanceState: Bundle?
 	): View {
+		HomeTiming.mark("Home onCreateView")
 		val view = inflater.inflate(R.layout.fragment_home, container, false)
 
 		titleView = view.findViewById(R.id.title)
@@ -207,6 +209,7 @@ class HomeFragment : Fragment() {
 
 		rowsFragment = childFragmentManager.findFragmentById(R.id.rowsFragment) as? HomeRowsFragment
 		HomeTiming.mark("Home view created")
+		view.doOnPreDraw { HomeTiming.mark("Home first layout done") }
 
 		// The dashboard's hero trailer sound, from the hero's own settings request. Applied once
 		// per Home and again when the dashboard changes it, not on every return to Home (that

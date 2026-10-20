@@ -34,6 +34,7 @@ import org.jellyfin.androidtv.integration.LeanbackChannelWorker
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.ui.InteractionTrackerViewModel
 import org.jellyfin.androidtv.ui.background.AppBackground
+import org.jellyfin.androidtv.ui.home.HomeTiming
 import org.jellyfin.androidtv.ui.navigation.NavigationAction
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.playback.PlaybackLauncher
@@ -93,6 +94,7 @@ class MainActivity : FragmentActivity() {
 	}
 
 	override fun onCreate(savedInstanceState: Bundle?) {
+		HomeTiming.mark("MainActivity onCreate")
 		applyTheme()
 
 		super.onCreate(savedInstanceState)
@@ -124,8 +126,10 @@ class MainActivity : FragmentActivity() {
 
 			if (!validateAuthentication()) return@launch
 
+			HomeTiming.mark("MainActivity: session ready")
 			setupSyncPlayQueueLauncher()
 			setupActivity(savedInstanceState)
+			HomeTiming.mark("MainActivity: set up")
 		}
 	}
 

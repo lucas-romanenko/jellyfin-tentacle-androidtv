@@ -30,6 +30,7 @@ import org.jellyfin.androidtv.auth.repository.SessionRepositoryState
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.databinding.ActivityStartupBinding
 import org.jellyfin.androidtv.ui.background.AppBackground
+import org.jellyfin.androidtv.ui.home.HomeTiming
 import org.jellyfin.androidtv.ui.browsing.MainActivity
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.navigation.Destinations
@@ -80,6 +81,7 @@ class StartupActivity : FragmentActivity() {
 	}
 
 	override fun onCreate(savedInstanceState: Bundle?) {
+		HomeTiming.mark("StartupActivity onCreate")
 		applyTheme()
 
 		super.onCreate(savedInstanceState)
@@ -102,12 +104,14 @@ class StartupActivity : FragmentActivity() {
 	}
 
 	private fun onPermissionsGranted() = sessionRepository.state
+		.also { HomeTiming.mark("StartupActivity: permissions granted") }
 		.flowWithLifecycle(lifecycle, Lifecycle.State.RESUMED)
 		.filter { it == SessionRepositoryState.READY }
 		.map { sessionRepository.currentSession.value }
 		.distinctUntilChanged()
 		.onEach { session ->
 			if (session != null) {
+				HomeTiming.mark("StartupActivity: session ready")
 				Timber.i("Found a session in the session repository, waiting for the currentUser in the application class.")
 
 				showSplash()
@@ -138,7 +142,9 @@ class StartupActivity : FragmentActivity() {
 		Timber.i("Determining next activity (action=${intent.action}, itemId=$itemId, itemIsUserView=$itemIsUserView)")
 
 		// Start session
+		HomeTiming.mark("StartupActivity: user ready, session start")
 		(application as? JellyfinApplication)?.onSessionStart()
+		HomeTiming.mark("StartupActivity: session started")
 
 		// Create destination
 		val destination = when {
@@ -173,6 +179,7 @@ class StartupActivity : FragmentActivity() {
 				or Intent.FLAG_ACTIVITY_NO_ANIMATION
 		)
 		Timber.i("Opening next activity $intent")
+		HomeTiming.mark("StartupActivity: opening MainActivity")
 		startActivity(intent)
 		finish()
 		// Belt-and-suspenders: also suppress via the deprecated API for older devices

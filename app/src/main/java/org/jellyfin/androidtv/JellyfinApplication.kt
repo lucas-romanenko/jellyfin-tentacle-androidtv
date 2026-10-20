@@ -22,6 +22,7 @@ import org.jellyfin.androidtv.data.repository.NotificationsRepository
 import org.jellyfin.androidtv.integration.LeanbackChannelWorker
 import org.jellyfin.androidtv.ui.background.UpdateCheckWorker
 import org.jellyfin.androidtv.telemetry.TelemetryService
+import org.jellyfin.androidtv.ui.home.HomeTiming
 import org.koin.android.ext.android.inject
 import org.koin.core.qualifier.named
 import timber.log.Timber
@@ -30,6 +31,7 @@ import java.util.concurrent.TimeUnit
 @Suppress("unused")
 class JellyfinApplication : Application(), SingletonImageLoader.Factory {
 	override fun onCreate() {
+		HomeTiming.mark("Application onCreate")
 		super.onCreate()
 
 		// Don't run in ACRA service
@@ -37,6 +39,7 @@ class JellyfinApplication : Application(), SingletonImageLoader.Factory {
 
 		val notificationsRepository by inject<NotificationsRepository>()
 		notificationsRepository.addDefaultNotifications()
+		HomeTiming.mark("Application onCreate done")
 	}
 
 	/**
@@ -87,6 +90,8 @@ class JellyfinApplication : Application(), SingletonImageLoader.Factory {
 	override fun attachBaseContext(base: Context?) {
 		super.attachBaseContext(base)
 
+		HomeTiming.mark("crash reporter init")
 		TelemetryService.init(this)
+		HomeTiming.mark("crash reporter init done")
 	}
 }

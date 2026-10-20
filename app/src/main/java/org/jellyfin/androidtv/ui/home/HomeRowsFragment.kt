@@ -72,6 +72,7 @@ import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
 import org.jellyfin.androidtv.ui.presentation.PositionableListRowPresenter
 import org.jellyfin.androidtv.util.KeyProcessor
 import org.jellyfin.androidtv.util.Debouncer
+import org.jellyfin.androidtv.util.apiclient.EmptyResponse
 import org.jellyfin.playback.core.PlaybackManager
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.imageApi
@@ -151,6 +152,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	// Store rows for refreshing
 	private var currentRows = mutableListOf<HomeFragmentRow>()
 	private var playlistsRow: HomeFragmentPlaylistsRow? = null
+	// Home's rows in order and its built-in rows, as built: a built-in row that left empty is
+	// asked again and comes back in its place (#140).
+	private var homeRowOrder: List<Row> = emptyList()
+	private var stockRows: List<ListRow> = emptyList()
 
 	// Track Tentacle playlist rows for in-place refresh (playlistId → ItemRowAdapter)
 	private val tentacleRowAdapters = mutableMapOf<String, ItemRowAdapter>()
@@ -665,6 +670,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			contentRowStartIndex = adapter.size() // Mark where content rows begin
 			hasMediaBarAtPosition0 = rows.firstOrNull() is HomeFragmentMediaBarRow
 			for (row in rows) row.addToRowsAdapter(requireContext(), sharedCardPresenter, adapter as MutableObjectAdapter<Row>)
+			trackStockRows()
 			view?.let { v -> androidx.core.view.OneShotPreDrawListener.add(v) { HomeTiming.mark("rows drawn (${rows.size} rows)") } }
 
 			if (contentReady) markContentReady()
@@ -709,6 +715,36 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				}
 			}
 		}
+	}
+
+	/**
+	 * Note Home's rows as just built, and let each built-in row come back once it has items
+	 * after it removed itself empty (#140). Right after the rows are added: they leave only
+	 * when their first answer arrives. Main thread.
+	 */
+	private fun trackStockRows() {
+		val rowsAdapter = adapter as? MutableObjectAdapter<Row> ?: return
+		val tentacleAdapters = tentacleRowAdapters.values.toSet()
+		homeRowOrder = rowsAdapter.toList()
+		stockRows = homeRowOrder.filterIsInstance<ListRow>().filter { row ->
+			val rowAdapter = row.adapter as? ItemRowAdapter
+			rowAdapter != null && rowAdapter !in tentacleAdapters
+		}
+		for (row in stockRows) {
+			(row.adapter as ItemRowAdapter).setRetrieveFinishedListener(object : EmptyResponse(lifecycle) {
+				override fun onResponse() = putBackIfFilled(row)
+			})
+		}
+	}
+
+	/** A built-in row that left Home empty and has items again goes back in its place (#140). */
+	private fun putBackIfFilled(row: ListRow) {
+		val rowsAdapter = adapter as? MutableObjectAdapter<Row> ?: return
+		if (!isAdded || row !in stockRows || (row.adapter?.size() ?: 0) == 0) return
+		val shown = rowsAdapter.toList()
+		if (row in shown) return
+		Timber.i("Built-in row '${row.headerItem?.name}' has items again, putting it back")
+		rowsAdapter.add(HiddenStockRows.returnIndex(homeRowOrder, row, shown), row)
 	}
 
 	/**
@@ -938,9 +974,12 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			// Must run on Main thread: Retrieve()/ReRetrieveIfNeeded() may call loadStaticItems()
 			// which adds items directly to the Leanback adapter (UI operation)
-			repeat(adapter.size()) { i ->
-				val rowAdapter = (adapter[i] as? ListRow)?.adapter as? ItemRowAdapter
-				if (rowAdapter != null && rowAdapter in tentacleAdapters) return@repeat
+			// Also the built-in rows that left empty: nothing asked them again, so Continue
+			// Watching never came back after a playback until the app restarted (#140).
+			val shown = (0 until adapter.size()).map { adapter[it] }
+			for (row in HiddenStockRows.toRecheck(shown, stockRows)) {
+				val rowAdapter = (row as? ListRow)?.adapter as? ItemRowAdapter
+				if (rowAdapter != null && rowAdapter in tentacleAdapters) continue
 				if (force) rowAdapter?.Retrieve()
 				else rowAdapter?.ReRetrieveIfNeeded()
 			}
@@ -1219,6 +1258,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			}
 
 			currentRows = newRows
+			trackStockRows()
 			resyncSelectedItem()
 		}
 

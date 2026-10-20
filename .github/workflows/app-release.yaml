@@ -51,6 +51,18 @@ jobs:
         run: ./gradlew assembleGithubRelease
       - name: Collect APKs
         run: mkdir -p build/release/; find app/build/ -iname "*.apk" -exec mv "{}" build/release/ \;
+      # The same APK under a name that never changes, so
+      # releases/latest/download/tentacle-androidtv-github-release.apk is always the newest
+      # release (the Downloader app link, and the server's /tv redirect).
+      - name: Add the stable-name copy
+        run: |
+          versioned=$(find build/release/ -maxdepth 1 -name "tentacle-androidtv-v*-github-release.apk" | head -n 1)
+          if [ -z "$versioned" ]; then
+            echo "::error::No tentacle-androidtv-v*-github-release.apk was built"
+            exit 1
+          fi
+          cp "$versioned" build/release/tentacle-androidtv-github-release.apk
+          ls -l build/release/
       # Lucas's own release (made in the UI) keeps its title and notes: the
       # APKs are only attached. A bare tag gets a release with generated notes.
       - name: Publish the APKs on the tag's release

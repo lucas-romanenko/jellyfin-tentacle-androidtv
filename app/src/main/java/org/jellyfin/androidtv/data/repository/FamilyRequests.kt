@@ -90,3 +90,10 @@ fun addButtonLabel(arr: String, mode: RequestMode, adding: Boolean, requested: B
 	mode.asks -> "Request"
 	else -> "Add to $arr"
 }
+
+/** How long the same notice stays quiet after it was shown (the guide's open and its error, player retries). */
+const val NOTICE_REPEAT_MS = 30_000L
+
+/** Show [text] unless the same text was shown less than 30 s ago. */
+fun shouldShowNotice(text: String, lastText: String?, lastShownMs: Long, nowMs: Long): Boolean =
+	text != lastText || nowMs - lastShownMs !in 0 until NOTICE_REPEAT_MS

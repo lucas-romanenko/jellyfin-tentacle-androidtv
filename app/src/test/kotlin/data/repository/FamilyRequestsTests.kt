@@ -59,4 +59,11 @@ class FamilyRequestsTests : FunSpec({
 		parseFamilyStatus(200, "nope") shouldBe null
 		liveTvNotice(null, "Unable to load channels") shouldBe "Unable to load channels"
 	}
+
+	test("the same notice shows once per 30 seconds; another one shows at once") {
+		shouldShowNotice("Live TV is down", null, 0, 1_000) shouldBe true
+		shouldShowNotice("Live TV is down", "Live TV is down", 1_000, 20_000) shouldBe false
+		shouldShowNotice("Live TV is down", "Live TV is down", 1_000, 31_000) shouldBe true
+		shouldShowNotice("Unable to load channels", "Live TV is down", 1_000, 2_000) shouldBe true
+	}
 })

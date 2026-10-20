@@ -75,6 +75,20 @@ The code wins where they differ.
   kept in the `tentacle` SharedPreferences), follow/unfollow series (Sonarr
   "monitor new items"). TMDB images straight from the CDN
   (`image.tmdb.org/t/p/w342` posters, `w1280` backdrops).
+- **Requests that wait for approval** (family members; pure functions in
+  `data/repository/FamilyRequests.kt`, `FamilyRequestsTests`):
+  `/RequestMode` (`{"mode":"ask"|"direct","approver"}`, asked once per
+  session, 3 s; a 404 or failure is "direct") makes the Discover add
+  buttons read "Request". An add answered with `pending > 0` (HTTP 200,
+  `detail` = "Sent to <admin> to approve…") is a success: the `detail`
+  (else "Sent for approval") shows in green and the button reads
+  "Requested" (`addOutcome`, `addEpisodesOutcome`).
+- **Problems in plain words**: `/FamilyStatus`
+  (`{"messages":[{"area":"livetv"|"requests"|"library","text"}]}`, 3 s,
+  failures ignored). `ui/livetv/LiveTvStatusNotice.kt` shows the `livetv`
+  text when the guide opens, instead of "Unable to load channels", and
+  next to the player's "Error streaming live TV" (same text at most once
+  per 30 s).
 - **Episode picker** (`ui/discover/EpisodePickerDialog.kt`,
   `EpisodePickerMode`): `ADD_NEW` (add a series with chosen episodes),
   `DOWNLOAD_MORE` (VOD series: download missing episodes), `MANAGE` (change
@@ -141,6 +155,7 @@ and has no callers: don't wire it to a button for ordinary users.
 | POST | `/TentacleDiscover/ArrStopMissing` | user |
 | GET | `/TentacleDiscover/Detail/{mediaType}/{tmdbId}` | user |
 | GET | `/TentacleDiscover/DetailTvdb/{tvdbId}` | user |
+| GET | `/TentacleDiscover/FamilyStatus` | user |
 | POST | `/TentacleDiscover/FixMatch/movie/{tmdbId}` | user |
 | GET | `/TentacleDiscover/FixMatch/movie/{tmdbId}/Frames` | user |
 | GET | `/TentacleDiscover/FixMatch/movie/{tmdbId}/Suggestions` | user |
@@ -157,6 +172,7 @@ and has no callers: don't wire it to a button for ordinary users.
 | GET | `/TentacleDiscover/Providers` | user |
 | GET | `/TentacleDiscover/RadarrProfiles` | user |
 | POST | `/TentacleDiscover/ReplaceCopy/{mediaType}/{tmdbId}` | user |
+| GET | `/TentacleDiscover/RequestMode` | user |
 | GET | `/TentacleDiscover/Search` | user |
 | GET | `/TentacleDiscover/Season/{tmdbId}/{seasonNumber}` | user |
 | GET | `/TentacleDiscover/SeasonTvdb/{tvdbId}/{seasonNumber}` | user |

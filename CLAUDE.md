@@ -22,6 +22,7 @@ credentials, tokens, internal IPs or server paths in it.
 |---|---|
 | [docs/agents/tentacle-integration.md](docs/agents/tentacle-integration.md) | the Tentacle parts: repository, screens, the plugin endpoints it calls |
 | [docs/agents/releasing.md](docs/agents/releasing.md) | versioning, App / Release, release notes, checking a release |
+| [docs/agents/startup.md](docs/agents/startup.md) | cold start: measuring it (bench build, `HomeTiming`), compile state, the start-up profile |
 | [docs/FEATURES.md](docs/FEATURES.md) | user-facing feature list |
 | [docs/EMBY_SUPPORT.md](docs/EMBY_SUPPORT.md) | Emby support (inherited from Moonfin) |
 
@@ -64,6 +65,10 @@ APKs land in `app/build/outputs/apk/{flavor}/{buildType}/`, named
   ("Tentacle Debug") so both install side by side. The Kotlin namespace stays
   `org.jellyfin.androidtv`. Client name sent to Jellyfin: "Tentacle Android
   TV" (`di/AppModule.kt`, `di/AuthModule.kt`).
+- Bench: CI also builds `assembleGithubBench` for pull requests, the release
+  build as a side-by-side "Tentacle Bench" app (`.bench`, debug key): time
+  start-up and scrolling on it, never on the debug build
+  ([docs/agents/startup.md](docs/agents/startup.md)).
 - R8: release minifies and shrinks; debug doesn't (fast builds, readable
   stack traces). So a bug can exist only in the release APK: test the
   release build before calling a change done. Keep rules are package-wide

@@ -17,6 +17,7 @@ import org.jellyfin.androidtv.preference.constant.UserSelectBehavior.DISABLED
 import org.jellyfin.androidtv.preference.constant.UserSelectBehavior.LAST_USER
 import org.jellyfin.androidtv.preference.constant.UserSelectBehavior.SPECIFIC_USER
 import org.jellyfin.androidtv.telemetry.TelemetryService
+import org.jellyfin.androidtv.ui.home.HomeTiming
 import org.jellyfin.androidtv.util.EmbyCompatInterceptor
 import org.jellyfin.androidtv.util.sdk.forUser
 import org.jellyfin.sdk.api.client.ApiClient
@@ -148,7 +149,9 @@ class SessionRepositoryImpl(
 			}
 
 			// Check if server version is supported
+			HomeTiming.mark("session: server check")
 			server = serverRepository.getServer(session.serverId, true)
+			HomeTiming.mark("session: server check done")
 			if (server == null || !server.versionSupported) return false
 		}
 
@@ -218,9 +221,11 @@ class SessionRepositoryImpl(
 						return false
 					}
 					try {
+						HomeTiming.mark("session: user request")
 						val user = withContext(Dispatchers.IO) {
 							userApiClient.userApi.getCurrentUser().content
 						}
+						HomeTiming.mark("session: user answered")
 						preferencesRepository.onSessionChanged()
 						userRepository.setCurrentUser(user)
 						serverRepository.setCurrentServer(server)

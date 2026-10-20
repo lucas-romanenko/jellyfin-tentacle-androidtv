@@ -28,12 +28,19 @@ jobs:
       # JVM unit tests of every module (the app's github flavour stands for both).
       - name: Unit tests
         run: ./gradlew testDebugUnitTest :app:testGithubDebugUnitTest
+      # The release build as the side-by-side "Tentacle Bench" app (app/build.gradle.kts):
+      # start-up and scrolling are measured on it, and R8 problems show here first.
+      - name: Assemble bench APK
+        if: github.event_name == 'pull_request'
+        run: ./gradlew assembleGithubBench
       # The build is the check. Its APKs are attached only to pull requests
       # (for reviewing them): on a public repo a push's artifacts are a
       # download anyone can take, and APKs reach users only by a release.
       - name: Create publish bundle
         if: github.event_name == 'pull_request'
-        run: mkdir -p build/gh-app-publish/; find app/build/ -iname "*.apk" -exec mv "{}" build/gh-app-publish/ \;
+        run: |
+          mkdir -p build/gh-app-publish/; find app/build/ -iname "*.apk" -exec mv "{}" build/gh-app-publish/ \;
+          find app/build/outputs/mapping -path '*Bench*' -name mapping.txt -exec cp {} build/gh-app-publish/bench-mapping.txt \; || true
       - name: Upload artifacts
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0

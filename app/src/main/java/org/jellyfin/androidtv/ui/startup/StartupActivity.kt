@@ -30,6 +30,8 @@ import org.jellyfin.androidtv.auth.repository.SessionRepositoryState
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.databinding.ActivityStartupBinding
 import org.jellyfin.androidtv.ui.background.AppBackground
+import org.jellyfin.androidtv.ui.home.HomeTiming
+import org.jellyfin.androidtv.ui.home.mediabar.MediaBarSlideshowViewModel
 import org.jellyfin.androidtv.ui.browsing.MainActivity
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.navigation.Destinations
@@ -62,6 +64,7 @@ class StartupActivity : FragmentActivity() {
 	private val userRepository: UserRepository by inject()
 	private val navigationRepository: NavigationRepository by inject()
 	private val itemLauncher: ItemLauncher by inject()
+	private val mediaBarViewModel: MediaBarSlideshowViewModel by inject()
 
 	private lateinit var binding: ActivityStartupBinding
 
@@ -80,6 +83,7 @@ class StartupActivity : FragmentActivity() {
 	}
 
 	override fun onCreate(savedInstanceState: Bundle?) {
+		HomeTiming.mark("StartupActivity onCreate")
 		applyTheme()
 
 		super.onCreate(savedInstanceState)
@@ -102,12 +106,14 @@ class StartupActivity : FragmentActivity() {
 	}
 
 	private fun onPermissionsGranted() = sessionRepository.state
+		.also { HomeTiming.mark("StartupActivity: permissions granted") }
 		.flowWithLifecycle(lifecycle, Lifecycle.State.RESUMED)
 		.filter { it == SessionRepositoryState.READY }
 		.map { sessionRepository.currentSession.value }
 		.distinctUntilChanged()
 		.onEach { session ->
 			if (session != null) {
+				HomeTiming.mark("StartupActivity: session ready")
 				Timber.i("Found a session in the session repository, waiting for the currentUser in the application class.")
 
 				showSplash()
@@ -138,6 +144,7 @@ class StartupActivity : FragmentActivity() {
 		Timber.i("Determining next activity (action=${intent.action}, itemId=$itemId, itemIsUserView=$itemIsUserView)")
 
 		// Start session
+		HomeTiming.mark("StartupActivity: user ready")
 		(application as? JellyfinApplication)?.onSessionStart()
 
 		// Create destination
@@ -161,6 +168,9 @@ class StartupActivity : FragmentActivity() {
 			else -> null
 		}
 
+		// Opening Home: its hero starts loading now, while Home is created (when it was on last time).
+		if (destination == null) mediaBarViewModel.startEarly()
+
 		navigationRepository.reset(destination, true)
 
 		val intent = Intent(this, MainActivity::class.java)
@@ -173,6 +183,7 @@ class StartupActivity : FragmentActivity() {
 				or Intent.FLAG_ACTIVITY_NO_ANIMATION
 		)
 		Timber.i("Opening next activity $intent")
+		HomeTiming.mark("StartupActivity: opening MainActivity")
 		startActivity(intent)
 		finish()
 		// Belt-and-suspenders: also suppress via the deprecated API for older devices

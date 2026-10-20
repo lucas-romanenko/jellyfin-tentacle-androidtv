@@ -1068,6 +1068,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         if (isLiveTv) startLiveStallWatch();
 
         PlaybackControllerHelperKt.applyMediaSegments(this, item, () -> {
+            // The player may have closed while the segments loaded (Back right after tuning)
+            if (mVideoManager == null) return null;
             // Set video start delay
             long videoStartDelay = userPreferences.getValue().get(UserPreferences.Companion.getVideoStartDelay());
             if (videoStartDelay > 0) {

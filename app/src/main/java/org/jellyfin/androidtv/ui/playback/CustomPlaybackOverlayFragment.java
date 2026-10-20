@@ -12,6 +12,7 @@ import android.os.Handler;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.Toast;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.animation.Animation;
@@ -889,6 +890,12 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         tvGuideBinding.spinner.setVisibility(View.VISIBLE);
         fillTimeLine(GUIDE_HOURS);
         TvManager.loadAllChannels(this, ndx -> {
+            if (!isAdded()) return null;
+            if (ndx < 0 || TvManager.getAllChannels() == null) {
+                tvGuideBinding.spinner.setVisibility(View.GONE);
+                Toast.makeText(requireContext(), R.string.msg_unable_load_channels, Toast.LENGTH_LONG).show();
+                return null;
+            }
             if (ndx >= PAGE_SIZE) {
                 // last channel is not in first page so grab a set where it will be in the middle
                 ndx = ndx - (PAGE_SIZE / 2);
@@ -1437,7 +1444,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         // create quick channel change row
         TvManager.loadAllChannels(this, response -> {
             List<BaseItemDto> channels = TvManager.getAllChannels();
-            if (channels == null) return null;
+            if (channels == null || !isAdded()) return null;
             ArrayObjectAdapter channelAdapter = new ArrayObjectAdapter(new ChannelCardPresenter());
             channelAdapter.addAll(0, channels);
             if (mChapterRow != null) mPopupRowAdapter.remove(mChapterRow);

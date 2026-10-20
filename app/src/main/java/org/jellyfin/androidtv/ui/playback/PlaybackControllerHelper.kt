@@ -10,6 +10,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentAction
 import org.jellyfin.androidtv.ui.home.mediabar.SponsorBlockApi
+import org.jellyfin.androidtv.ui.livetv.getOrNullUnlessCancelled
 import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentRepository
 import org.jellyfin.androidtv.ui.playback.segment.sponsorBlockCategories
 import org.jellyfin.androidtv.ui.playback.segment.sponsorBlockSegmentType
@@ -177,9 +178,10 @@ fun PlaybackController.applyMediaSegments(
 
 	fragment?.clearSkipOverlay()
 	fragment.lifecycleScope.launch {
+		// A cancelled request (the player closed meanwhile) ends here instead of starting playback
 		val mediaSegments = runCatching {
 			mediaSegmentRepository.getSegmentsForItem(item)
-		}.getOrNull().orEmpty()
+		}.getOrNullUnlessCancelled().orEmpty()
 
 		for (mediaSegment in mediaSegments) {
 			val action = mediaSegmentRepository.getMediaSegmentAction(mediaSegment)

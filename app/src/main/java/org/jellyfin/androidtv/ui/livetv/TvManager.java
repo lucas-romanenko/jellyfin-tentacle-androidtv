@@ -105,7 +105,8 @@ public class TvManager {
                 allChannels = new ArrayList<>(channels);
                 outerResponse.apply(fillChannelIds());
             } else {
-                outerResponse.apply(0);
+                // -1: the channels could not be loaded (allChannels keeps what it had, maybe null)
+                outerResponse.apply(-1);
             }
             return null;
         });

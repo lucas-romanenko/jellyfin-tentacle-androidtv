@@ -2,6 +2,7 @@ package org.jellyfin.androidtv.ui.livetv
 
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -28,6 +29,17 @@ fun BaseItemDto.copyWithLastPlayedDate(
 	)
 )
 
+/**
+ * The request's value, or null when it failed. A cancelled request rethrows instead: the
+ * fragment that asked is gone (Back pressed while the channels were still loading), and
+ * its callback must not run on a destroyed fragment (`requireContext()` throws, and a
+ * first load's channel list is still null).
+ */
+internal fun <T> Result<T>.getOrNullUnlessCancelled(): T? = getOrElse {
+	if (it is CancellationException) throw it
+	null
+}
+
 fun loadLiveTvChannels(fragment: Fragment, callback: (channels: Collection<BaseItemDto>?) -> Unit) {
 	val liveTvPreferences by fragment.inject<LiveTvPreferences>()
 	val api by fragment.inject<ApiClient>()
@@ -45,10 +57,7 @@ fun loadLiveTvChannels(fragment: Fragment, callback: (channels: Collection<BaseI
 					sortOrder = if (sortDatePlayed) SortOrder.DESCENDING else SortOrder.ASCENDING,
 				).content.items
 			}
-		}.fold(
-			onSuccess = { channels -> callback(channels) },
-			onFailure = { callback(null) },
-		)
+		}.let { callback(it.getOrNullUnlessCancelled()) }
 	}
 }
 
@@ -79,10 +88,7 @@ fun getPrograms(
 					).content.items
 				}
 			}
-		}.fold(
-			onSuccess = { programs -> callback(programs) },
-			onFailure = { callback(null) },
-		)
+		}.let { callback(it.getOrNullUnlessCancelled()) }
 	}
 }
 
@@ -123,6 +129,7 @@ fun getScheduleRows(
 				callback(groupedTimers)
 			},
 			onFailure = {
+				if (it is CancellationException) throw it
 				callback(null)
 			},
 		)

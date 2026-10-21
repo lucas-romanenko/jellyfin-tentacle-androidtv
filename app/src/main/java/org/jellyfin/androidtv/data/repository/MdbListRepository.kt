@@ -50,9 +50,6 @@ class MdbListRepository(
 	private val ratingsCache = java.util.concurrent.ConcurrentHashMap<String, Map<String, Float>>()
 	private val pendingRequests = mutableMapOf<String, CompletableDeferred<Map<String, Float>?>>()
 
-	/** Forget cached ratings (low memory); they are fetched again when shown. */
-	fun clearCache() = ratingsCache.clear()
-
 	private val json = Json {
 		ignoreUnknownKeys = true
 		isLenient = true

@@ -13,7 +13,9 @@ import androidx.lifecycle.lifecycleScope
 import coil3.SingletonImageLoader
 import coil3.asDrawable
 import coil3.request.ImageRequest
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.R
@@ -65,7 +67,17 @@ class SimpleInfoRowView @JvmOverloads constructor(
 		}
 	}
 	
+	// Rating lookups for the shown item; a newer item cancels them (fast D-pad scrolling
+	// otherwise left a pile of MDBList/TMDB requests running for cards long passed).
+	private val ratingFetches = mutableListOf<Job>()
+
+	private fun launchRatingFetch(block: suspend CoroutineScope.() -> Unit) {
+		findViewTreeLifecycleOwner()?.lifecycleScope?.launch(block = block)?.let(ratingFetches::add)
+	}
+
 	fun setItem(item: BaseItemDto?) {
+		ratingFetches.forEach { it.cancel() }
+		ratingFetches.clear()
 		items.forEach { 
 			it.visibility = GONE
 			it.text = ""
@@ -147,7 +159,7 @@ class SimpleInfoRowView @JvmOverloads constructor(
 
 		if (enableAdditionalRatings) {
 			val ratingsStartIndex = index
-			findViewTreeLifecycleOwner()?.lifecycleScope?.launch {
+			launchRatingFetch {
 				try {
 					val apiRatings = mdbListRepository.getRatings(item)
 					val episodeRating = if (enableEpisodeRatings && isEpisode) {
@@ -204,7 +216,7 @@ class SimpleInfoRowView @JvmOverloads constructor(
 				setItemText(index++, "⭐ ${String.format("%.1f", starsRating)}")
 			} else if (isEpisode) {
 				val starsIndex = index++
-				findViewTreeLifecycleOwner()?.lifecycleScope?.launch {
+				launchRatingFetch {
 					try {
 						val seriesRating = tmdbRepository.getSeriesCommunityRating(item)
 						if (currentItemId == itemIdAtFetchTime && seriesRating != null) {
@@ -231,7 +243,7 @@ class SimpleInfoRowView @JvmOverloads constructor(
 
 			if (enableEpisodeRatings && isEpisode) {
 				val episodeRatingIndex = index++
-				findViewTreeLifecycleOwner()?.lifecycleScope?.launch {
+				launchRatingFetch {
 					try {
 						val episodeRating = tmdbRepository.getEpisodeRating(item)
 						if (currentItemId == itemIdAtFetchTime && episodeRating != null) {

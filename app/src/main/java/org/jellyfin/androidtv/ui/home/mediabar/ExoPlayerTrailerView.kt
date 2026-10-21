@@ -5,15 +5,18 @@ import android.os.Handler
 import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -46,6 +49,9 @@ fun ExoPlayerTrailerView(
 	segments: List<SponsorBlockApi.Segment>,
 	muted: Boolean = true,
 	isVisible: Boolean,
+	// False while the trailer lingers after it stopped being wanted (TrailerLinger): hidden and
+	// stopped at once, the decoder freed on ExoPlayer's thread, released later when that's cheap.
+	active: Boolean = true,
 	onVideoEnded: () -> Unit = {},
 	onVideoReady: () -> Unit = {},
 	dataSourceFactory: DataSource.Factory? = null,
@@ -57,8 +63,9 @@ fun ExoPlayerTrailerView(
 	val skipRunnable = remember { mutableStateOf<Runnable?>(null) }
 
 	val trailerAlpha by animateFloatAsState(
-		targetValue = if (isVisible) 1f else 0f,
-		animationSpec = tween(durationMillis = 400),
+		targetValue = if (isVisible && active) 1f else 0f,
+		// Gone at once when focus leaves the hero: a fading still frame would sit behind the rows.
+		animationSpec = if (active) tween(durationMillis = 400) else snap(),
 		label = "trailerAlpha",
 	)
 
@@ -106,12 +113,17 @@ fun ExoPlayerTrailerView(
 		}
 	}
 
+	LaunchedEffect(active, player) {
+		if (!active) player?.stop()
+	}
+
 	val lifecycleOwner = LocalLifecycleOwner.current
+	val currentActive by rememberUpdatedState(active)
 	DisposableEffect(lifecycleOwner, player) {
 		val observer = LifecycleEventObserver { _, event ->
 			when (event) {
 				Lifecycle.Event.ON_PAUSE -> player?.pause()
-				Lifecycle.Event.ON_RESUME -> player?.play()
+				Lifecycle.Event.ON_RESUME -> if (currentActive) player?.play()
 				else -> {}
 			}
 		}

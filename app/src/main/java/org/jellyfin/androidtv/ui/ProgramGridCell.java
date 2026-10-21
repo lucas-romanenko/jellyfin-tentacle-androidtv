@@ -4,9 +4,12 @@ import static org.koin.java.KoinJavaComponent.get;
 
 import android.app.Activity;
 import android.content.Context;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.InsetDrawable;
 import android.graphics.Rect;
-import android.graphics.Typeface;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.ImageView;
@@ -14,13 +17,18 @@ import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 
+import androidx.core.content.ContextCompat;
+import androidx.core.graphics.ColorUtils;
+
 import org.jellyfin.androidtv.R;
+import org.jellyfin.androidtv.ui.livetv.GuideModel;
 import org.jellyfin.androidtv.preference.LiveTvPreferences;
 import org.jellyfin.androidtv.ui.livetv.LiveTvGuide;
 import org.jellyfin.androidtv.util.DateTimeExtensionsKt;
 import org.jellyfin.androidtv.util.Utils;
 import org.jellyfin.androidtv.util.sdk.BaseItemExtensionsKt;
 import org.jellyfin.sdk.model.api.BaseItemDto;
+import org.jellyfin.sdk.model.api.BaseItemKind;
 
 import java.time.LocalDateTime;
 
@@ -37,6 +45,10 @@ public class ProgramGridCell extends RelativeLayout implements RecordingIndicato
     }
     private ImageView mRecIndicator;
     private int mBackgroundColor = 0;
+    private boolean mEmpty;
+    private TextView mTime;
+    private float mProgress = -1f;
+    private final Paint mProgressPaint = new Paint();
     private boolean isLast;
     private boolean isFirst;
 
@@ -60,19 +72,20 @@ public class ProgramGridCell extends RelativeLayout implements RecordingIndicato
         mProgram = program;
         mRecIndicator = findViewById(R.id.recIndicator);
 
-        setCellBackground();
+        mEmpty = program.getType() == BaseItemKind.FOLDER; // "No guide information" filler
+        if (mEmpty) mProgramName.setTextColor(ContextCompat.getColor(context, R.color.guide_text_muted));
 
-        if (program.getStartDate() != null && program.getEndDate() != null) {
-            LocalDateTime localStart = program.getStartDate();
-            if (localStart.plusMinutes(1).isBefore(activity.getCurrentLocalStartDate())) {
-                mProgramName.setText("<< "+mProgramName.getText());
-                TextView time = new TextView(context);
-                time.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
-                time.setTextSize(12);
-                time.setText(DateTimeExtensionsKt.getTimeFormatter(getContext()).format(program.getStartDate()));
-                mInfoRow.addView(time);
-            }
+        if (!mEmpty && program.getStartDate() != null && program.getEndDate() != null) {
+            // "2:00 – 4:30 PM", readable at a glance
+            mTime = new TextView(context);
+            mTime.setTextSize(12);
+            mTime.setTextColor(ContextCompat.getColor(context, R.color.guide_text_muted));
+            mTime.setSingleLine(true);
+            mTime.setText(GuideModel.formatTimeRange(program.getStartDate(), program.getEndDate(), DateTimeExtensionsKt.getTimeFormatter(getContext())));
+            mInfoRow.addView(mTime);
         }
+
+        setCellBackground();
 
         LiveTvPreferences liveTvPreferences = get(LiveTvPreferences.class);
 
@@ -129,6 +142,7 @@ public class ProgramGridCell extends RelativeLayout implements RecordingIndicato
     public void setCellBackground() {
         LiveTvPreferences liveTvPreferences = get(LiveTvPreferences.class);
 
+        mBackgroundColor = 0;
         if (liveTvPreferences.get(LiveTvPreferences.Companion.getColorCodeGuide())) {
             if (Utils.isTrue(mProgram.isMovie())) {
                 mBackgroundColor = getResources().getColor(R.color.guide_movie_bg);
@@ -139,22 +153,58 @@ public class ProgramGridCell extends RelativeLayout implements RecordingIndicato
             } else if (Utils.isTrue(mProgram.isKids())) {
                 mBackgroundColor = getResources().getColor(R.color.guide_kids_bg);
             }
-
-            setBackgroundColor(mBackgroundColor);
         }
+
+        refreshNow();
+    }
+
+    /** Re-reads whether the programme is on now (its highlight and progress bar); the guide calls it every minute. */
+    public void refreshNow() {
+        if (mProgram == null) return;
+        mProgress = mEmpty ? -1f : GuideModel.programProgress(mProgram.getStartDate(), mProgram.getEndDate(), LocalDateTime.now());
+        applyBackground(isFocused());
+        invalidate();
+    }
+
+    /** Rounded tile with a small gap to its neighbours: purple when focused, lighter when on now. */
+    private void applyBackground(boolean focused) {
+        Context context = getContext();
+        int color;
+        if (focused) color = ContextCompat.getColor(context, R.color.tentacle_accent);
+        else if (mEmpty) color = ContextCompat.getColor(context, R.color.guide_cell_empty_bg);
+        else color = ContextCompat.getColor(context, mProgress >= 0 ? R.color.guide_cell_now_bg : R.color.guide_cell_bg);
+        if (!focused && mBackgroundColor != 0) color = ColorUtils.compositeColors(mBackgroundColor, color);
+
+        GradientDrawable tile = new GradientDrawable();
+        tile.setColor(color);
+        tile.setCornerRadius(Utils.convertDpToPixel(context, 3));
+        int gap = Utils.convertDpToPixel(context, 2);
+        setBackground(new InsetDrawable(tile, 0, 0, gap, gap));
+
+        int text = ContextCompat.getColor(context, focused ? R.color.white : (mEmpty ? R.color.guide_text_muted : R.color.guide_text));
+        mProgramName.setTextColor(text);
+        if (mTime != null) mTime.setTextColor(focused ? ContextCompat.getColor(context, R.color.white) : ContextCompat.getColor(context, R.color.guide_text_muted));
+    }
+
+    @Override
+    protected void dispatchDraw(Canvas canvas) {
+        super.dispatchDraw(canvas);
+        if (mProgress < 0) return;
+
+        // Now playing: how far through it is, along the bottom of the tile
+        int gap = Utils.convertDpToPixel(getContext(), 2);
+        int barHeight = Utils.convertDpToPixel(getContext(), 3);
+        float width = (getWidth() - gap) * Math.min(1f, mProgress);
+        mProgressPaint.setColor(isFocused() ? Color.WHITE : ContextCompat.getColor(getContext(), R.color.tentacle_accent));
+        canvas.drawRect(0, getHeight() - gap - barHeight, width, getHeight() - gap, mProgressPaint);
     }
 
     @Override
     protected void onFocusChanged(boolean gainFocus, int direction, Rect previouslyFocusedRect) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
 
-        if (gainFocus) {
-            setBackgroundColor(Utils.getThemeColor(getContext(), android.R.attr.colorAccent));
-
-            mActivity.setSelectedProgram(this);
-        } else {
-            setBackgroundColor(mBackgroundColor);
-        }
+        applyBackground(gainFocus);
+        if (gainFocus) mActivity.setSelectedProgram(this);
     }
 
     public BaseItemDto getProgram() { return mProgram; }

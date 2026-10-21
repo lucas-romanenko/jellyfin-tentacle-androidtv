@@ -4,7 +4,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
 import io.mockk.verify
 import org.jellyfin.androidtv.ui.GuideChannelHeader
@@ -52,6 +54,7 @@ class GuideFavoriteRefreshTests : FunSpec({
 		val otherRow = header(other)
 		val guide = mockk<LiveTvGuideFragment> {
 			every { refreshFavorite(any()) } answers { callOriginal() }
+			every { onFavoritesChanged() } just Runs
 		}
 		setField(guide, LiveTvGuideFragment::class.java, "mChannels", column(mockk<TextView>(), oldRow, otherRow))
 
@@ -60,6 +63,20 @@ class GuideFavoriteRefreshTests : FunSpec({
 		verify { oldRow.setChannel(favourited) }
 		verify { oldRow.refreshFavorite() }
 		verify(exactly = 0) { otherRow.refreshFavorite() }
+		// and the Favorites / All counts follow
+		verify { guide.onFavoritesChanged() }
+	}
+
+	test("the Favorites view's channels are found and updated too, without the full list") {
+		setField(null, TvManager::class.java, "favoriteChannels", arrayListOf(old))
+		try {
+			TvManager.findChannel(old.id) shouldBe old
+			TvManager.updateChannel(favourited)
+			TvManager.findChannel(old.id)?.userData?.isFavorite shouldBe true
+			TvManager.findChannel(other.id) shouldBe null
+		} finally {
+			setField(null, TvManager::class.java, "favoriteChannels", null)
+		}
 	}
 
 	test("the stored channel list keeps the favourited copy, so the popup opens with it") {

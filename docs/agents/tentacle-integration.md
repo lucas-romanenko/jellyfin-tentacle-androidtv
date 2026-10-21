@@ -96,6 +96,21 @@ The code wins where they differ.
   text when the guide opens, instead of "Unable to load channels", and
   next to the player's "Error streaming live TV" (same text at most once
   per 30 s).
+- **Live TV guide** (`ui/livetv/LiveTvGuideFragment.java`, pure helpers in
+  `ui/livetv/GuideModel.kt`, `GuideModelTests`; plain Jellyfin, no plugin
+  call): Live TV (the library tile, the sidebar, `ItemLauncher`) opens
+  straight to the guide; the old `LiveTvBrowseFragment` landing is no
+  longer reached. Favorites / All at the top: Favorites asks
+  `LiveTv/Channels?isFavorite=true` (fast, plus a `limit=1` count of all),
+  All is `TvManager.loadAllChannels`. The choice is Jellyfin display
+  preferences `tentacle-livetv` / client `tentacle` / CustomPrefs
+  `guideView` = `favorites` | `all`, the same as Tentacle's web guide, so
+  it follows the person. Days: today up to the furthest programme end
+  (`POST LiveTv/Programs`, StartDate descending, Limit 1, favourite ids in
+  the body for Favorites); one day of data = no day chips, and paging right
+  stops there. Recordings / Schedule / Series are header buttons (the last
+  two for people who may manage recordings). Holding OK on a channel name
+  favourites it.
 - **Episode picker** (`ui/discover/EpisodePickerDialog.kt`,
   `EpisodePickerMode`): `ADD_NEW` (add a series with chosen episodes),
   `DOWNLOAD_MORE` (VOD series: download missing episodes), `MANAGE` (change

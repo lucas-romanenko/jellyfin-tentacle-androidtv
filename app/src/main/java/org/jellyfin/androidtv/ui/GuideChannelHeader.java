@@ -44,6 +44,7 @@ public class GuideChannelHeader extends RelativeLayout {
         ));
         this.addView(v);
         this.setFocusable(true);
+        setBackground(ContextCompat.getDrawable(mContext, R.drawable.guide_channel_bg));
         ((TextView) findViewById(R.id.channelName)).setText(channel.getName());
         ((TextView) findViewById(R.id.channelNumber)).setText(channel.getNumber());
         mChannelImage = findViewById(R.id.channelImage);
@@ -79,11 +80,11 @@ public class GuideChannelHeader extends RelativeLayout {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
 
         if (gainFocus) {
-            setBackgroundColor(Utils.getThemeColor(mContext, android.R.attr.colorAccent));
+            setBackground(ContextCompat.getDrawable(mContext, R.drawable.guide_channel_focused_bg));
 
             mTvGuide.setSelectedProgram(this);
         } else {
-            setBackground(ContextCompat.getDrawable(mContext, R.drawable.light_border));
+            setBackground(ContextCompat.getDrawable(mContext, R.drawable.guide_channel_bg));
         }
     }
 }

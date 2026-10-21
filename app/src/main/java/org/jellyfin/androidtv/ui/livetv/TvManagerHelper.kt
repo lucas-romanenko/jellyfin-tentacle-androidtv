@@ -1,6 +1,7 @@
 package org.jellyfin.androidtv.ui.livetv
 
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -8,7 +9,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.preference.LiveTvPreferences
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.client.extensions.displayPreferencesApi
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
+import kotlinx.coroutines.withTimeoutOrNull
+import org.jellyfin.sdk.model.api.GetProgramsDto
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.ItemSortBy
@@ -17,6 +21,7 @@ import org.jellyfin.sdk.model.api.MediaType
 import org.jellyfin.sdk.model.api.SortOrder
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
 import org.koin.android.ext.android.inject
+import timber.log.Timber
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.UUID
@@ -58,6 +63,121 @@ fun loadLiveTvChannels(fragment: Fragment, callback: (channels: Collection<BaseI
 				).content.items
 			}
 		}.let { callback(it.getOrNullUnlessCancelled()) }
+	}
+}
+
+/**
+ * This person's favourite channels only (Jellyfin favourites are per user), in the guide's order,
+ * plus how many channels they can see in all (one cheap count, not the whole list).
+ */
+fun loadFavoriteLiveTvChannels(
+	fragment: Fragment,
+	callback: (channels: Collection<BaseItemDto>?, allCount: Int?) -> Unit,
+) {
+	val liveTvPreferences by fragment.inject<LiveTvPreferences>()
+	val api by fragment.inject<ApiClient>()
+
+	fragment.lifecycleScope.launch {
+		val sortDatePlayed =
+			liveTvPreferences[LiveTvPreferences.channelOrder] == ItemSortBy.DATE_PLAYED.serialName
+
+		val favorites = runCatching {
+			withContext(Dispatchers.IO) {
+				api.liveTvApi.getLiveTvChannels(
+					isFavorite = true,
+					addCurrentProgram = false,
+					enableUserData = true,
+					sortBy = if (sortDatePlayed) setOf(ItemSortBy.DATE_PLAYED) else setOf(ItemSortBy.SORT_NAME),
+					sortOrder = if (sortDatePlayed) SortOrder.DESCENDING else SortOrder.ASCENDING,
+				).content.items
+			}
+		}.getOrNullUnlessCancelled()
+		val allCount = runCatching {
+			withContext(Dispatchers.IO) {
+				api.liveTvApi.getLiveTvChannels(
+					limit = 1,
+					addCurrentProgram = false,
+					enableImages = false,
+					enableUserData = false,
+				).content.totalRecordCount
+			}
+		}.getOrNullUnlessCancelled()
+		callback(favorites, allCount)
+	}
+}
+
+/**
+ * When the guide data ends: the end of the furthest programme ([channelIds] only, or every
+ * channel when null), so the date choice stops where the data stops. Null when unknown.
+ */
+fun loadFurthestProgramEnd(
+	fragment: Fragment,
+	channelIds: List<UUID>?,
+	callback: (end: LocalDateTime?) -> Unit,
+) {
+	val api by fragment.inject<ApiClient>()
+
+	fragment.lifecycleScope.launch {
+		runCatching {
+			withContext(Dispatchers.IO) {
+				api.liveTvApi.getPrograms(furthestProgramRequest(channelIds)).content.items.firstOrNull()?.endDate
+			}
+		}.let { callback(it.getOrNullUnlessCancelled()) }
+	}
+}
+
+/** POST /LiveTv/Programs for the last programme in the guide (ids in the body: no URL limit). */
+internal fun furthestProgramRequest(channelIds: List<UUID>?) = GetProgramsDto(
+	channelIds = channelIds,
+	sortBy = listOf(ItemSortBy.START_DATE),
+	sortOrder = listOf(SortOrder.DESCENDING),
+	limit = 1,
+	enableImages = false,
+	enableUserData = false,
+	enableTotalRecordCount = false,
+)
+
+/** The person's saved Favorites / All choice (shared with Tentacle's web guide); Favorites when unknown. */
+fun loadGuideView(fragment: Fragment, callback: (view: GuideView) -> Unit) {
+	val api by fragment.inject<ApiClient>()
+
+	fragment.lifecycleScope.launch {
+		val prefs = runCatching {
+			withTimeoutOrNull(3_000) {
+				withContext(Dispatchers.IO) {
+					api.displayPreferencesApi.getDisplayPreferences(
+						displayPreferencesId = GuideView.PREFS_ID,
+						client = GuideView.PREFS_CLIENT,
+					).content
+				}
+			}
+		}.getOrNullUnlessCancelled()
+		callback(GuideView.fromPrefs(prefs?.customPrefs))
+	}
+}
+
+/** Saves the Favorites / All choice, keeping whatever else the web keeps in the same preferences. */
+fun saveGuideView(fragment: Fragment, view: GuideView) {
+	val client by fragment.inject<ApiClient>()
+	val api = client // resolved now, while the fragment is still attached
+
+	// Not the fragment's scope: Back right after the toggle must not cancel the save.
+	ProcessLifecycleOwner.get().lifecycleScope.launch {
+		runCatching {
+			withContext(Dispatchers.IO) {
+				val current = runCatching {
+					api.displayPreferencesApi.getDisplayPreferences(
+						displayPreferencesId = GuideView.PREFS_ID,
+						client = GuideView.PREFS_CLIENT,
+					).content
+				}.getOrNull()
+				api.displayPreferencesApi.updateDisplayPreferences(
+					displayPreferencesId = GuideView.PREFS_ID,
+					client = GuideView.PREFS_CLIENT,
+					data = withGuideView(current, view),
+				)
+			}
+		}.onFailure { Timber.w(it, "Unable to save the guide view") }
 	}
 }
 

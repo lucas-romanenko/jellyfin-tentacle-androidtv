@@ -1,6 +1,9 @@
 package org.jellyfin.androidtv.ui.livetv
 
 import android.content.Context
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.RelativeSizeSpan
 import android.view.View
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -11,6 +14,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.R
+import org.jellyfin.androidtv.auth.repository.UserRepository
+import org.jellyfin.androidtv.ui.navigation.Destinations
+import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.data.model.DataRefreshService
 import org.jellyfin.androidtv.data.repository.ItemMutationRepository
 import org.jellyfin.androidtv.databinding.LiveTvGuideBinding
@@ -28,6 +34,7 @@ import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.MediaType
 import org.koin.android.ext.android.inject
 import timber.log.Timber
+import java.text.NumberFormat
 import java.time.Instant
 import java.time.LocalDateTime
 import java.util.UUID
@@ -61,10 +68,39 @@ fun LiveTvGuideFragment.toggleFavorite() {
 				favorite = !(channel.userData?.isFavorite ?: false)
 			)
 
-			header.channel = header.channel.copy(userData = userData)
+			val updated = header.channel.copy(userData = userData)
+			header.channel = updated
 			header.findViewById<View>(R.id.favImage).isVisible = userData.isFavorite
+			// The stored copy too: the programme popup's heart and the Favorites count read it
+			TvManager.updateChannel(updated)
+			onFavoritesChanged()
 			dataRefreshService.lastFavoriteUpdate = Instant.now()
 		}
+	}
+}
+
+/**
+ * Recordings / Schedule / Series from the guide's header: the guide is where Live TV opens now,
+ * so these stay one press away. Schedule and Series only for people who may manage recordings.
+ */
+fun LiveTvGuideFragment.setupGuideLinks(binding: LiveTvGuideBinding) {
+	val navigationRepository by inject<NavigationRepository>()
+	val userRepository by inject<UserRepository>()
+	val canManage = userRepository.currentUser.value?.policy?.enableLiveTvManagement == true
+
+	binding.recordingsButton.setOnClickListener { navigationRepository.navigate(Destinations.liveTvRecordings) }
+	binding.scheduleButton.isVisible = canManage
+	binding.scheduleButton.setOnClickListener { navigationRepository.navigate(Destinations.liveTvSchedule) }
+	binding.seriesButton.isVisible = canManage
+	binding.seriesButton.setOnClickListener { navigationRepository.navigate(Destinations.liveTvSeriesRecordings) }
+}
+
+/** "Favorites  3" / "All  5,669": the count a little smaller than the label. */
+fun guideToggleLabel(label: String, count: Int?): CharSequence {
+	if (count == null || count < 0) return label
+	val number = NumberFormat.getIntegerInstance().format(count)
+	return SpannableString("$label  $number").apply {
+		setSpan(RelativeSizeSpan(0.85f), label.length + 2, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
 	}
 }
 

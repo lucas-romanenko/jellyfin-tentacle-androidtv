@@ -1059,4 +1059,11 @@
     <string name="lbl_status_title">Status</string>
     <string name="lbl_downloads">Downloads</string>
     <string name="lbl_add_media">Discover</string>
+    <!-- Tentacle Live TV guide -->
+    <string name="lbl_guide_title">Live TV</string>
+    <string name="lbl_guide_favorites">Favorites</string>
+    <string name="lbl_guide_all">All</string>
+    <string name="lbl_guide_show_all">Show all channels</string>
+    <string name="msg_guide_no_favorites">No favorite channels yet. In All, hold OK on a channel’s name to add it here.</string>
+    <string name="msg_guide_channels_count">%1$s of %2$s channels</string>
 </resources>

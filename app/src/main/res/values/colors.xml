@@ -31,9 +31,19 @@
     <color name="red_gradient_end">#900d10</color>
 
     <!-- Live TV Colors -->
-    <color name="channel_scroller_bg">#201b1c</color>
-    <color name="program_scroller_bg">#0b0e14</color>
-    <color name="timeline_bg">#201b1c</color>
+    <color name="channel_scroller_bg">#141226</color>
+    <color name="program_scroller_bg">#110f1e</color>
+    <color name="timeline_bg">#110f1e</color>
+    <!-- Tentacle guide (same look as Tentacle's web guide) -->
+    <color name="tentacle_accent">#8b80ff</color>
+    <color name="tentacle_bg">#110f1e</color>
+    <color name="guide_cell_bg">#1b1830</color>
+    <color name="guide_cell_now_bg">#28234d</color>
+    <color name="guide_cell_empty_bg">#141226</color>
+    <color name="guide_chip_bg">#1d1a33</color>
+    <color name="guide_chip_stroke">#2f2b4d</color>
+    <color name="guide_text">#f1effa</color>
+    <color name="guide_text_muted">#9b97b6</color>
     <!-- ProgramGridCell Background Colors -->
     <color name="guide_movie_bg">#328E24AA</color>
     <color name="guide_sports_bg">#323949AB</color>

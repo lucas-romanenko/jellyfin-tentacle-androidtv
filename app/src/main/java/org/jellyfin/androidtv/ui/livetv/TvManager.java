@@ -120,6 +120,31 @@ public class TvManager {
         return null;
     }
 
+    /**
+     * The guide's list changed live (GuideLiveUpdates): the stored copy follows, and the guide shows
+     * the stored list, so later changes (a star from the guide) reach both. Returns it.
+     */
+    public static List<BaseItemDto> setLiveChannels(boolean favorites, List<BaseItemDto> channels) {
+        if (favorites) {
+            favoriteChannels = new ArrayList<>(channels);
+            return favoriteChannels;
+        }
+        allChannels = new ArrayList<>(channels);
+        fillChannelIds();
+        return allChannels;
+    }
+
+    /** Programmes of channels that just came into the guide; the other channels' programmes stay. */
+    public static void addPrograms(Collection<BaseItemDto> programs, Collection<UUID> channelIds, LocalDateTime startTime) {
+        for (UUID id : channelIds) mProgramsDict.put(id, new ArrayList<>());
+        for (BaseItemDto program : programs) {
+            UUID id = program.getChannelId();
+            if (id == null || !mProgramsDict.containsKey(id)) continue;
+            if (program.getEndDate() != null && program.getEndDate().isAfter(startTime))
+                mProgramsDict.get(id).add(program);
+        }
+    }
+
     public static List<BaseItemDto> getFavoriteChannels() {
         return favoriteChannels;
     }

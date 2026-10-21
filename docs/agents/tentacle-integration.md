@@ -111,6 +111,18 @@ The code wins where they differ.
   stops there. Recordings / Schedule / Series are header buttons (the last
   two for people who may manage recordings). Holding OK on a channel name
   favourites it.
+  Live updates (`ui/livetv/GuideLiveUpdates.kt`, pure logic in `GuideModel.kt`,
+  `GuideLiveModelTests`), while the guide is started: the websocket's
+  `UserDataChanged` (Jellyfin sends it ~1 s after any favourite change,
+  whoever made it, Tentacle's server included) changes the stars, and in
+  Favorites removes or adds just those rows (a starred channel not shown
+  re-reads the favourites list); `LibraryChanged` (via SocketHandler and
+  `HomeVersionTracker.changes`; Tentacle marks its Live TV setup runs
+  `tentacle-livetv:<version>`) re-reads the channel list after 1.5 s of
+  quiet and applies only what differs; a socket reconnect or the guide's
+  `onResume` re-reads once. Rows change in place
+  (`LiveTvGuideFragment.applyLiveChannels`): focus stays on its row and
+  programme (the nearest row when its row goes), the screen doesn't scroll.
 - **Episode picker** (`ui/discover/EpisodePickerDialog.kt`,
   `EpisodePickerMode`): `ADD_NEW` (add a series with chosen episodes),
   `DOWNLOAD_MORE` (VOD series: download missing episodes), `MANAGE` (change

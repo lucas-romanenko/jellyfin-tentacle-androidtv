@@ -68,6 +68,23 @@ public class GuideChannelHeader extends RelativeLayout {
     public BaseItemDto getChannel() { return mChannel; }
     public void setChannel(BaseItemDto channel) { mChannel = channel; }
 
+    /**
+     * The guide's list changed live (another name, number, logo or star): this row shows [channel]
+     * now, without a new view, so focus stays. The logo loads again only when it changed.
+     */
+    public void update(BaseItemDto channel) {
+        boolean newImage = !java.util.Objects.equals(primaryTag(mChannel), primaryTag(channel));
+        mChannel = channel;
+        ((TextView) findViewById(R.id.channelName)).setText(channel.getName());
+        ((TextView) findViewById(R.id.channelNumber)).setText(channel.getNumber());
+        refreshFavorite();
+        if (newImage) loadImage();
+    }
+
+    private static String primaryTag(BaseItemDto channel) {
+        return channel.getImageTags() == null ? null : channel.getImageTags().get(org.jellyfin.sdk.model.api.ImageType.PRIMARY);
+    }
+
     public void refreshFavorite() {
         if (mChannel.getUserData() != null && mChannel.getUserData().isFavorite())
             mFavImage.setVisibility(View.VISIBLE);

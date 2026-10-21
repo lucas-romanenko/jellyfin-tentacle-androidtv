@@ -24,6 +24,7 @@ import org.jellyfin.androidtv.data.repository.HomeVersionTracker
 import org.jellyfin.androidtv.data.repository.homePushFrom
 import org.jellyfin.androidtv.data.syncplay.SyncPlayManager
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
+import org.jellyfin.androidtv.ui.livetv.liveTvVersionFrom
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.playback.MediaManager
@@ -392,7 +393,9 @@ class SocketHandler(
 		// home save is remembered even when Home isn't there to hear it (H2).
 		val push = homePushFrom(info.collectionFolders, sessionRepository.currentSession.value?.userId)
 		if (push != null) Timber.i("Tentacle home version ${push.version} (${if (push.everyone) "everyone" else "this user"})")
-		homeVersionTracker.onLibraryChanged(HomeChange(push, itemsAdded = info.itemsAdded.any()))
+		homeVersionTracker.onLibraryChanged(
+			HomeChange(push, itemsAdded = info.itemsAdded.any(), liveTvVersion = liveTvVersionFrom(info.collectionFolders))
+		)
 	}
 
 	private fun onPlayMessage(message: PlayMessage) {

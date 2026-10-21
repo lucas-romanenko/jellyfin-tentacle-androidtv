@@ -134,6 +134,20 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     private MutableStateFlow<Boolean> showOptions;
     private MutableStateFlow<Boolean> showFilterOptions;
 
+    // Favourite and lineup changes while the guide is open, applied in place (GuideLiveUpdates)
+    private GuideLiveUpdates mLiveUpdates;
+    private ObservableScrollView mProgramVScroller;
+    // Programmes of a page are on their way (paging, a new day): the rows are about to be replaced
+    private boolean mProgramsLoading = false;
+    private int mProgramsToken = 0;
+
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        mLiveUpdates = new GuideLiveUpdates(this);
+        mLiveUpdates.start();
+    }
+
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
@@ -203,6 +217,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         mProgramRows.setFocusable(false);
         mChannelScroller = binding.channelScroller;
         ObservableScrollView programVScroller = binding.programVScroller;
+        mProgramVScroller = programVScroller;
         programVScroller.setScrollViewListener(new ScrollViewListener() {
             @Override
             public void onScrollChanged(ObservableScrollView scrollView, int x, int y, int oldx, int oldy) {
@@ -255,6 +270,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
 
     private void load() {
         final int generation = ++mLoadGeneration;
+        mProgramsLoading = false;
         mCurrentGuideStart = GuideModel.guideStartFor(LocalDateTime.now());
         fillTimeLine(mCurrentGuideStart, getGuideHours());
         mSpinner.setVisibility(View.VISIBLE);
@@ -331,17 +347,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         }
 
         if (channels.isEmpty()) {
-            mChannels.removeAllViews();
-            mProgramRows.removeAllViews();
-            mChannelStatus.setText("");
-            mFilterStatus.setText("");
-            mNowLine.setVisibility(View.GONE);
-            mSpinner.setVisibility(View.GONE);
-            if (mView == GuideView.FAVORITES) {
-                // One plain line on how to add one, and the way to All
-                mEmptyFavorites.setVisibility(View.VISIBLE);
-                mShowAllButton.requestFocus();
-            }
+            showNoChannels(true);
             return;
         }
 
@@ -353,6 +359,22 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             start = 0; // just start at beginning
         }
         displayChannels(start, pageSize);
+    }
+
+    /** No channel in this view: Favorites says how to add one and offers All. */
+    private void showNoChannels(boolean focusShowAll) {
+        if (mView == GuideView.FAVORITES) {
+            // One plain line on how to add one, and the way to All (focus there before the rows go)
+            mEmptyFavorites.setVisibility(View.VISIBLE);
+            if (focusShowAll) mShowAllButton.requestFocus();
+        }
+        mChannels.removeAllViews();
+        mProgramRows.removeAllViews();
+        mChannelStatus.setText("");
+        mFilterStatus.setText("");
+        mNowLine.setVisibility(View.GONE);
+        mNowPill.setVisibility(View.GONE);
+        mSpinner.setVisibility(View.GONE);
     }
 
     private static int countFavorites(List<BaseItemDto> channels) {
@@ -391,6 +413,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             mFavoriteCount = countFavorites(mAllChannels);
         }
         updateToggle();
+        // In Favorites an unstarred channel's row goes now, not only when the server's message comes
+        if (mLiveUpdates != null) mLiveUpdates.recompute();
     }
 
     /** Today up to the last day with guide data; no choice when only today has data. */
@@ -449,12 +473,15 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     public void onResume() {
         super.onResume();
 
-        doLoad();
+        // Back in front (from the player, another screen, the TV's home): a change meanwhile wasn't
+        // heard, so the channels are read once and only what differs changes
+        if (!doLoad() && mLiveUpdates != null) mLiveUpdates.relist();
         mHandler.removeCallbacks(mNowTick);
         mHandler.postDelayed(mNowTick, 60_000);
     }
 
-    protected void doLoad() {
+    /** Loads the guide when it is stale, forced or empty; true when it does. */
+    protected boolean doLoad() {
         // Read the filters every time: the Filters panel saves them and then calls doLoad(),
         // and with the load in onResume only, a change applied after leaving the guide.
         mFilters.load();
@@ -462,7 +489,9 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             load();
 
             mFirstFocusChannelId = TvManager.getLastLiveTvChannel();
+            return true;
         }
+        return false;
     }
 
     @Override
@@ -666,9 +695,12 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         UUID[] ids = new UUID[Math.max(0, last - mCurrentDisplayChannelStartNdx + 1)];
         for (int i = 0; i < ids.length; i++) ids[i] = mAllChannels.get(mCurrentDisplayChannelStartNdx + i).getId();
         final int generation = mLoadGeneration;
+        final int token = ++mProgramsToken;
+        mProgramsLoading = true;
         TvManager.getProgramsAsync(this, ids, mCurrentGuideStart, mCurrentGuideEnd, new EmptyResponse(getLifecycle()) {
             @Override
             public void onResponse() {
+                if (token == mProgramsToken) mProgramsLoading = false;
                 if (!isActive() || generation != mLoadGeneration) return;
                 Timber.d("*** Programs response");
                 if (mDisplayProgramsTask != null) mDisplayProgramsTask.cancel(true);
@@ -695,22 +727,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             Timber.d("*** Display programs pre-execute");
             mChannels.removeAllViews();
             mProgramRows.removeAllViews();
-
-            if (mCurrentDisplayChannelStartNdx > 0) {
-                // Show a paging row for channels above
-                int pageUpStart = mCurrentDisplayChannelStartNdx - pageSize;
-                if (pageUpStart < 0) {
-                    pageUpStart = 0;
-                }
-
-                TextView placeHolder = new TextView(requireContext());
-                placeHolder.setHeight(guideRowHeightPx);
-                mChannels.addView(placeHolder);
-                displayedChannels = 0;
-
-                String label = TextUtilsKt.getLoadChannelsLabel(requireContext(), mAllChannels.get(pageUpStart).getNumber(), mAllChannels.get(mCurrentDisplayChannelStartNdx - 1).getNumber());
-                mProgramRows.addView(new GuidePagingButton(requireContext(), LiveTvGuideFragment.this, pageUpStart, label));
-            }
+            displayedChannels = 0;
+            addTopPagingRow();
         }
 
         @Override
@@ -771,21 +789,9 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
                 }
             }
 
-            if (mCurrentDisplayChannelEndNdx < mAllChannels.size()-1 && !mFilters.any()) {
-                // Show a paging row for channels below
-                int pageDnEnd = mCurrentDisplayChannelEndNdx + pageSize;
-                if (pageDnEnd >= mAllChannels.size()) pageDnEnd = mAllChannels.size()-1;
+            addBottomPagingRow();
 
-                TextView placeHolder = new TextView(requireContext());
-                placeHolder.setHeight(guideRowHeightPx);
-                mChannels.addView(placeHolder);
-
-                String label = TextUtilsKt.getLoadChannelsLabel(requireContext(), mAllChannels.get(mCurrentDisplayChannelEndNdx + 1).getNumber(), mAllChannels.get(pageDnEnd).getNumber());
-                mProgramRows.addView(new GuidePagingButton(requireContext(), LiveTvGuideFragment.this, mCurrentDisplayChannelEndNdx + 1, label));
-            }
-
-            java.text.NumberFormat numbers = java.text.NumberFormat.getIntegerInstance();
-            mChannelStatus.setText(getString(R.string.msg_guide_channels_count, numbers.format(displayedChannels), numbers.format(mAllChannels.size())));
+            updateChannelStatus(displayedChannels);
             mFilterStatus.setText(mFilters.toString() + " for "+getGuideHours()+" hours");
             mFilterStatus.setTextColor(mFilters.any() ? Color.WHITE : ContextCompat.getColor(requireContext(), R.color.guide_text_muted));
 
@@ -798,6 +804,344 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             }
             mKeepHeaderFocus = false;
         }
+    }
+
+    /** "Showing 75 of 1,700 channels". */
+    private void updateChannelStatus(int displayed) {
+        java.text.NumberFormat numbers = java.text.NumberFormat.getIntegerInstance();
+        mChannelStatus.setText(getString(R.string.msg_guide_channels_count, numbers.format(displayed), numbers.format(mAllChannels.size())));
+    }
+
+    /** The paging row for the channels above this page, first in both columns (none on the first page). */
+    private void addTopPagingRow() {
+        if (mCurrentDisplayChannelStartNdx <= 0 || mAllChannels == null || mCurrentDisplayChannelStartNdx > mAllChannels.size()) return;
+        int pageUpStart = Math.max(0, mCurrentDisplayChannelStartNdx - pageSize);
+
+        TextView placeHolder = new TextView(requireContext());
+        placeHolder.setHeight(guideRowHeightPx);
+        mChannels.addView(placeHolder, 0);
+
+        String label = TextUtilsKt.getLoadChannelsLabel(requireContext(), mAllChannels.get(pageUpStart).getNumber(), mAllChannels.get(mCurrentDisplayChannelStartNdx - 1).getNumber());
+        mProgramRows.addView(new GuidePagingButton(requireContext(), LiveTvGuideFragment.this, pageUpStart, label), 0);
+    }
+
+    /** The paging row for the channels below this page, last in both columns (none on the last page or with filters). */
+    private void addBottomPagingRow() {
+        if (mAllChannels == null || mCurrentDisplayChannelEndNdx >= mAllChannels.size() - 1 || mFilters.any()) return;
+        int pageDnEnd = Math.min(mCurrentDisplayChannelEndNdx + pageSize, mAllChannels.size() - 1);
+
+        TextView placeHolder = new TextView(requireContext());
+        placeHolder.setHeight(guideRowHeightPx);
+        mChannels.addView(placeHolder);
+
+        String label = TextUtilsKt.getLoadChannelsLabel(requireContext(), mAllChannels.get(mCurrentDisplayChannelEndNdx + 1).getNumber(), mAllChannels.get(pageDnEnd).getNumber());
+        mProgramRows.addView(new GuidePagingButton(requireContext(), LiveTvGuideFragment.this, mCurrentDisplayChannelEndNdx + 1, label));
+    }
+
+    // Live updates (GuideLiveUpdates): favourite and lineup changes applied to the rows in place.
+
+    GuideView getGuideView() { return mView; }
+    int getLoadGeneration() { return mLoadGeneration; }
+    @Nullable List<BaseItemDto> getLiveChannels() { return mAllChannels; }
+
+    /** The guide shows its channels and isn't loading: a live change may edit the rows. */
+    boolean isLiveReady() {
+        return isAdded() && getView() != null && mView != null && mAllChannels != null
+                && mSpinner.getVisibility() != View.VISIBLE
+                && !mProgramsLoading
+                && (mDisplayProgramsTask == null || mDisplayProgramsTask.getStatus() == AsyncTask.Status.FINISHED);
+    }
+
+    /** The channel ids of the rows shown, top to bottom. */
+    private List<UUID> shownChannelIds() {
+        List<UUID> ids = new ArrayList<>();
+        for (int i = 0; i < mChannels.getChildCount(); i++) {
+            View child = mChannels.getChildAt(i);
+            if (child instanceof GuideChannelHeader) ids.add(((GuideChannelHeader) child).getChannel().getId());
+        }
+        return ids;
+    }
+
+    private static List<UUID> idsOf(List<BaseItemDto> channels) {
+        List<UUID> ids = new ArrayList<>(channels.size());
+        for (BaseItemDto channel : channels) ids.add(channel.getId());
+        return ids;
+    }
+
+    /** The rows of [target] to show after a live change (indexes); null: show a page anew. */
+    @Nullable
+    private kotlin.ranges.IntRange liveWindow(List<BaseItemDto> target) {
+        return GuideModel.guideLiveWindow(idsOf(mAllChannels), mCurrentDisplayChannelStartNdx, mCurrentDisplayChannelEndNdx, shownChannelIds(), idsOf(target));
+    }
+
+    /** The channels that get a new row when [target] is applied: their programmes are needed first. */
+    List<UUID> rowsNeededFor(List<BaseItemDto> target) {
+        List<UUID> needed = new ArrayList<>();
+        if (mAllChannels == null) return needed;
+        kotlin.ranges.IntRange window = liveWindow(target);
+        if (window == null) return needed;
+        java.util.Set<UUID> shown = new java.util.HashSet<>(shownChannelIds());
+        java.util.Set<UUID> old = new java.util.HashSet<>(idsOf(mAllChannels));
+        for (int i = window.getFirst(); i <= window.getLast(); i++) {
+            UUID id = target.get(i).getId();
+            // With filters a channel already in the list and not shown has nothing that passes
+            if (!shown.contains(id) && (!mFilters.any() || !old.contains(id))) needed.add(id);
+        }
+        return needed;
+    }
+
+    /** Only the counts changed (the list is the same): the toggle shows them. */
+    void onLiveCounts(@Nullable Integer allCount) {
+        if (allCount != null && mView == GuideView.FAVORITES && allCount != mAllCount) {
+            mAllCount = allCount;
+            updateToggle();
+        }
+    }
+
+    /** The view's guide data now ends at [end] (its channels changed): the dates follow, when they differ. */
+    void onLiveGuideEnd(LocalDateTime end) {
+        if (end.equals(mFurthestEnd)) return;
+        mFurthestEnd = end;
+        List<LocalDate> days = GuideModel.guideDays(LocalDateTime.now(), mFurthestEnd);
+        boolean show = days.size() >= 2 && mAllChannels != null && !mAllChannels.isEmpty();
+        if (days.equals(mGuideDays) && show == (mDays.getVisibility() == View.VISIBLE)) return;
+        View focus = requireActivity().getCurrentFocus();
+        int focusedDay = focus != null && focus.getParent() == mDays ? mDays.indexOfChild(focus) : -1;
+        LocalDate day = focusedDay >= 0 && focusedDay < mGuideDays.size() ? mGuideDays.get(focusedDay) : null;
+        updateDays();
+        if (day != null) {
+            int at = mGuideDays.indexOf(day);
+            View chip = mDays.getChildAt(at >= 0 ? at : Math.min(focusedDay, mDays.getChildCount() - 1));
+            if (chip != null) chip.requestFocus();
+            else mViewFavorites.requestFocus();
+        }
+    }
+
+    /** The cell of [row] at [time] (the one on then), else its first. */
+    private static View cellAt(LinearLayout row, @Nullable LocalDateTime time) {
+        if (time != null) {
+            for (int i = 0; i < row.getChildCount(); i++) {
+                View cell = row.getChildAt(i);
+                if (cell instanceof ProgramGridCell) {
+                    BaseItemDto program = ((ProgramGridCell) cell).getProgram();
+                    if (program != null && program.getEndDate() != null && program.getEndDate().isAfter(time)) return cell;
+                }
+            }
+        }
+        return row.getChildCount() > 0 ? row.getChildAt(0) : row;
+    }
+
+    /** Puts [view] at [index] of [parent], moving it only when it isn't there already. */
+    private static void placeAt(LinearLayout parent, View view, int index) {
+        if (parent.getChildAt(index) == view) return;
+        if (view.getParent() == parent) parent.removeView(view);
+        parent.addView(view, Math.min(index, parent.getChildCount()));
+    }
+
+    /** Up / down between programme rows after rows came or went: each cell to the one at its time. */
+    private void relinkRows() {
+        LinearLayout prev = null;
+        for (int i = 0; i < mProgramRows.getChildCount(); i++) {
+            View child = mProgramRows.getChildAt(i);
+            if (!(child instanceof LinearLayout)) {
+                prev = null;
+                continue;
+            }
+            LinearLayout row = (LinearLayout) child;
+            for (int c = 0; c < row.getChildCount(); c++) {
+                row.getChildAt(c).setNextFocusUpId(View.NO_ID);
+                row.getChildAt(c).setNextFocusDownId(View.NO_ID);
+            }
+            if (prev != null) {
+                TvManager.setFocusParams(row, prev, true);
+                TvManager.setFocusParams(prev, row, false);
+            }
+            prev = row;
+        }
+    }
+
+    /**
+     * Shows [target] instead of the guide's channels without a reload: rows of channels that went are
+     * removed, new ones added (their programmes are already in TvManager), changed ones redrawn, and
+     * the rest moved only when the order changed. Focus stays on its row and programme (the nearest
+     * row when its row went) and the rows on screen stay where they were.
+     */
+    void applyLiveChannels(List<BaseItemDto> target, @Nullable Integer allCount) {
+        if (!isLiveReady()) return;
+        boolean favorites = mView == GuideView.FAVORITES;
+        List<BaseItemDto> old = mAllChannels;
+        kotlin.ranges.IntRange window = liveWindow(target);
+        View focus = requireActivity().getCurrentFocus();
+
+        List<BaseItemDto> stored = TvManager.setLiveChannels(favorites, target);
+        if (favorites) {
+            mFavoriteCount = stored.size();
+            if (allCount != null) mAllCount = allCount;
+        } else {
+            mAllCount = stored.size();
+            mFavoriteCount = countFavorites(stored);
+        }
+
+        if (stored.isEmpty()) {
+            boolean inGrid = focus == null || isInGrid(focus) || !focus.isShown();
+            mAllChannels = stored;
+            showNoChannels(inGrid);
+            updateToggle();
+            updateDays();
+            return;
+        }
+
+        if (window == null) {
+            // None of the rows shown is left (or none was shown, as in empty Favorites): this page anew
+            boolean inGrid = focus == null || isInGrid(focus) || focus == mShowAllButton;
+            mAllChannels = stored;
+            mEmptyFavorites.setVisibility(View.GONE);
+            mKeepHeaderFocus = !inGrid;
+            mFirstFocusChannelId = TvManager.getLastLiveTvChannel();
+            updateToggle();
+            updateDays();
+            if (inGrid) mViewFavorites.requestFocus();
+            int start = Math.max(0, Math.min(mCurrentDisplayChannelStartNdx, stored.size() - 1));
+            displayChannels(mFilters.any() ? 0 : start, PAGE_SIZE);
+            return;
+        }
+
+        // The rows shown now, and where focus and the screen are
+        java.util.Map<UUID, View[]> rows = new java.util.HashMap<>();
+        List<UUID> order = new ArrayList<>();
+        UUID focusedId = null;
+        boolean focusOnHeader = false;
+        LocalDateTime focusTime = null;
+        for (int i = 0; i < mChannels.getChildCount() && i < mProgramRows.getChildCount(); i++) {
+            View header = mChannels.getChildAt(i);
+            if (!(header instanceof GuideChannelHeader)) continue;
+            View row = mProgramRows.getChildAt(i);
+            UUID id = ((GuideChannelHeader) header).getChannel().getId();
+            rows.put(id, new View[]{header, row});
+            order.add(id);
+            if (focus == header) {
+                focusedId = id;
+                focusOnHeader = true;
+            } else if (focus != null && focus.getParent() == row) {
+                focusedId = id;
+                if (focus instanceof ProgramGridCell && ((ProgramGridCell) focus).getProgram() != null)
+                    focusTime = ((ProgramGridCell) focus).getProgram().getStartDate();
+            }
+        }
+        int scrollY = mProgramVScroller.getScrollY();
+        UUID anchorId = focusedId;
+        if (anchorId == null) {
+            for (UUID id : order) {
+                if (rows.get(id)[1].getBottom() > scrollY) {
+                    anchorId = id;
+                    break;
+                }
+            }
+        }
+        int anchorOffset = anchorId != null ? rows.get(anchorId)[1].getTop() - scrollY : 0;
+
+        // The rows to show: kept ones updated, new ones built
+        java.util.Set<UUID> oldIds = new java.util.HashSet<>(idsOf(old));
+        List<UUID> desired = new ArrayList<>();
+        java.util.Map<UUID, View[]> fresh = new java.util.HashMap<>();
+        for (int i = window.getFirst(); i <= window.getLast(); i++) {
+            BaseItemDto channel = stored.get(i);
+            View[] pair = rows.get(channel.getId());
+            if (pair != null) {
+                ((GuideChannelHeader) pair[0]).update(channel);
+                desired.add(channel.getId());
+            } else if (!mFilters.any() || !oldIds.contains(channel.getId())) {
+                LinearLayout row = getProgramRow(TvManager.getProgramsForChannel(channel.getId(), mFilters), channel.getId());
+                if (row == null) continue; // nothing that passes the filters
+                fresh.put(channel.getId(), new View[]{getChannelHeader(requireContext(), channel), row});
+                desired.add(channel.getId());
+            }
+        }
+        java.util.Set<UUID> desiredSet = new java.util.HashSet<>(desired);
+        if (desired.isEmpty()) {
+            // Only filtered-out channels are left in this page
+            mAllChannels = stored;
+            showNoChannels(false);
+            updateToggle();
+            return;
+        }
+
+        // Focus first moves off a row that goes, so it never falls anywhere else
+        View keepFocus = focusedId != null ? focus : null;
+        if (focusedId != null && !desiredSet.contains(focusedId)) {
+            UUID next = GuideModel.nearestKeptRow(order, focusedId, desiredSet);
+            if (next == null) next = desired.get(0);
+            View[] pair = rows.containsKey(next) ? rows.get(next) : fresh.get(next);
+            keepFocus = focusOnHeader ? pair[0] : cellAt((LinearLayout) pair[1], focusTime);
+            dismissProgramOptions();
+            if (keepFocus.isAttachedToWindow()) keepFocus.requestFocus();
+            anchorId = next;
+        } else if (anchorId != null && !desiredSet.contains(anchorId)) {
+            anchorId = GuideModel.nearestKeptRow(order, anchorId, desiredSet);
+        }
+
+        // Paging rows go (they come back for the new page), then the rows that went
+        for (int i = mChannels.getChildCount() - 1; i >= 0; i--) {
+            if (!(mChannels.getChildAt(i) instanceof GuideChannelHeader)) {
+                mChannels.removeViewAt(i);
+                if (i < mProgramRows.getChildCount()) mProgramRows.removeViewAt(i);
+            }
+        }
+        for (UUID id : order) {
+            if (desiredSet.contains(id)) continue;
+            View[] pair = rows.get(id);
+            mChannels.removeView(pair[0]);
+            mProgramRows.removeView(pair[1]);
+        }
+        // The rest in the new order; a view is moved only when out of place
+        for (int i = 0; i < desired.size(); i++) {
+            UUID id = desired.get(i);
+            View[] pair = rows.containsKey(id) ? rows.get(id) : fresh.get(id);
+            placeAt(mChannels, pair[0], i);
+            placeAt(mProgramRows, pair[1], i);
+            if (fresh.containsKey(id)) ((GuideChannelHeader) pair[0]).loadImage();
+        }
+
+        mAllChannels = stored;
+        if (mFilters.any()) {
+            mCurrentDisplayChannelStartNdx = 0;
+            mCurrentDisplayChannelEndNdx = stored.size() - 1;
+        } else {
+            mCurrentDisplayChannelStartNdx = window.getFirst();
+            mCurrentDisplayChannelEndNdx = window.getLast();
+        }
+        addTopPagingRow();
+        addBottomPagingRow();
+        relinkRows();
+        updateChannelStatus(desired.size());
+        mEmptyFavorites.setVisibility(View.GONE);
+        updateToggle();
+        updateNowLine();
+        if (keepFocus != null && !keepFocus.hasFocus() && keepFocus.isAttachedToWindow()) keepFocus.requestFocus();
+
+        // The screen stays put: the anchor row (focused, else the first in view) keeps its place
+        if (anchorId != null) {
+            View[] anchor = rows.containsKey(anchorId) ? rows.get(anchorId) : fresh.get(anchorId);
+            final View anchorRow = anchor != null ? anchor[1] : null;
+            final int offset = anchorOffset;
+            if (anchorRow != null) {
+                mProgramVScroller.getViewTreeObserver().addOnGlobalLayoutListener(new android.view.ViewTreeObserver.OnGlobalLayoutListener() {
+                    @Override
+                    public void onGlobalLayout() {
+                        mProgramVScroller.getViewTreeObserver().removeOnGlobalLayoutListener(this);
+                        if (anchorRow.getParent() == mProgramRows) mProgramVScroller.scrollTo(0, Math.max(0, anchorRow.getTop() - offset));
+                    }
+                });
+                mProgramRows.requestLayout();
+            }
+        }
+    }
+
+    private boolean isInGrid(View view) {
+        for (android.view.ViewParent p = view.getParent(); p != null; p = p.getParent()) {
+            if (p == mChannels || p == mProgramRows) return true;
+        }
+        return false;
     }
 
     private int currentCellId = 0;

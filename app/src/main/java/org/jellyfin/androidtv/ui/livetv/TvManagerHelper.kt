@@ -50,20 +50,46 @@ fun loadLiveTvChannels(fragment: Fragment, callback: (channels: Collection<BaseI
 	val api by fragment.inject<ApiClient>()
 
 	fragment.lifecycleScope.launch {
-		val sortDatePlayed =
-			liveTvPreferences[LiveTvPreferences.channelOrder] == ItemSortBy.DATE_PLAYED.serialName
-
-		runCatching {
-			withContext(Dispatchers.IO) {
-				api.liveTvApi.getLiveTvChannels(
-					addCurrentProgram = true,
-					enableFavoriteSorting = liveTvPreferences[LiveTvPreferences.favsAtTop],
-					sortBy = if (sortDatePlayed) setOf(ItemSortBy.DATE_PLAYED) else setOf(ItemSortBy.SORT_NAME),
-					sortOrder = if (sortDatePlayed) SortOrder.DESCENDING else SortOrder.ASCENDING,
-				).content.items
-			}
-		}.let { callback(it.getOrNullUnlessCancelled()) }
+		runCatching { fetchAllGuideChannels(api, liveTvPreferences) }
+			.let { callback(it.getOrNullUnlessCancelled()) }
 	}
+}
+
+/** Every channel this person can see, in the guide's order (the All view; one request). */
+suspend fun fetchAllGuideChannels(api: ApiClient, liveTvPreferences: LiveTvPreferences): List<BaseItemDto> {
+	val sortDatePlayed = liveTvPreferences[LiveTvPreferences.channelOrder] == ItemSortBy.DATE_PLAYED.serialName
+	return withContext(Dispatchers.IO) {
+		api.liveTvApi.getLiveTvChannels(
+			addCurrentProgram = true,
+			enableFavoriteSorting = liveTvPreferences[LiveTvPreferences.favsAtTop],
+			sortBy = if (sortDatePlayed) setOf(ItemSortBy.DATE_PLAYED) else setOf(ItemSortBy.SORT_NAME),
+			sortOrder = if (sortDatePlayed) SortOrder.DESCENDING else SortOrder.ASCENDING,
+		).content.items
+	}
+}
+
+/** This person's favourite channels only, in the guide's order (the Favorites view). */
+suspend fun fetchFavoriteGuideChannels(api: ApiClient, liveTvPreferences: LiveTvPreferences): List<BaseItemDto> {
+	val sortDatePlayed = liveTvPreferences[LiveTvPreferences.channelOrder] == ItemSortBy.DATE_PLAYED.serialName
+	return withContext(Dispatchers.IO) {
+		api.liveTvApi.getLiveTvChannels(
+			isFavorite = true,
+			addCurrentProgram = false,
+			enableUserData = true,
+			sortBy = if (sortDatePlayed) setOf(ItemSortBy.DATE_PLAYED) else setOf(ItemSortBy.SORT_NAME),
+			sortOrder = if (sortDatePlayed) SortOrder.DESCENDING else SortOrder.ASCENDING,
+		).content.items
+	}
+}
+
+/** How many channels this person can see in all (one cheap count, not the whole list). */
+suspend fun fetchGuideChannelCount(api: ApiClient): Int? = withContext(Dispatchers.IO) {
+	api.liveTvApi.getLiveTvChannels(
+		limit = 1,
+		addCurrentProgram = false,
+		enableImages = false,
+		enableUserData = false,
+	).content.totalRecordCount
 }
 
 /**
@@ -78,30 +104,8 @@ fun loadFavoriteLiveTvChannels(
 	val api by fragment.inject<ApiClient>()
 
 	fragment.lifecycleScope.launch {
-		val sortDatePlayed =
-			liveTvPreferences[LiveTvPreferences.channelOrder] == ItemSortBy.DATE_PLAYED.serialName
-
-		val favorites = runCatching {
-			withContext(Dispatchers.IO) {
-				api.liveTvApi.getLiveTvChannels(
-					isFavorite = true,
-					addCurrentProgram = false,
-					enableUserData = true,
-					sortBy = if (sortDatePlayed) setOf(ItemSortBy.DATE_PLAYED) else setOf(ItemSortBy.SORT_NAME),
-					sortOrder = if (sortDatePlayed) SortOrder.DESCENDING else SortOrder.ASCENDING,
-				).content.items
-			}
-		}.getOrNullUnlessCancelled()
-		val allCount = runCatching {
-			withContext(Dispatchers.IO) {
-				api.liveTvApi.getLiveTvChannels(
-					limit = 1,
-					addCurrentProgram = false,
-					enableImages = false,
-					enableUserData = false,
-				).content.totalRecordCount
-			}
-		}.getOrNullUnlessCancelled()
+		val favorites = runCatching { fetchFavoriteGuideChannels(api, liveTvPreferences) }.getOrNullUnlessCancelled()
+		val allCount = runCatching { fetchGuideChannelCount(api) }.getOrNullUnlessCancelled()
 		callback(favorites, allCount)
 	}
 }
@@ -118,11 +122,8 @@ fun loadFurthestProgramEnd(
 	val api by fragment.inject<ApiClient>()
 
 	fragment.lifecycleScope.launch {
-		runCatching {
-			withContext(Dispatchers.IO) {
-				api.liveTvApi.getPrograms(furthestProgramRequest(channelIds)).content.items.firstOrNull()?.endDate
-			}
-		}.let { callback(it.getOrNullUnlessCancelled()) }
+		runCatching { fetchFurthestProgramEnd(api, channelIds) }
+			.let { callback(it.getOrNullUnlessCancelled()) }
 	}
 }
 
@@ -192,24 +193,36 @@ fun getPrograms(
 
 	fragment.lifecycleScope.launch {
 		runCatching {
-			withContext(Dispatchers.IO) {
-				// The ids go in the URL, and a server refuses a request line over 8 KB (about 165 ids).
-				// A filtered guide asks for every channel, so ask one guide page of channels at a time.
-				// Ids not filled yet arrive as nulls from Java: no id asks for every channel, once.
-				val ids = channelIds.filterNotNull()
-				val batches = if (ids.isEmpty()) listOf(ids) else ids.chunked(LiveTvGuideFragment.PAGE_SIZE)
-				batches.flatMap { batch ->
-					api.liveTvApi.getLiveTvPrograms(
-						channelIds = batch,
-						enableImages = false,
-						sortBy = setOf(ItemSortBy.START_DATE),
-						maxStartDate = endTime,
-						minEndDate = startTime,
-					).content.items
-				}
-			}
+			// Ids not filled yet arrive as nulls from Java: no id asks for every channel, once.
+			fetchGuidePrograms(api, channelIds.filterNotNull(), startTime, endTime)
 		}.let { callback(it.getOrNullUnlessCancelled()) }
 	}
+}
+
+/** Programmes of [ids] between [startTime] and [endTime]; no id asks for every channel, once. */
+suspend fun fetchGuidePrograms(
+	api: ApiClient,
+	ids: List<UUID>,
+	startTime: LocalDateTime,
+	endTime: LocalDateTime,
+): List<BaseItemDto> = withContext(Dispatchers.IO) {
+	// The ids go in the URL, and a server refuses a request line over 8 KB (about 165 ids).
+	// A filtered guide asks for every channel, so ask one guide page of channels at a time.
+	val batches = if (ids.isEmpty()) listOf(ids) else ids.chunked(LiveTvGuideFragment.PAGE_SIZE)
+	batches.flatMap { batch ->
+		api.liveTvApi.getLiveTvPrograms(
+			channelIds = batch,
+			enableImages = false,
+			sortBy = setOf(ItemSortBy.START_DATE),
+			maxStartDate = endTime,
+			minEndDate = startTime,
+		).content.items
+	}
+}
+
+/** The end of the furthest programme of [channelIds] (every channel when null); null when unknown. */
+suspend fun fetchFurthestProgramEnd(api: ApiClient, channelIds: List<UUID>?): LocalDateTime? = withContext(Dispatchers.IO) {
+	api.liveTvApi.getPrograms(furthestProgramRequest(channelIds)).content.items.firstOrNull()?.endDate
 }
 
 fun getScheduleRows(

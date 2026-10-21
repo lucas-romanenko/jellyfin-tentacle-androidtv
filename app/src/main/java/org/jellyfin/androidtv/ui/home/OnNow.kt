@@ -15,6 +15,8 @@ import java.time.LocalDateTime
 const val ON_NOW_SECTION_ID = "onnow"
 const val ON_NOW_ROW_KEY = "builtin:onnow"
 private const val ON_NOW_MAX = 30
+/** How often a showing Home refills On Now (programmes end, time left moves on). */
+val ON_NOW_REFRESH = kotlin.time.Duration.parse("60s")
 
 /** Favourite channels with their current programme, as row items (empty = no row). */
 suspend fun loadOnNow(api: ApiClient, userId: java.util.UUID): List<BaseItemDto> {

@@ -161,6 +161,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val tentacleRowAdapters = mutableMapOf<String, ItemRowAdapter>()
 	// The On Now row's adapter (ON_NOW_ROW_KEY), refilled on every home refresh
 	private val onNowAdapters = mutableMapOf<String, ItemRowAdapter>()
+	// This home has an On Now row (shown or, with nothing on, left out)
+	@Volatile private var onNowInHome = false
 	// Empty answers in a row per Tentacle row (see TentacleRowRefresh).
 	private val emptyRowAnswers = mutableMapOf<String, Int>()
 	// The last answer kept as "shrank too far to believe", per playlist: the same answer
@@ -331,6 +333,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						}
 						val cachedMergeCw = cachedSections.mergeContinueWatching
 						val cachedHasResume = sections.any { it.type == "builtin" && (it.sectionId == "resume" || it.sectionId == "resumevideo") }
+						resetOnNow()
 						for (section in sections) {
 							when (section.type) {
 								"row" -> {
@@ -434,6 +437,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						// Render sections in dashboard order
 						val mergeCw = sectionsResponse.mergeContinueWatching
 						val hasResumeRow = tentacleSections.any { it.type == "builtin" && (it.sectionId == "resume" || it.sectionId == "resumevideo") }
+						resetOnNow()
 						for (section in tentacleSections) {
 							if (!isActive) return@launch
 							when (section.type) {
@@ -620,6 +624,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 							.collect {
 								Timber.w("WS: UserDataChangedMessage received")
 								refreshRows(force = false, delayed = true)
+								// A channel starred or unstarred anywhere (Tentacle's My Channels,
+								// the guide, another device) reaches On Now at once
+								refreshOnNow()
 							}
 					} catch (e: kotlinx.coroutines.CancellationException) {
 						throw e
@@ -628,6 +635,16 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					}
 					Timber.w("WS: userdata subscription ended — resubscribing in 5s")
 					delay(5.seconds)
+				}
+			}
+		}
+
+		// On Now while Home is showing: programmes end, time left moves on
+		lifecycleScope.launch {
+			lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+				while (isActive) {
+					delay(ON_NOW_REFRESH)
+					refreshOnNow()
 				}
 			}
 		}
@@ -1105,6 +1122,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		val cachedViews = try { userViewsRepository.views.first() } catch (_: Exception) { null }
 
 		val hasResumeRow = newSections.any { it.type == "builtin" && (it.sectionId == "resume" || it.sectionId == "resumevideo") }
+		resetOnNow()
 		for (section in newSections) {
 			when (section.type) {
 				"row" -> {
@@ -1289,9 +1307,16 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		refreshOnNow()
 	}
 
+	/** Rows about to be built: On Now is in this home only if its section comes up. */
+	private fun resetOnNow() {
+		onNowInHome = false
+		onNowAdapters.clear()
+	}
+
 	/** On Now again (programmes end, time left moves on); the row leaves when nothing is on. */
 	private suspend fun refreshOnNow() {
-		val rowAdapter = onNowAdapters[ON_NOW_ROW_KEY] ?: return
+		if (!onNowInHome) return
+		val rowAdapter = onNowAdapters[ON_NOW_ROW_KEY]
 		val user = userRepository.currentUser.value ?: return
 		val items = try {
 			withContext(Dispatchers.IO) { loadOnNow(api, user.id) }
@@ -1303,6 +1328,17 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		}
 		withContext(Dispatchers.Main) {
 			if (!isAdded || onNowAdapters[ON_NOW_ROW_KEY] !== rowAdapter) return@withContext
+			if (rowAdapter == null) {
+				// Left out (nothing was on, no favourites) and now there is something: build
+				// Home again so the row takes its place, as a user switch does
+				if (items.isNotEmpty() && isResumed && !isStateSaved) {
+					Timber.i("On Now has channels now, rebuilding Home")
+					parentFragmentManager.beginTransaction()
+						.replace(R.id.rowsFragment, HomeRowsFragment())
+						.commitNow()
+				}
+				return@withContext
+			}
 			if (items.isNotEmpty()) {
 				rowAdapter.replaceStaticItems(items)
 				return@withContext
@@ -1394,6 +1430,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// Tentacle's own: what's on now on the person's favourite channels; no row when
 			// there are none, nothing is on or they have no Live TV
 			ON_NOW_SECTION_ID -> {
+				onNowInHome = true
 				val user = userRepository.currentUser.value
 				if (user != null && user.policy?.enableLiveTvAccess != false) {
 					val items = runCatching { loadOnNow(api, user.id) }

@@ -1,92 +1,77 @@
 package org.jellyfin.androidtv.ui.presentation
 
 import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Canvas
+import android.graphics.Outline
+import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.text.TextUtils
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import android.widget.ImageView
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Stable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import org.jellyfin.androidtv.ui.settings.compat.SettingsViewModel
-import org.koin.compose.viewmodel.koinActivityViewModel
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import android.widget.LinearLayout
+import android.widget.TextView
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.findViewTreeCompositionContext
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.unit.dp
 import androidx.leanback.widget.Presenter
 import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.savedstate.findViewTreeSavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import kotlinx.coroutines.flow.MutableStateFlow
 import org.jellyfin.androidtv.R
+import org.jellyfin.androidtv.auth.repository.ServerRepository
+import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.constant.ImageType
-import org.jellyfin.androidtv.ui.base.JellyfinTheme
-import org.jellyfin.androidtv.ui.base.Text
-import org.jellyfin.androidtv.ui.composable.AsyncImage
+import org.jellyfin.androidtv.data.repository.TentacleRepository
+import org.jellyfin.androidtv.preference.UserPreferences
+import org.jellyfin.androidtv.preference.UserSettingPreferences
+import org.jellyfin.androidtv.ui.AsyncImageView
+import org.jellyfin.androidtv.ui.base.focusBorderColorFor
 import org.jellyfin.androidtv.ui.composable.item.EpisodePreviewOverlay
-import org.jellyfin.androidtv.ui.composable.item.ItemCard
-import org.jellyfin.androidtv.ui.composable.item.ItemCardBaseItemOverlay
-import org.jellyfin.androidtv.ui.composable.item.ItemPreview
 import org.jellyfin.androidtv.ui.composable.item.SeriesTrailerOverlay
 import org.jellyfin.androidtv.ui.composable.item.hasLocalMedia
 import org.jellyfin.androidtv.ui.composable.item.isEligibleForPreview
 import org.jellyfin.androidtv.ui.composable.item.isEligibleForTrailerPreview
-import org.jellyfin.androidtv.data.repository.TentacleRepository
-import org.jellyfin.androidtv.preference.UserSettingPreferences
 import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.BaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.BaseRowType
 import org.jellyfin.androidtv.ui.itemhandling.ChapterItemInfoBaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.GridButtonBaseRowItem
-import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.util.ImageHelper
 import org.jellyfin.androidtv.util.UUIDUtils
 import org.jellyfin.androidtv.util.apiclient.JellyfinImage
 import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.sdk.ApiClientFactory
 import org.jellyfin.design.Tokens
+import org.jellyfin.playback.core.PlaybackManager
+import org.jellyfin.playback.core.model.PlayState
+import org.jellyfin.playback.core.queue.queueOrNull
+import org.jellyfin.playback.jellyfin.queue.baseItem
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
-import org.koin.compose.koinInject
+import org.jellyfin.sdk.model.serializer.toUUIDOrNull
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
+import kotlin.math.roundToInt
 
 /**
  * FrameLayout wrapper that provides a reliable focus callback via [onFocusChanged] override.
  *
- * This wrapper addresses two issues with using [ComposeView] directly inside Leanback's
- * [HorizontalGridView]:
- *
- * 1. **Focus listener overwrite**: Leanback's `FocusHighlightHelper` sets its own
- *    [android.view.View.OnFocusChangeListener] on item views during binding (via `FocusAnimator`),
- *    overwriting any listener set by the Presenter. The [onFocusChanged] override is a protected
- *    [android.view.View] method that always fires regardless, so our focus state tracking works.
- *
- * 2. **ComposeView focus isolation**: The wrapper is the focusable view that Leanback's
- *    [HorizontalGridView] manages, while the [ComposeView] inside is a non-focusable rendering
- *    surface. This avoids [ComposeView]-specific focus quirks (e.g. AndroidComposeView key event
- *    interception) on devices like Fire TV 4K v1 (API 28).
+ * Leanback's `FocusHighlightHelper` sets its own [android.view.View.OnFocusChangeListener] on
+ * item views during binding (via `FocusAnimator`), overwriting any listener set by the
+ * Presenter. The [onFocusChanged] override is a protected [android.view.View] method that
+ * always fires regardless, so our focus state tracking works.
  */
 private class FocusAwareCardContainer(context: Context) : FrameLayout(context) {
 	/** Callback invoked when focus state changes. Not overwritten by Leanback's FocusAnimator. */
@@ -107,43 +92,65 @@ private class FocusAwareCardContainer(context: Context) : FrameLayout(context) {
 	}
 }
 
+/** The thin watch-progress bar at the bottom of a card (the look of the disabled Seekbar). */
+private class CardProgressView(context: Context) : View(context) {
+	private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Tokens.Color.colorBluegrey700.toArgb() }
+	private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Tokens.Color.colorCyan500.toArgb() }
+
+	var fraction = 0f
+		set(value) {
+			if (field == value) return
+			field = value
+			invalidate()
+		}
+
+	override fun onDraw(canvas: Canvas) {
+		val w = width.toFloat()
+		val h = height.toFloat()
+		val r = minOf(w, h)
+		canvas.drawRoundRect(0f, 0f, w, h, r, r, track)
+		if (fraction > 0f) canvas.drawRoundRect(0f, 0f, w * fraction, h, r, r, fill)
+	}
+}
+
+/**
+ * Cards for every Leanback row and grid: plain Android views.
+ *
+ * Each card used to be its own ComposeView, so every card had its own AndroidComposeView with
+ * its own snapshot observer, lifecycle observers and flow collectors. Scrolling Home down
+ * detaches and attaches whole rows of them, and each detach unregisters from Compose's one
+ * global apply-observer list under a lock; with compositions kept alive for pooled (and
+ * discarded) cards the main thread spent seconds in that and the Sony TV ended in an ANR
+ * (2026-10-21). Views cost a fraction of that to bind, attach and detach. Compose is only
+ * used for the focused card's video preview, created once focus rests on it.
+ */
 class CardPresenter @JvmOverloads constructor(
 	val showInfo: Boolean,
 	val imageType: ImageType,
 	val staticHeight: Int,
 	val uniformAspect: Boolean,
 	val showServerBadge: Boolean = false,
-) : Presenter() {
+) : Presenter(), KoinComponent {
 	constructor(showInfo: Boolean, imageType: ImageType, staticHeight: Int) : this(showInfo, imageType, staticHeight, false)
 	constructor(showInfo: Boolean, staticHeight: Int) : this(showInfo, ImageType.POSTER, staticHeight)
 	constructor(showInfo: Boolean) : this(showInfo, 150)
 	constructor() : this(true)
 
+	private val userPreferences by inject<UserPreferences>()
+	private val userSettingPreferences by inject<UserSettingPreferences>()
+	private val userRepository by inject<UserRepository>()
+	private val serverRepository by inject<ServerRepository>()
+	private val tentacleRepository by inject<TentacleRepository>()
+	private val playbackManager by inject<PlaybackManager>()
+	private val apiClientFactory by inject<ApiClientFactory>()
+	private val api by inject<ApiClient>()
+
 	override fun onCreateViewHolder(parent: ViewGroup): ViewHolder {
 		val container = FocusAwareCardContainer(parent.context)
-
-		val composeView = ComposeView(parent.context).apply {
-			// ComposeView is a non-focusable rendering surface inside the container.
-			// Focus is managed entirely by the FocusAwareCardContainer wrapper.
-			isFocusable = false
-			setParentCompositionContext(parent.findViewTreeCompositionContext())
-			// Keep the composition alive across Leanback pooling — dispose only when the
-			// row fragment's lifecycle is destroyed. The DEFAULT strategy disposes the
-			// composition when a card is released to the RecycledViewPool, so reused cards
-			// recompose from scratch on every scroll instead of cheaply rebinding via the
-			// _item StateFlow. This is the main reason view recycling wasn't saving work.
-			setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-		}
-
-		// Set view tree owners on the container so they propagate to ComposeView
+		// The preview's ComposeView needs these; set them up front like the cards always did.
 		container.setViewTreeLifecycleOwner(parent.findViewTreeLifecycleOwner())
 		container.setViewTreeSavedStateRegistryOwner(parent.findViewTreeSavedStateRegistryOwner())
-		container.addView(composeView, FrameLayout.LayoutParams(
-			FrameLayout.LayoutParams.WRAP_CONTENT,
-			FrameLayout.LayoutParams.WRAP_CONTENT
-		))
-
-		return CardViewHolder(container, composeView)
+		return CardViewHolder(container)
 	}
 
 	override fun onBindViewHolder(viewHolder: ViewHolder, item: Any?) {
@@ -160,44 +167,375 @@ class CardPresenter @JvmOverloads constructor(
 	}
 
 	private inner class CardViewHolder(
-		container: FocusAwareCardContainer,
-		composeView: ComposeView,
+		private val container: FocusAwareCardContainer,
 	) : ViewHolder(container) {
-		private val _item = MutableStateFlow<BaseRowItem?>(null)
-		private val _focused = MutableStateFlow(false)
+		private val context = container.context
+		private val density = context.resources.displayMetrics.density
+		private fun dp(value: Float) = (value * density).roundToInt()
+		private fun dp(value: Int) = dp(value.toFloat())
+
+		private val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+		private val frame = FrameLayout(context).apply {
+			background = ColorDrawable(Tokens.Color.colorBluegrey900.toArgb())
+			clipToOutline = true
+		}
+		private val image = AsyncImageView(context)
+		private val icon = ImageView(context).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+		private val previewHost = FrameLayout(context)
+		private val overlay = FrameLayout(context).apply { setPadding(dp(4), dp(4), dp(4), dp(4)) }
+		private val stateColumn = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+		private val recordIcon = ImageView(context).apply { setImageResource(R.drawable.ic_record_series) }
+		private val favoriteIcon = ImageView(context).apply {
+			setImageResource(R.drawable.ic_heart)
+			imageTintList = ColorStateList.valueOf(Tokens.Color.colorRed500.toArgb())
+		}
+		private val serverBadge = TextView(context).apply {
+			setTextColor(android.graphics.Color.WHITE)
+			setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f)
+			maxLines = 1
+			ellipsize = TextUtils.TruncateAt.END
+			setPadding(dp(4), dp(2), dp(4), dp(2))
+			background = GradientDrawable().apply {
+				setColor(android.graphics.Color.argb(178, 0, 0, 0))
+				cornerRadius = dp(4).toFloat()
+			}
+		}
+		private val watchBadgeView = FrameLayout(context).apply {
+			minimumWidth = dp(24)
+			minimumHeight = dp(24)
+			setPadding(dp(4), dp(4), dp(4), dp(4))
+			background = GradientDrawable().apply {
+				shape = GradientDrawable.OVAL
+				setColor(Tokens.Color.colorCyan500.toArgb())
+			}
+		}
+		private val watchIcon = ImageView(context).apply {
+			setImageResource(R.drawable.ic_watch)
+			imageTintList = ColorStateList.valueOf(Tokens.Color.colorBluegrey100.toArgb())
+		}
+		private val watchCount = TextView(context).apply {
+			setTextColor(Tokens.Color.colorBluegrey100.toArgb())
+			setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+			typeface = Typeface.DEFAULT_BOLD
+			gravity = Gravity.CENTER
+			includeFontPadding = false
+		}
+		private val bottomColumn = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+		private val progress = CardProgressView(context)
+		private val footer = TextView(context).apply {
+			setTextColor(android.graphics.Color.WHITE)
+			gravity = Gravity.CENTER
+			setSingleLine(true)
+			ellipsize = TextUtils.TruncateAt.END
+			marqueeRepeatLimit = 3
+			setPadding(dp(4), dp(4), dp(4), dp(4))
+			background = GradientDrawable().apply {
+				setColor(Tokens.Color.colorBluegrey900.copy(alpha = 0.6f).toArgb())
+				cornerRadius = dp(4).toFloat()
+			}
+		}
+		private val metadata = LinearLayout(context).apply {
+			orientation = LinearLayout.VERTICAL
+			setPadding(dp(4), dp(4), dp(4), dp(4))
+		}
+		private val title = metadataText(12f, Tokens.Color.colorGrey100.toArgb())
+		private val subtitle = metadataText(10f, Tokens.Color.colorGrey300.toArgb())
+		private val focusBorder = GradientDrawable().apply { setColor(android.graphics.Color.TRANSPARENT) }
+
+		private var item: BaseRowItem? = null
+		private var boundUrl: String? = null
+		private var isCircular = false
+		private var preview: ComposeView? = null
+		private val startPreview = Runnable { showPreview() }
 
 		init {
-			composeView.setContent {
-				val item by _item.collectAsState()
-				val focused by _focused.collectAsState()
-
-				CardViewHolderContent(
-					item = item,
-					focused = focused,
-					showInfo = showInfo,
-					imageType = imageType,
-					staticHeight = staticHeight,
-					uniformAspect = uniformAspect,
-					showServerBadge = showServerBadge,
-				)
+			frame.outlineProvider = object : ViewOutlineProvider() {
+				override fun getOutline(view: View, outline: Outline) {
+					if (isCircular) outline.setOval(0, 0, view.width, view.height)
+					else outline.setRoundRect(0, 0, view.width, view.height, dp(12).toFloat())
+				}
 			}
+			frame.addView(image, FrameLayout.LayoutParams(MATCH, MATCH))
+			frame.addView(icon, FrameLayout.LayoutParams(MATCH, MATCH, Gravity.CENTER))
+			frame.addView(previewHost, FrameLayout.LayoutParams(MATCH, MATCH))
 
-			_focused.value = container.isFocused
+			stateColumn.addView(recordIcon, LinearLayout.LayoutParams(dp(24), dp(24)))
+			stateColumn.addView(favoriteIcon, LinearLayout.LayoutParams(dp(24), dp(24)))
+			overlay.addView(stateColumn, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.START))
+			overlay.addView(serverBadge, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
+			watchBadgeView.addView(watchIcon, FrameLayout.LayoutParams(dp(12), dp(12), Gravity.CENTER))
+			watchBadgeView.addView(watchCount, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.CENTER))
+			overlay.addView(watchBadgeView, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.END))
+			bottomColumn.addView(progress, LinearLayout.LayoutParams(MATCH, dp(4)).apply {
+				setMargins(dp(4), dp(4), dp(4), dp(4))
+			})
+			bottomColumn.addView(footer, LinearLayout.LayoutParams(MATCH, WRAP))
+			overlay.addView(bottomColumn, FrameLayout.LayoutParams(MATCH, WRAP, Gravity.BOTTOM))
+			frame.addView(overlay, FrameLayout.LayoutParams(MATCH, MATCH))
+
+			metadata.addView(title, LinearLayout.LayoutParams(MATCH, WRAP))
+			metadata.addView(subtitle, LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(4) })
+			column.addView(frame, LinearLayout.LayoutParams(dp(100), dp(150)))
+			column.addView(metadata, LinearLayout.LayoutParams(dp(100), WRAP).apply { topMargin = dp(4) })
+			container.addView(column, FrameLayout.LayoutParams(WRAP, WRAP))
+
 			// Use onFocusChanged callback on the container instead of OnFocusChangeListener
 			// because Leanback's FocusHighlightHelper.BrowseItemFocusHighlight overwrites
 			// OnFocusChangeListener with its own FocusAnimator during item binding.
-			container.focusCallback = { focused -> _focused.value = focused }
+			container.focusCallback = { focused -> onFocus(focused) }
+		}
+
+		private fun metadataText(sizeSp: Float, color: Int) = TextView(context).apply {
+			setTextColor(color)
+			setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
+			gravity = Gravity.CENTER_HORIZONTAL
+			setSingleLine(true)
+			ellipsize = TextUtils.TruncateAt.END
+			marqueeRepeatLimit = 3
 		}
 
 		fun bind(item: BaseRowItem) {
-			_item.value = item
-			_focused.value = view.isFocused
+			this.item = item
+			val displayConfig = item.getDisplayConfig(imageType, uniformAspect)
+			val jellyfinImage = displayConfig.image
+			val aspectRatio = displayConfig.aspectRatio.takeIf { it >= 0.1f }
+				?: jellyfinImage?.aspectRatio?.takeIf { it >= 0.1f } ?: 1f
+			val posterSize = userPreferences[UserPreferences.posterSize]
+			val size = cardSizeDp(aspectRatio, item.staticHeight, staticHeight, posterSize.height, posterSize.landscapeHeight)
+			val widthPx = dp(size.width)
+			val heightPx = dp(size.height)
+
+			frame.layoutParams = frame.layoutParams.apply {
+				width = widthPx
+				height = heightPx
+			}
+			if (isCircular != displayConfig.isCircular) {
+				isCircular = displayConfig.isCircular
+				frame.invalidateOutline()
+			}
+
+			bindImage(item, displayConfig, jellyfinImage, aspectRatio, widthPx, heightPx)
+
+			val cardTitle = item.getCardName(context)
+			val usePreview = displayConfig.overrideShowInfo ?: showInfo
+			val baseItem = item.baseItem
+			bindOverlay(baseItem, if (!usePreview && item.showCardInfoOverlay) cardTitle else null)
+
+			metadata.visibility = if (usePreview) View.VISIBLE else View.GONE
+			if (usePreview) {
+				metadata.layoutParams = metadata.layoutParams.apply { width = widthPx }
+				title.setTextOrGone(cardTitle)
+				subtitle.setTextOrGone(item.getSubText(context))
+			}
+
+			applyFocus(container.isFocused)
+		}
+
+		private fun bindImage(
+			item: BaseRowItem,
+			displayConfig: BaseRowItemDisplayConfig,
+			jellyfinImage: JellyfinImage?,
+			aspectRatio: Float,
+			widthPx: Int,
+			heightPx: Int,
+		) {
+			if (jellyfinImage != null) {
+				icon.visibility = View.GONE
+				image.visibility = View.VISIBLE
+				image.scaleType = displayConfig.scaleType ?: ImageView.ScaleType.CENTER_CROP
+				val url = jellyfinImage.getUrl(resolveApi(item), maxWidth = widthPx, maxHeight = heightPx)
+				// The same poster again (a row refresh rebinding its cards): keep what's on screen.
+				if (url == boundUrl && image.drawable != null) return
+				boundUrl = url
+				image.load(
+					url = url,
+					blurHash = jellyfinImage.blurHash,
+					aspectRatio = aspectRatio.toDouble(),
+				)
+				return
+			}
+
+			boundUrl = null
+			image.clear()
+			image.visibility = View.GONE
+			icon.visibility = View.VISIBLE
+			val gridImage = (item as? GridButtonBaseRowItem)?.gridButton?.imageRes
+			icon.setImageResource(gridImage ?: displayConfig.iconRes)
+			icon.layoutParams = (icon.layoutParams as FrameLayout.LayoutParams).apply {
+				// Grid buttons fill the card; a type icon sits in the middle at 40%.
+				width = if (gridImage != null) MATCH else (widthPx * 0.4f).roundToInt()
+				height = if (gridImage != null) MATCH else (heightPx * 0.4f).roundToInt()
+			}
+		}
+
+		private fun resolveApi(item: BaseRowItem): ApiClient = when {
+			item.baseItem != null -> apiClientFactory.getApiClientForItemOrFallback(item.baseItem, api)
+			item is ChapterItemInfoBaseRowItem && item.serverId != null -> {
+				val serverUuid = UUIDUtils.parseUUID(item.serverId)
+				if (serverUuid != null) apiClientFactory.getApiClientForServer(serverUuid) ?: api else api
+			}
+			else -> api
+		}
+
+		private fun bindOverlay(baseItem: BaseItemDto?, footerTitle: String?) {
+			if (baseItem == null) {
+				overlay.visibility = View.GONE
+				return
+			}
+			overlay.visibility = View.VISIBLE
+
+			val isRecording = baseItem.timerId != null &&
+				(baseItem.type == BaseItemKind.LIVE_TV_PROGRAM || baseItem.type == BaseItemKind.PROGRAM)
+			recordIcon.visibility = if (isRecording) View.VISIBLE else View.GONE
+			if (isRecording) {
+				val active = baseItem.seriesTimerId != null
+				recordIcon.imageTintList = ColorStateList.valueOf(
+					(if (active) Tokens.Color.colorRed600 else Tokens.Color.colorGrey100).toArgb()
+				)
+			}
+			favoriteIcon.visibility = if (baseItem.userData?.isFavorite == true) View.VISIBLE else View.GONE
+			favoriteIcon.layoutParams = (favoriteIcon.layoutParams as LinearLayout.LayoutParams).apply {
+				topMargin = if (isRecording) dp(4) else 0
+			}
+
+			val serverName = if (showServerBadge) serverName(baseItem) else null
+			serverBadge.setTextOrGone(serverName)
+
+			when (val badge = watchBadge(
+				behavior = userPreferences[UserPreferences.watchedIndicatorBehavior],
+				type = baseItem.type,
+				played = baseItem.userData?.played == true,
+				unplayedCount = baseItem.userData?.unplayedItemCount,
+			)) {
+				WatchBadge.None -> watchBadgeView.visibility = View.GONE
+				WatchBadge.Played -> {
+					watchBadgeView.visibility = View.VISIBLE
+					watchIcon.visibility = View.VISIBLE
+					watchCount.visibility = View.GONE
+				}
+				is WatchBadge.Unplayed -> {
+					watchBadgeView.visibility = View.VISIBLE
+					watchIcon.visibility = View.GONE
+					watchCount.visibility = View.VISIBLE
+					watchCount.text = badge.count.toString()
+				}
+			}
+
+			val fraction = playingFraction(baseItem) ?: playedFraction(baseItem.userData?.playedPercentage)
+			progress.visibility = if (fraction != null) View.VISIBLE else View.GONE
+			progress.fraction = fraction ?: 0f
+
+			footer.setTextOrGone(footerTitle)
+		}
+
+		/** The live position when this item is the one playing (background audio, say). */
+		private fun playingFraction(baseItem: BaseItemDto): Float? {
+			if (playbackManager.state.playState.value != PlayState.PLAYING) return null
+			if (playbackManager.queueOrNull?.entry?.value?.baseItem?.id != baseItem.id) return null
+			val position = playbackManager.state.positionInfo
+			val durationMs = position.duration.inWholeMilliseconds
+			if (durationMs <= 0) return null
+			return (position.active.inWholeMilliseconds.toFloat() / durationMs).coerceIn(0f, 1f)
+		}
+
+		private fun serverName(baseItem: BaseItemDto): String? {
+			if (!userPreferences[UserPreferences.enableMultiServerLibraries]) return null
+			val serverUuid = baseItem.serverId?.toUUIDOrNull() ?: return null
+			return serverRepository.storedServers.value.find { it.id == serverUuid }?.name
 		}
 
 		fun unbind() {
-			_item.value = null
-			_focused.value = false
+			cancelPreview()
+			item = null
+			boundUrl = null
+			image.clear()
 		}
+
+		private fun onFocus(focused: Boolean) {
+			applyFocus(focused)
+			if (focused) {
+				container.removeCallbacks(startPreview)
+				if (wantsPreview()) container.postDelayed(startPreview, PREVIEW_VIEW_DELAY_MS)
+			} else {
+				cancelPreview()
+			}
+		}
+
+		private fun applyFocus(focused: Boolean) {
+			if (focused) {
+				focusBorder.setStroke(dp(2), focusBorderColorFor(context, userRepository.currentUser.value?.id).toArgb())
+				focusBorder.cornerRadius = if (isCircular) 0f else dp(12).toFloat()
+				focusBorder.shape = if (isCircular) GradientDrawable.OVAL else GradientDrawable.RECTANGLE
+				frame.foreground = focusBorder
+			} else {
+				frame.foreground = null
+			}
+			// Finite marquee on the focused card only: an endless one redraws every frame.
+			for (text in arrayOf(title, subtitle, footer)) {
+				text.ellipsize = if (focused) TextUtils.TruncateAt.MARQUEE else TextUtils.TruncateAt.END
+				text.isSelected = focused
+			}
+		}
+
+		private fun wantsPreview(): Boolean {
+			val baseItem = item?.baseItem ?: return false
+			return episodePreview(baseItem) || trailerPreview(baseItem)
+		}
+
+		private fun episodePreview(baseItem: BaseItemDto) =
+			userSettingPreferences[UserSettingPreferences.episodePreviewEnabled] &&
+				isEligibleForPreview(baseItem) &&
+				previewAllowedByServer(tentacleRepository.cardPreviewPolicy.value, baseItem.hasLocalMedia())
+
+		private fun trailerPreview(baseItem: BaseItemDto) =
+			userSettingPreferences[UserSettingPreferences.mediaBarTrailerPreview] &&
+				isEligibleForTrailerPreview(baseItem)
+
+		/** The focused card's preview, the only Compose in a card (H6 still waits for focus to rest). */
+		private fun showPreview() {
+			val baseItem = item?.baseItem ?: return
+			if (preview != null || !container.isFocused) return
+			val episode = episodePreview(baseItem)
+			val trailer = trailerPreview(baseItem)
+			if (!episode && !trailer) return
+			preview = ComposeView(context).apply {
+				isFocusable = false
+				setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+				setContent {
+					// Card previews are always muted (H6); the hero's trailer sound is its own.
+					if (episode) EpisodePreviewOverlay(item = baseItem, focused = true)
+					if (trailer) SeriesTrailerOverlay(item = baseItem, focused = true)
+				}
+			}.also { previewHost.addView(it, FrameLayout.LayoutParams(MATCH, MATCH)) }
+		}
+
+		private fun cancelPreview() {
+			container.removeCallbacks(startPreview)
+			val view = preview ?: return
+			preview = null
+			view.disposeComposition()
+			previewHost.removeView(view)
+		}
+	}
+
+	private companion object {
+		const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
+		const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
+
+		/**
+		 * Focus rests this long before the preview's ComposeView is even built, so D-pad
+		 * browsing builds none; the preview itself then waits for its own rest (PREVIEW_REST_MS).
+		 */
+		const val PREVIEW_VIEW_DELAY_MS = 500L
+	}
+}
+
+private fun TextView.setTextOrGone(value: String?) {
+	if (value.isNullOrEmpty()) {
+		visibility = View.GONE
+	} else {
+		visibility = View.VISIBLE
+		if (text?.toString() != value) text = value
 	}
 }
 
@@ -348,210 +686,4 @@ private fun BaseRowItem.getDisplayConfig(imageType: ImageType, uniformAspect: Bo
 		image = getImage(imageType),
 		iconRes = R.drawable.ic_clapperboard,
 	)
-}
-
-@Composable
-@Stable
-private fun CardViewHolderContent(
-	item: BaseRowItem?,
-	focused: Boolean,
-	showInfo: Boolean,
-	imageType: ImageType,
-	staticHeight: Int,
-	uniformAspect: Boolean,
-	showServerBadge: Boolean = false,
-) {
-	val context = LocalContext.current
-	val localDensity = LocalDensity.current
-
-	val title = remember(item, context) { item?.getCardName(context) }
-	val subtitle = remember(item, context) { item?.getSubText(context) }
-	val displayConfig = remember(item, imageType, uniformAspect) { item?.getDisplayConfig(imageType, uniformAspect) }
-	if (item == null || displayConfig == null) return
-
-	val image = displayConfig.image
-	val aspectRatio = displayConfig.aspectRatio.takeIf { it >= 0.1f }
-		?: image?.aspectRatio?.takeIf { it >= 0.1f } ?: 1f
-
-	val userPreferences = koinInject<UserPreferences>()
-	val settingsClosedCounter by koinActivityViewModel<SettingsViewModel>().settingsClosedCounter.collectAsState()
-	val posterSize = remember(settingsClosedCounter) { userPreferences[UserPreferences.posterSize] }
-	val effectiveStaticHeight = if (staticHeight == 150) {
-		posterSize.height
-	} else {
-		staticHeight
-	}
-
-	// Use a shorter height for landscape cards (banner/thumb) so they don't
-	// visually dominate the row compared to portrait poster cards
-	val effectiveLandscapeHeight = if (staticHeight == 150) {
-		posterSize.landscapeHeight
-	} else {
-		(staticHeight * 0.73f).toInt()
-	}
-
-	val size = when (item.staticHeight) {
-		true -> if (aspectRatio > 1f) {
-			DpSize(effectiveLandscapeHeight.dp * aspectRatio, effectiveLandscapeHeight.dp)
-		} else {
-			DpSize(effectiveStaticHeight.dp * aspectRatio, effectiveStaticHeight.dp)
-		}
-		false if (aspectRatio > 1f) -> DpSize(130.dp * aspectRatio, 130.dp)
-		else -> DpSize(150.dp * aspectRatio, 150.dp)
-	}
-
-	val usePreview = displayConfig.overrideShowInfo ?: showInfo
-
-	val card = @Composable {
-		ItemCard(
-			focused = focused,
-			image = {
-				if (image != null) {
-					val apiClientFactory = koinInject<ApiClientFactory>()
-					val api = koinInject<ApiClient>()
-					val resolvedApi = when {
-						item.baseItem != null -> apiClientFactory.getApiClientForItemOrFallback(item.baseItem, api)
-						item is ChapterItemInfoBaseRowItem && item.serverId != null -> {
-							val serverUuid = UUIDUtils.parseUUID(item.serverId)
-							if (serverUuid != null) apiClientFactory.getApiClientForServer(serverUuid) ?: api else api
-						}
-						else -> api
-					}
-					AsyncImage(
-						url = image.getUrl(
-							resolvedApi,
-							maxWidth = with(localDensity) { size.width.roundToPx() },
-							maxHeight = with(localDensity) { size.height.roundToPx() },
-						),
-						blurHash = image.blurHash,
-						aspectRatio = aspectRatio,
-						scaleType = displayConfig.scaleType ?: ImageView.ScaleType.CENTER_CROP,
-						modifier = Modifier
-							.fillMaxSize()
-					)
-				} else if (item is GridButtonBaseRowItem && item.gridButton.imageRes != null) {
-					Image(
-						painter = painterResource(item.gridButton.imageRes),
-						contentDescription = null,
-						modifier = Modifier
-							.fillMaxSize()
-					)
-				} else {
-					Image(
-						painter = painterResource(displayConfig.iconRes),
-						contentDescription = null,
-						modifier = Modifier
-							.fillMaxSize(0.4f)
-							.align(Alignment.Center)
-					)
-				}
-			},
-			overlay = {
-				val userSettingPrefs = koinInject<UserSettingPreferences>()
-				val episodePreviewEnabled = userSettingPrefs[UserSettingPreferences.episodePreviewEnabled]
-				val trailerPreviewEnabled = userSettingPrefs[UserSettingPreferences.mediaBarTrailerPreview]
-				val baseItem = item.baseItem
-				// Server-side "card previews" policy (androidtv#47): a provider .strm card's
-				// preview opens a real connection to the IPTV backend just from D-pad scrolling
-				// (four connections in fourteen seconds while scrolling one row, each lingering
-				// 12-16s after focus moved on — on a connection-limited account that cut a
-				// running recording). "all" behaves as today; "off" disables the preview
-				// entirely; "local_only" additionally requires hasLocalMedia() before allowing it.
-				val tentacleRepository = koinInject<TentacleRepository>()
-				val cardPreviewPolicy by tentacleRepository.cardPreviewPolicy.collectAsState()
-				val previewAllowedByServer = when (cardPreviewPolicy) {
-					"off" -> false
-					"local_only" -> baseItem?.hasLocalMedia() == true
-					else -> true // "all", or an unrecognized value from a newer server
-				}
-				if (episodePreviewEnabled && previewAllowedByServer && baseItem != null && isEligibleForPreview(baseItem)) {
-					// Card previews are always muted (H6); the hero's trailer sound is its own.
-					EpisodePreviewOverlay(
-						item = baseItem,
-						focused = focused,
-					)
-				}
-				if (trailerPreviewEnabled && baseItem != null && isEligibleForTrailerPreview(baseItem)) {
-					SeriesTrailerOverlay(
-						item = baseItem,
-						focused = focused,
-					)
-				}
-
-				val showInfo = !usePreview && item.showCardInfoOverlay
-				item.baseItem?.let { baseItem ->
-					ItemCardBaseItemOverlay(
-						item = baseItem,
-						showServerBadge = showServerBadge,
-						footer = {
-							if (showInfo && title != null) {
-								// Finite iterations: an infinite marquee invalidates the frame
-								// continuously for as long as a card is focused, which visibly
-								// janks weak TV GPUs even when nothing else is happening.
-								val focusModifier = if (focused) Modifier.basicMarquee(
-									iterations = 3,
-										initialDelayMillis = 1500,
-									) else Modifier
-
-									Box(
-										modifier = Modifier
-											.fillMaxWidth()
-											.background(Tokens.Color.colorBluegrey900.copy(alpha = 0.6f), JellyfinTheme.shapes.extraSmall),
-									) {
-										Text(
-											text = title,
-											maxLines = 1,
-											overflow = TextOverflow.Ellipsis,
-											textAlign = TextAlign.Center,
-											color = Tokens.Color.colorWhite,
-											modifier = Modifier
-												.then(focusModifier)
-												.padding(Tokens.Space.spaceXs),
-										)
-									}
-								}
-							}
-						)
-					}
-			},
-			shape = if (displayConfig.isCircular) CircleShape else JellyfinTheme.shapes.medium,
-			modifier = Modifier
-				.size(size)
-		)
-	}
-
-	if (usePreview) {
-		val focusModifier = if (focused) Modifier.basicMarquee(
-			iterations = 3,
-			initialDelayMillis = 1500,
-		) else Modifier
-
-		ItemPreview(
-			card = { card() },
-			title = title?.let { text ->
-				{
-					Text(
-						text = text,
-						maxLines = 1,
-						overflow = TextOverflow.Ellipsis,
-						textAlign = TextAlign.Center,
-						modifier = Modifier.then(focusModifier),
-					)
-				}
-			},
-			subtitle = subtitle?.let { text ->
-				{
-					Text(
-						text = text,
-						maxLines = 1,
-						overflow = TextOverflow.Ellipsis,
-						textAlign = TextAlign.Center,
-						modifier = Modifier.then(focusModifier),
-					)
-				}
-			},
-		)
-	} else {
-		card()
-	}
 }

@@ -112,7 +112,7 @@ object UpdatePrompt : KoinComponent {
 			when (result) {
 				is UpdateCheckResult.Available -> showDialog(activity, result.info)
 				UpdateCheckResult.UpToDate ->
-					if (!quiet) Toast.makeText(activity, R.string.update_up_to_date, Toast.LENGTH_SHORT).show()
+					if (!quiet) Toast.makeText(activity, R.string.update_up_to_date, Toast.LENGTH_LONG).show()
 				is UpdateCheckResult.Failed ->
 					if (!quiet) Toast.makeText(activity, R.string.update_check_failed, Toast.LENGTH_LONG).show()
 			}

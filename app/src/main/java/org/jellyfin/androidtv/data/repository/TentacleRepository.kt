@@ -2070,4 +2070,6 @@ data class TentacleNotification(
 	val jellyfinItemId: String? = null,
 	@SerialName("created_at")
 	val createdAt: String? = null,
+	/** "download" (ready to watch), "request" or "problem"; servers before 1.12.1 send none. */
+	val kind: String? = null,
 )

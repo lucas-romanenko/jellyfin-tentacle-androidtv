@@ -21,11 +21,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -37,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ComposeView
@@ -63,7 +63,6 @@ import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.settings.composable.SettingsColumn
 import org.jellyfin.androidtv.ui.settings.composable.SettingsDialog
-import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.itemImages
 import org.jellyfin.androidtv.util.apiclient.parentImages
 import org.jellyfin.sdk.api.client.ApiClient
@@ -195,7 +194,7 @@ class FavoritesBrowseFragment : Fragment() {
 			Spacer(modifier = Modifier.height(6.dp))
 
 			FocusedItemHud(
-				item = uiState.focusedItem,
+				itemFlow = viewModel.focusedItem,
 				modifier = Modifier.fillMaxWidth(),
 			)
 
@@ -227,58 +226,71 @@ class FavoritesBrowseFragment : Fragment() {
 		uiState: FavoritesBrowseUiState,
 		modifier: Modifier = Modifier,
 	) {
-		val scrollState = rememberScrollState()
 		val scale = posterSizeScale(uiState.posterSize)
+		val bgDebouncer = rememberFocusDebouncer()
 
-		Column(
-			modifier = modifier
-				.fillMaxWidth()
-				.verticalScroll(scrollState)
-				.padding(bottom = 16.dp),
+		LazyColumn(
+			modifier = modifier.fillMaxWidth(),
+			contentPadding = PaddingValues(bottom = 16.dp),
 		) {
 			if (uiState.cast.isNotEmpty()) {
-				FavoriteItemRow(
-					title = stringResource(R.string.lbl_cast),
-					items = uiState.cast,
-					cardWidth = (120 * scale).toInt(),
-					cardHeight = (180 * scale).toInt(),
-				)
+				item(key = "cast") {
+					FavoriteItemRow(
+						title = stringResource(R.string.lbl_cast),
+						items = uiState.cast,
+						bgDebouncer = bgDebouncer,
+						cardWidth = (120 * scale).toInt(),
+						cardHeight = (180 * scale).toInt(),
+					)
+				}
 			}
 
 			if (uiState.movies.isNotEmpty()) {
-				FavoriteItemRow(
-					title = stringResource(R.string.lbl_movies),
-					items = uiState.movies,
-					cardWidth = (140 * scale).toInt(),
-					cardHeight = (210 * scale).toInt(),
-				)
+				item(key = "movies") {
+					FavoriteItemRow(
+						title = stringResource(R.string.lbl_movies),
+						items = uiState.movies,
+						bgDebouncer = bgDebouncer,
+						cardWidth = (140 * scale).toInt(),
+						cardHeight = (210 * scale).toInt(),
+					)
+				}
 			}
 
 			if (uiState.shows.isNotEmpty()) {
-				FavoriteItemRow(
-					title = stringResource(R.string.lbl_series),
-					items = uiState.shows,
-					cardWidth = (140 * scale).toInt(),
-					cardHeight = (210 * scale).toInt(),
-				)
+				item(key = "shows") {
+					FavoriteItemRow(
+						title = stringResource(R.string.lbl_series),
+						items = uiState.shows,
+						bgDebouncer = bgDebouncer,
+						cardWidth = (140 * scale).toInt(),
+						cardHeight = (210 * scale).toInt(),
+					)
+				}
 			}
 
 			if (uiState.episodes.isNotEmpty()) {
-				FavoriteItemRow(
-					title = stringResource(R.string.lbl_episodes),
-					items = uiState.episodes,
-					cardWidth = (200 * scale).toInt(),
-					cardHeight = (112 * scale).toInt(),
-				)
+				item(key = "episodes") {
+					FavoriteItemRow(
+						title = stringResource(R.string.lbl_episodes),
+						items = uiState.episodes,
+						bgDebouncer = bgDebouncer,
+						cardWidth = (200 * scale).toInt(),
+						cardHeight = (112 * scale).toInt(),
+					)
+				}
 			}
 
 			if (uiState.playlists.isNotEmpty()) {
-				FavoriteItemRow(
-					title = stringResource(R.string.lbl_playlists),
-					items = uiState.playlists,
-					cardWidth = (140 * scale).toInt(),
-					cardHeight = (140 * scale).toInt(),
-				)
+				item(key = "playlists") {
+					FavoriteItemRow(
+						title = stringResource(R.string.lbl_playlists),
+						items = uiState.playlists,
+						bgDebouncer = bgDebouncer,
+						cardWidth = (140 * scale).toInt(),
+						cardHeight = (140 * scale).toInt(),
+					)
+				}
 			}
 		}
 	}
@@ -287,9 +299,11 @@ class FavoritesBrowseFragment : Fragment() {
 	private fun FavoriteItemRow(
 		title: String,
 		items: List<BaseItemDto>,
+		bgDebouncer: FocusDebouncer,
 		cardWidth: Int = 140,
 		cardHeight: Int = 210,
 	) {
+		val rowItems = remember(items) { items.distinctById() }
 		Column(
 			modifier = Modifier
 				.fillMaxWidth()
@@ -307,7 +321,7 @@ class FavoritesBrowseFragment : Fragment() {
 				horizontalArrangement = Arrangement.spacedBy(12.dp),
 				contentPadding = PaddingValues(horizontal = 60.dp),
 			) {
-				items(items) { item ->
+				items(rowItems, key = { it.id }, contentType = { "favoriteCard" }) { item ->
 					FavoriteCard(
 						item = item,
 						cardWidth = cardWidth,
@@ -315,7 +329,7 @@ class FavoritesBrowseFragment : Fragment() {
 						onClick = { launchItem(item) },
 						onFocused = {
 							viewModel.setFocusedItem(item)
-							backgroundService.setBackground(item, BlurContext.BROWSING)
+							bgDebouncer.submit { backgroundService.setBackground(item, BlurContext.BROWSING) }
 						},
 					)
 				}
@@ -348,6 +362,8 @@ class FavoritesBrowseFragment : Fragment() {
 					scaleX = scale
 					scaleY = scale
 					this.alpha = alpha
+					// Fades the card's draws instead of an offscreen layer per unfocused card
+					compositingStrategy = CompositingStrategy.ModulateAlpha
 				}
 				.clickable(
 					interactionSource = interactionSource,
@@ -366,7 +382,8 @@ class FavoritesBrowseFragment : Fragment() {
 					)
 					.background(Color.White.copy(alpha = 0.06f)),
 			) {
-				val imageUrl = getImageUrl(item)
+				val px = rememberCardPx(cardWidth, cardHeight)
+				val imageUrl = getImageUrl(item, px)
 				if (imageUrl != null) {
 					AsyncImage(
 						model = imageUrl,
@@ -402,15 +419,15 @@ class FavoritesBrowseFragment : Fragment() {
 		}
 	}
 
-	private fun getImageUrl(item: BaseItemDto): String? {
+	private fun getImageUrl(item: BaseItemDto, px: CardPx): String? {
 		val primary = item.itemImages[JellyfinImageType.PRIMARY]
-		if (primary != null) return primary.getUrl(api, maxHeight = 400)
+		if (primary != null) return primary.getCardUrl(api, px.width, px.height)
 
 		val thumb = item.itemImages[JellyfinImageType.THUMB]
-		if (thumb != null) return thumb.getUrl(api, maxHeight = 400)
+		if (thumb != null) return thumb.getCardUrl(api, px.width, px.height)
 
 		val parentPrimary = item.parentImages[JellyfinImageType.PRIMARY]
-		if (parentPrimary != null) return parentPrimary.getUrl(api, maxHeight = 400)
+		if (parentPrimary != null) return parentPrimary.getCardUrl(api, px.width, px.height)
 
 		return null
 	}

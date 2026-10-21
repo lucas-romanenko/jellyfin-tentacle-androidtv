@@ -29,7 +29,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -48,6 +48,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -62,6 +63,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.fragment.app.Fragment
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.constant.Extras
@@ -238,7 +240,7 @@ class GenresGridV2Fragment : Fragment() {
 
 			// Row 1: Focused genre HUD
 			FocusedGenreHud(
-				genre = uiState.focusedGenre,
+				genreFlow = viewModel.focusedGenre,
 				modifier = Modifier.fillMaxWidth(),
 			)
 
@@ -247,6 +249,16 @@ class GenresGridV2Fragment : Fragment() {
 			// Row 2: Toolbar buttons
 			GenresToolbarRow(uiState = uiState)
 		}
+	}
+
+	/** Reads the focused genre itself, so a focus move recomposes only this HUD. */
+	@Composable
+	private fun FocusedGenreHud(
+		genreFlow: StateFlow<JellyfinGenreItem?>,
+		modifier: Modifier = Modifier,
+	) {
+		val genre by genreFlow.collectAsState()
+		FocusedGenreHud(genre = genre, modifier = modifier)
 	}
 
 	@Composable
@@ -357,6 +369,8 @@ class GenresGridV2Fragment : Fragment() {
 		modifier: Modifier = Modifier,
 	) {
 		val gridState = rememberLazyGridState()
+		val bgDebouncer = rememberFocusDebouncer()
+		val genres = remember(uiState.genres) { uiState.genres.distinctBy { it.id } }
 
 		// Wide landscape cards for genres
 		val cardWidth = 280
@@ -372,7 +386,7 @@ class GenresGridV2Fragment : Fragment() {
 			horizontalArrangement = Arrangement.spacedBy(12.dp),
 			verticalArrangement = Arrangement.spacedBy(16.dp),
 		) {
-			itemsIndexed(uiState.genres) { _, genre ->
+			items(genres, key = { it.id }, contentType = { "genre" }) { genre ->
 				GenreCard(
 					genre = genre,
 					cardWidth = cardWidth,
@@ -382,7 +396,7 @@ class GenresGridV2Fragment : Fragment() {
 						viewModel.setFocusedGenre(genre)
 						// If the genre has a backdrop, set it as the background
 						genre.backdropUrl?.let { url ->
-							backgroundService.setBackgroundUrl(url, BlurContext.BROWSING)
+							bgDebouncer.submit { backgroundService.setBackgroundUrl(url, BlurContext.BROWSING) }
 						}
 					},
 				)
@@ -421,6 +435,8 @@ class GenresGridV2Fragment : Fragment() {
 					scaleX = scale
 					scaleY = scale
 					alpha = cardAlpha
+					// No offscreen buffer per unfocused card
+					compositingStrategy = CompositingStrategy.ModulateAlpha
 				}
 				.clip(RoundedCornerShape(6.dp))
 				.then(

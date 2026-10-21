@@ -21,11 +21,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -35,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -58,7 +58,6 @@ import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
-import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.itemImages
 import org.jellyfin.androidtv.util.apiclient.parentImages
 import org.jellyfin.sdk.model.api.BaseItemDto
@@ -173,7 +172,7 @@ class RecordingsBrowseFragment : Fragment() {
 			Spacer(modifier = Modifier.height(6.dp))
 
 			FocusedItemHud(
-				item = uiState.focusedItem,
+				itemFlow = viewModel.focusedItem,
 				modifier = Modifier.fillMaxWidth(),
 			)
 
@@ -197,56 +196,33 @@ class RecordingsBrowseFragment : Fragment() {
 		uiState: RecordingsBrowseUiState,
 		modifier: Modifier = Modifier,
 	) {
-		val scrollState = rememberScrollState()
+		val bgDebouncer = rememberFocusDebouncer()
+		val rows = listOf(
+			Triple("scheduledNext24h", R.string.scheduled_in_next_24_hours, uiState.scheduledNext24h),
+			Triple("recentRecordings", R.string.lbl_recent_recordings, uiState.recentRecordings),
+			Triple("seriesRecordings", R.string.lbl_tv_series, uiState.seriesRecordings),
+			Triple("movieRecordings", R.string.lbl_movies, uiState.movieRecordings),
+			Triple("sportsRecordings", R.string.lbl_sports, uiState.sportsRecordings),
+			Triple("kidsRecordings", R.string.lbl_kids, uiState.kidsRecordings),
+		)
 
-		Column(
-			modifier = modifier
-				.fillMaxWidth()
-				.verticalScroll(scrollState)
-				.padding(bottom = 16.dp),
+		LazyColumn(
+			modifier = modifier.fillMaxWidth(),
+			contentPadding = PaddingValues(bottom = 16.dp),
 		) {
-			RecordingsViewsRow()
-
-			if (uiState.scheduledNext24h.isNotEmpty()) {
-				RecordingItemRow(
-					title = stringResource(R.string.scheduled_in_next_24_hours),
-					items = uiState.scheduledNext24h,
-				)
+			item(key = "views") {
+				RecordingsViewsRow()
 			}
 
-			if (uiState.recentRecordings.isNotEmpty()) {
-				RecordingItemRow(
-					title = stringResource(R.string.lbl_recent_recordings),
-					items = uiState.recentRecordings,
-				)
-			}
-
-			if (uiState.seriesRecordings.isNotEmpty()) {
-				RecordingItemRow(
-					title = stringResource(R.string.lbl_tv_series),
-					items = uiState.seriesRecordings,
-				)
-			}
-
-			if (uiState.movieRecordings.isNotEmpty()) {
-				RecordingItemRow(
-					title = stringResource(R.string.lbl_movies),
-					items = uiState.movieRecordings,
-				)
-			}
-
-			if (uiState.sportsRecordings.isNotEmpty()) {
-				RecordingItemRow(
-					title = stringResource(R.string.lbl_sports),
-					items = uiState.sportsRecordings,
-				)
-			}
-
-			if (uiState.kidsRecordings.isNotEmpty()) {
-				RecordingItemRow(
-					title = stringResource(R.string.lbl_kids),
-					items = uiState.kidsRecordings,
-				)
+			for ((key, titleRes, items) in rows) {
+				if (items.isEmpty()) continue
+				item(key = key) {
+					RecordingItemRow(
+						title = stringResource(titleRes),
+						items = items,
+						bgDebouncer = bgDebouncer,
+					)
+				}
 			}
 		}
 	}
@@ -255,6 +231,7 @@ class RecordingsBrowseFragment : Fragment() {
 	private fun RecordingItemRow(
 		title: String,
 		items: List<BaseItemDto>,
+		bgDebouncer: FocusDebouncer,
 	) {
 		Column(
 			modifier = Modifier
@@ -273,13 +250,13 @@ class RecordingsBrowseFragment : Fragment() {
 				horizontalArrangement = Arrangement.spacedBy(12.dp),
 				contentPadding = PaddingValues(horizontal = 60.dp),
 			) {
-				items(items) { item ->
+				items(items.distinctById(), key = { it.id }, contentType = { "recordingCard" }) { item ->
 					RecordingCard(
 						item = item,
 						onClick = { launchItem(item) },
 						onFocused = {
 							viewModel.setFocusedItem(item)
-							backgroundService.setBackground(item, BlurContext.BROWSING)
+							bgDebouncer.submit { backgroundService.setBackground(item, BlurContext.BROWSING) }
 						},
 					)
 				}
@@ -312,6 +289,8 @@ class RecordingsBrowseFragment : Fragment() {
 					scaleX = scale
 					scaleY = scale
 					this.alpha = alpha
+					// Fades without an offscreen layer per unfocused card.
+					compositingStrategy = CompositingStrategy.ModulateAlpha
 				}
 				.clickable(
 					interactionSource = interactionSource,
@@ -331,7 +310,8 @@ class RecordingsBrowseFragment : Fragment() {
 					)
 					.background(Color.White.copy(alpha = 0.06f)),
 			) {
-				val imageUrl = getRecordingImageUrl(item)
+				val px = rememberCardPx(cardWidth, cardHeight)
+				val imageUrl = getRecordingImageUrl(item, px)
 				if (imageUrl != null) {
 					AsyncImage(
 						model = imageUrl,
@@ -467,18 +447,18 @@ class RecordingsBrowseFragment : Fragment() {
 		}
 	}
 
-	private fun getRecordingImageUrl(item: BaseItemDto): String? {
+	private fun getRecordingImageUrl(item: BaseItemDto, px: CardPx): String? {
 		val thumb = item.itemImages[JellyfinImageType.THUMB]
-		if (thumb != null) return thumb.getUrl(viewModel.api, maxHeight = 300)
+		if (thumb != null) return thumb.getCardUrl(viewModel.api, px.width, px.height)
 
 		val primary = item.itemImages[JellyfinImageType.PRIMARY]
-		if (primary != null) return primary.getUrl(viewModel.api, maxHeight = 300)
+		if (primary != null) return primary.getCardUrl(viewModel.api, px.width, px.height)
 
 		val parentThumb = item.parentImages[JellyfinImageType.THUMB]
-		if (parentThumb != null) return parentThumb.getUrl(viewModel.api, maxHeight = 300)
+		if (parentThumb != null) return parentThumb.getCardUrl(viewModel.api, px.width, px.height)
 
 		val parentPrimary = item.parentImages[JellyfinImageType.PRIMARY]
-		if (parentPrimary != null) return parentPrimary.getUrl(viewModel.api, maxHeight = 300)
+		if (parentPrimary != null) return parentPrimary.getCardUrl(viewModel.api, px.width, px.height)
 
 		return null
 	}

@@ -33,7 +33,6 @@ data class LiveTvBrowseUiState(
 	val scheduledNext24h: List<BaseItemDto> = emptyList(),
 	val pastDay: List<BaseItemDto> = emptyList(),
 	val pastWeek: List<BaseItemDto> = emptyList(),
-	val focusedItem: BaseItemDto? = null,
 	val canManageRecordings: Boolean = false,
 )
 
@@ -44,17 +43,22 @@ class LiveTvBrowseViewModel(
 	private val _uiState = MutableStateFlow(LiveTvBrowseUiState())
 	val uiState: StateFlow<LiveTvBrowseUiState> = _uiState.asStateFlow()
 
+	// The focused card, apart from uiState: a D-pad press recomposes only the header HUD.
+	private val _focusedItem = MutableStateFlow<BaseItemDto?>(null)
+	val focusedItem: StateFlow<BaseItemDto?> = _focusedItem.asStateFlow()
+
 	fun initialize(libraryName: String, canManage: Boolean) {
 		_uiState.value = LiveTvBrowseUiState(
 			isLoading = true,
 			libraryName = libraryName,
 			canManageRecordings = canManage,
 		)
+		_focusedItem.value = null
 		loadAllRows()
 	}
 
 	fun setFocusedItem(item: BaseItemDto) {
-		_uiState.update { it.copy(focusedItem = item) }
+		_focusedItem.value = item
 	}
 
 	private fun loadAllRows() {

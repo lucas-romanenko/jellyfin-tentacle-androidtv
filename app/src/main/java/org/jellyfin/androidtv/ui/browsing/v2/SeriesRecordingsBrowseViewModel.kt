@@ -18,7 +18,6 @@ import timber.log.Timber
 data class SeriesRecordingsBrowseUiState(
 	val isLoading: Boolean = true,
 	val seriesTimers: List<SeriesTimerInfoDto> = emptyList(),
-	val focusedTimer: SeriesTimerInfoDto? = null,
 )
 
 class SeriesRecordingsBrowseViewModel(
@@ -28,13 +27,18 @@ class SeriesRecordingsBrowseViewModel(
 	private val _uiState = MutableStateFlow(SeriesRecordingsBrowseUiState())
 	val uiState: StateFlow<SeriesRecordingsBrowseUiState> = _uiState.asStateFlow()
 
+	// The focused card, apart from uiState: a D-pad press recomposes only the header HUD.
+	private val _focusedTimer = MutableStateFlow<SeriesTimerInfoDto?>(null)
+	val focusedTimer: StateFlow<SeriesTimerInfoDto?> = _focusedTimer.asStateFlow()
+
 	fun initialize() {
 		_uiState.value = SeriesRecordingsBrowseUiState(isLoading = true)
+		_focusedTimer.value = null
 		loadSeriesTimers()
 	}
 
 	fun setFocusedTimer(timer: SeriesTimerInfoDto) {
-		_uiState.update { it.copy(focusedTimer = timer) }
+		_focusedTimer.value = timer
 	}
 
 	private fun loadSeriesTimers() {

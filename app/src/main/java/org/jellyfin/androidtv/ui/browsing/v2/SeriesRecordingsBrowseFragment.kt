@@ -21,11 +21,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -35,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.ComposeView
@@ -53,6 +52,7 @@ import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
+import kotlinx.coroutines.flow.StateFlow
 import org.jellyfin.sdk.model.api.SeriesTimerInfoDto
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
 import org.koin.android.ext.android.inject
@@ -164,7 +164,7 @@ class SeriesRecordingsBrowseFragment : Fragment() {
 			Spacer(modifier = Modifier.height(6.dp))
 
 			SeriesTimerHud(
-				timer = uiState.focusedTimer,
+				timerFlow = viewModel.focusedTimer,
 				modifier = Modifier.fillMaxWidth(),
 			)
 
@@ -181,6 +181,16 @@ class SeriesRecordingsBrowseFragment : Fragment() {
 				)
 			}
 		}
+	}
+
+	/** Reads the focused timer itself: only the HUD recomposes when the focus moves. */
+	@Composable
+	private fun SeriesTimerHud(
+		timerFlow: StateFlow<SeriesTimerInfoDto?>,
+		modifier: Modifier = Modifier,
+	) {
+		val timer by timerFlow.collectAsState()
+		SeriesTimerHud(timer = timer, modifier = modifier)
 	}
 
 	@Composable
@@ -223,53 +233,66 @@ class SeriesRecordingsBrowseFragment : Fragment() {
 		uiState: SeriesRecordingsBrowseUiState,
 		modifier: Modifier = Modifier,
 	) {
-		val scrollState = rememberScrollState()
-
-		Column(
-			modifier = modifier
-				.fillMaxWidth()
-				.verticalScroll(scrollState)
-				.padding(bottom = 16.dp),
+		LazyColumn(
+			modifier = modifier.fillMaxWidth(),
+			contentPadding = PaddingValues(bottom = 16.dp),
 		) {
 			if (uiState.seriesTimers.isEmpty()) {
-				Box(
-					modifier = Modifier
-						.fillMaxWidth()
-						.padding(top = 40.dp),
-					contentAlignment = Alignment.Center,
-				) {
-					Text(
-						text = stringResource(R.string.lbl_no_items),
-						fontSize = 16.sp,
-						color = Color.White.copy(alpha = 0.5f),
-					)
+				item(key = "empty") {
+					Box(
+						modifier = Modifier
+							.fillMaxWidth()
+							.padding(top = 40.dp),
+						contentAlignment = Alignment.Center,
+					) {
+						Text(
+							text = stringResource(R.string.lbl_no_items),
+							fontSize = 16.sp,
+							color = Color.White.copy(alpha = 0.5f),
+						)
+					}
 				}
 			} else {
-				Column(
-					modifier = Modifier
-						.fillMaxWidth()
-						.padding(top = 12.dp),
-				) {
-					Text(
-						text = stringResource(R.string.lbl_series_recordings),
-						fontSize = 18.sp,
-						fontWeight = FontWeight.SemiBold,
-						color = Color.White,
-						modifier = Modifier.padding(start = 60.dp, bottom = 8.dp),
-					)
+				item(key = "seriesTimers") {
+					SeriesTimersRow(uiState.seriesTimers)
+				}
+			}
+		}
+	}
 
-					LazyRow(
-						horizontalArrangement = Arrangement.spacedBy(12.dp),
-						contentPadding = PaddingValues(horizontal = 60.dp),
-					) {
-						items(uiState.seriesTimers) { timer ->
-							SeriesTimerCard(
-								timer = timer,
-								onClick = { launchSeriesTimer(timer) },
-								onFocused = { viewModel.setFocusedTimer(timer) },
-							)
-						}
-					}
+	@Composable
+	private fun SeriesTimersRow(seriesTimers: List<SeriesTimerInfoDto>) {
+		// Timers without an id (none expected) are kept, keyed by position.
+		val timers = remember(seriesTimers) { seriesTimers.distinctBy { it.id ?: it } }
+
+		Column(
+			modifier = Modifier
+				.fillMaxWidth()
+				.padding(top = 12.dp),
+		) {
+			Text(
+				text = stringResource(R.string.lbl_series_recordings),
+				fontSize = 18.sp,
+				fontWeight = FontWeight.SemiBold,
+				color = Color.White,
+				modifier = Modifier.padding(start = 60.dp, bottom = 8.dp),
+			)
+
+			LazyRow(
+				horizontalArrangement = Arrangement.spacedBy(12.dp),
+				contentPadding = PaddingValues(horizontal = 60.dp),
+			) {
+				items(
+					count = timers.size,
+					key = { index -> timers[index].id ?: "timer-index-$index" },
+					contentType = { "seriesTimerCard" },
+				) { index ->
+					val timer = timers[index]
+					SeriesTimerCard(
+						timer = timer,
+						onClick = { launchSeriesTimer(timer) },
+						onFocused = { viewModel.setFocusedTimer(timer) },
+					)
 				}
 			}
 		}
@@ -300,6 +323,8 @@ class SeriesRecordingsBrowseFragment : Fragment() {
 					scaleX = scale
 					scaleY = scale
 					this.alpha = alpha
+					// Fades without an offscreen layer per unfocused card.
+					compositingStrategy = CompositingStrategy.ModulateAlpha
 				}
 				.clickable(
 					interactionSource = interactionSource,

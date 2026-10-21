@@ -70,7 +70,6 @@ import org.jellyfin.androidtv.ui.settings.composable.SettingsDialog
 import org.jellyfin.androidtv.ui.settings.composable.SettingsRouterContent
 import org.jellyfin.androidtv.ui.settings.routes
 import org.jellyfin.androidtv.util.Utils
-import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.itemBackdropImages
 import org.jellyfin.androidtv.util.apiclient.itemImages
 import org.jellyfin.androidtv.util.apiclient.parentImages
@@ -307,7 +306,7 @@ class LibraryBrowseFragment : Fragment() {
 
 			// Row 1: Focused item HUD (left)
 			FocusedItemHud(
-				item = uiState.focusedItem,
+				itemFlow = viewModel.focusedItem,
 				modifier = Modifier.fillMaxWidth(),
 			)
 
@@ -416,6 +415,7 @@ class LibraryBrowseFragment : Fragment() {
 		var focusTargetIndex by remember { mutableStateOf(if (viewModel.hasRestoredScroll) viewModel.savedFocusedIndex else 0) }
 		val focusRequester = remember { FocusRequester() }
 		val coroutineScope = rememberCoroutineScope()
+		val bgDebouncer = rememberFocusDebouncer()
 
 		val (cardWidth, cardHeight) = if (uiState.useAutoImageType) {
 			imageTypeToCardDimensions(uiState.posterSize, ImageType.THUMB)
@@ -456,12 +456,15 @@ class LibraryBrowseFragment : Fragment() {
 		val isHorizontal = uiState.gridDirection == GridDirection.HORIZONTAL
 
 		val gridItemContent: @Composable (index: Int, item: BaseItemDto) -> Unit = { index, item ->
-			val itemModifier = if (index == focusTargetIndex) Modifier.focusRequester(focusRequester) else Modifier
+			// Derived, so a focus move recomposes only the old and the new target card, not every
+			// visible one.
+			val isFocusTarget by remember(index) { derivedStateOf { index == focusTargetIndex } }
+			val itemModifier = if (isFocusTarget) Modifier.focusRequester(focusRequester) else Modifier
 			val onItemFocused: () -> Unit = {
 				focusTargetIndex = index
 				viewModel.savedFocusedIndex = index
 				viewModel.setFocusedItem(item)
-				backgroundService.setBackground(item, BlurContext.BROWSING)
+				bgDebouncer.submit { backgroundService.setBackground(item, BlurContext.BROWSING) }
 
 				val layoutInfo = gridState.layoutInfo
 				val itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
@@ -489,9 +492,10 @@ class LibraryBrowseFragment : Fragment() {
 
 			if ((item.type == BaseItemKind.FOLDER || item.type == BaseItemKind.PHOTO_ALBUM) && !uiState.useAutoImageType) {
 				val folderHeight = (cardWidth * 9) / 16
+				val px = rememberCardPx(cardWidth, folderHeight)
 				LibraryFolderCard(
 					item = item,
-					imageUrl = getItemImageUrl(item, ImageType.THUMB),
+					imageUrl = getItemImageUrl(item, ImageType.THUMB, px),
 					cardWidth = cardWidth,
 					cardHeight = folderHeight,
 					onClick = { launchItem(item) },
@@ -500,10 +504,11 @@ class LibraryBrowseFragment : Fragment() {
 				)
 			} else if (uiState.useAutoImageType) {
 				val itemHeight = autoCardHeight(cardWidth, item.primaryImageAspectRatio)
+				val px = rememberCardPx(cardWidth, itemHeight)
 				LibraryPosterCard(
 					item = item,
 					modifier = itemModifier,
-					imageUrl = getItemImageUrl(item, ImageType.POSTER),
+					imageUrl = getItemImageUrl(item, ImageType.POSTER, px),
 					cardWidth = cardWidth,
 					cardHeight = itemHeight,
 					onClick = { launchItem(item) },
@@ -512,10 +517,11 @@ class LibraryBrowseFragment : Fragment() {
 					showBadge = uiState.isGenreMode,
 				)
 			} else {
+				val px = rememberCardPx(cardWidth, cardHeight)
 				LibraryPosterCard(
 					item = item,
 					modifier = itemModifier,
-					imageUrl = getItemImageUrl(item, uiState.imageType),
+					imageUrl = getItemImageUrl(item, uiState.imageType, px),
 					cardWidth = cardWidth,
 					cardHeight = cardHeight,
 					onClick = { launchItem(item) },
@@ -547,7 +553,11 @@ class LibraryBrowseFragment : Fragment() {
 					horizontalArrangement = Arrangement.spacedBy(itemSpacing),
 					verticalArrangement = Arrangement.spacedBy(16.dp),
 				) {
-					itemsIndexed(uiState.items) { index, item ->
+					itemsIndexed(
+						uiState.items,
+						key = { _, item -> item.id },
+						contentType = { _, item -> libraryCardContentType(item, uiState.useAutoImageType) },
+					) { index, item ->
 						gridItemContent(index, item)
 					}
 				}
@@ -573,7 +583,11 @@ class LibraryBrowseFragment : Fragment() {
 					horizontalArrangement = Arrangement.spacedBy(itemSpacing),
 					verticalArrangement = Arrangement.spacedBy(16.dp),
 				) {
-					itemsIndexed(uiState.items) { index, item ->
+					itemsIndexed(
+						uiState.items,
+						key = { _, item -> item.id },
+						contentType = { _, item -> libraryCardContentType(item, uiState.useAutoImageType) },
+					) { index, item ->
 						gridItemContent(index, item)
 					}
 				}
@@ -585,7 +599,11 @@ class LibraryBrowseFragment : Fragment() {
 	// Helpers
 	// ──────────────────────────────────────────────
 
-	private fun getItemImageUrl(item: BaseItemDto, imageType: ImageType): String? {
+	private fun libraryCardContentType(item: BaseItemDto, useAutoImageType: Boolean): String =
+		if ((item.type == BaseItemKind.FOLDER || item.type == BaseItemKind.PHOTO_ALBUM) && !useAutoImageType) "folder"
+		else "poster"
+
+	private fun getItemImageUrl(item: BaseItemDto, imageType: ImageType, px: CardPx): String? {
 		val jellyfinType = when (imageType) {
 			ImageType.POSTER -> JellyfinImageType.PRIMARY
 			ImageType.THUMB -> JellyfinImageType.THUMB
@@ -598,7 +616,7 @@ class LibraryBrowseFragment : Fragment() {
 			?: item.itemBackdropImages.firstOrNull()
 			?: item.parentImages[JellyfinImageType.PRIMARY]
 			?: item.parentImages[JellyfinImageType.THUMB]
-		return image?.getUrl(viewModel.effectiveApi, maxHeight = 400)
+		return image?.getCardUrl(viewModel.effectiveApi, px.width, px.height)
 	}
 
 	private fun launchItem(item: BaseItemDto) {

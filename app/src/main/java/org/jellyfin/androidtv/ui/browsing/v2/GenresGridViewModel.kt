@@ -48,7 +48,6 @@ data class GenresGridUiState(
 	val selectedLibraryName: String? = null,
 	val libraries: List<BaseItemDto> = emptyList(),
 	val libraryServerNames: Map<UUID, String> = emptyMap(),
-	val focusedGenre: JellyfinGenreItem? = null,
 )
 
 class GenresGridViewModel(
@@ -60,6 +59,10 @@ class GenresGridViewModel(
 
 	private val _uiState = MutableStateFlow(GenresGridUiState())
 	val uiState: StateFlow<GenresGridUiState> = _uiState.asStateFlow()
+
+	// Kept out of uiState: a focus move recomposes only the header HUD, not the grid.
+	private val _focusedGenre = MutableStateFlow<JellyfinGenreItem?>(null)
+	val focusedGenre: StateFlow<JellyfinGenreItem?> = _focusedGenre.asStateFlow()
 
 	private var allGenres = mutableListOf<JellyfinGenreItem>()
 	private var folder: BaseItemDto? = null
@@ -116,7 +119,7 @@ class GenresGridViewModel(
 	}
 
 	fun setFocusedGenre(genre: JellyfinGenreItem) {
-		_uiState.value = _uiState.value.copy(focusedGenre = genre)
+		_focusedGenre.value = genre
 	}
 
 	private suspend fun loadData() {

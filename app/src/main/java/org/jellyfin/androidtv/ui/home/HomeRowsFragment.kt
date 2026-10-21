@@ -1065,7 +1065,18 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		// Structure changed — rebuild content rows in-place
 		Timber.i("Tentacle section structure changed, rebuilding rows in-place")
 
-		// Pre-fetch items for all playlist rows in parallel
+		// A layout change (a row moved, renamed or reshaped): the rows already on screen keep
+		// their cards in the new layout, and only the new ones are fetched. Re-asking every row
+		// (25 rows, 4 at a time, the plugin's row cache just cleared by the save) took 9-15 s
+		// before Home showed a save. Their content is refreshed right after, below. Not when a
+		// row came back or left (structure unchanged): that rebuild asks every row, as before.
+		val shownItems: Map<String, List<BaseItemDto>> = keptRowItems(structureChanged, withContext(Dispatchers.Main) {
+			if (!structureChanged) emptyMap() else tentacleRowAdapters.mapValues { (_, rowAdapter) ->
+				(0 until rowAdapter.size()).mapNotNull { (rowAdapter.get(it) as? BaseRowItem)?.baseItem }
+			}
+		})
+
+		// Pre-fetch items for the playlist rows not on screen, in parallel
 		val tentacleRowData = kotlinx.coroutines.coroutineScope {
 			newSections
 				.filter { it.type == "row" && !it.playlistId.isNullOrEmpty() }
@@ -1074,13 +1085,14 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						TentacleRowData(
 							title = section.displayText,
 							playlistId = section.playlistId!!,
-							items = tentacleRepository.getSectionItems(section.playlistId),
+							items = shownItems[section.playlistId] ?: tentacleRepository.getSectionItems(section.playlistId),
 							wide = section.shape == "wide",
 						)
 					}
 				}.awaitAll()
 				.filter { it.items.isNotEmpty() }
 		}
+		val reusedRows = tentacleRowData.any { it.playlistId in shownItems }
 		val tentacleMap = tentacleRowData.associateBy { it.playlistId }
 
 		// Build new rows list
@@ -1231,6 +1243,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		showingTentacleHome = true
 
 		Timber.i("Tentacle rows rebuilt in-place (${newRows.size} content rows)")
+
+		// The kept rows showed what they had: now their content (a new item limit or sort), in
+		// place, with the layout already on screen. Structure unchanged, so no second rebuild
+		// with kept cards.
+		if (reusedRows) refreshTentacleRowsInPlace(sectionsResponse)
 	}
 
 	/** One home refresh (through [homeRefresher], or the first load's revalidation). */

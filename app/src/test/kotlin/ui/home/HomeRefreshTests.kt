@@ -24,6 +24,12 @@ class HomeRefreshTests : FunSpec({
 		decideHomeRefresh(on(6), shownVersion = 5, showingTentacleHome = true, force = false) shouldBe HomeAnswerAction.APPLY
 	}
 
+	test("a layout change keeps the rows on screen, a row coming back or leaving asks them all") {
+		val shown = mapOf("a" to listOf(1, 2), "b" to emptyList(), "c" to listOf(3))
+		keptRowItems(layoutChanged = true, shown) shouldBe mapOf("a" to listOf(1, 2), "c" to listOf(3))
+		keptRowItems(layoutChanged = false, shown) shouldBe emptyMap()
+	}
+
 	test("a change without a version still refreshes") {
 		decideHomeRefresh(on(5), shownVersion = 5, showingTentacleHome = true, force = true) shouldBe HomeAnswerAction.APPLY
 	}

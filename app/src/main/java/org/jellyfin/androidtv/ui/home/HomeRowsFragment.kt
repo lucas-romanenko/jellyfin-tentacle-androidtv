@@ -159,6 +159,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 	// Track Tentacle playlist rows for in-place refresh (playlistId → ItemRowAdapter)
 	private val tentacleRowAdapters = mutableMapOf<String, ItemRowAdapter>()
+	// The On Now row's adapter (ON_NOW_ROW_KEY), refilled on every home refresh
+	private val onNowAdapters = mutableMapOf<String, ItemRowAdapter>()
 	// Empty answers in a row per Tentacle row (see TentacleRowRefresh).
 	private val emptyRowAnswers = mutableMapOf<String, Int>()
 	// The last answer kept as "shrank too far to believe", per playlist: the same answer
@@ -1284,6 +1286,33 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			}
 			HomeAnswerAction.KEEP -> Timber.d("Tentacle home: no answer, keeping the rows")
 		}
+		refreshOnNow()
+	}
+
+	/** On Now again (programmes end, time left moves on); the row leaves when nothing is on. */
+	private suspend fun refreshOnNow() {
+		val rowAdapter = onNowAdapters[ON_NOW_ROW_KEY] ?: return
+		val user = userRepository.currentUser.value ?: return
+		val items = try {
+			withContext(Dispatchers.IO) { loadOnNow(api, user.id) }
+		} catch (e: kotlinx.coroutines.CancellationException) {
+			throw e
+		} catch (e: Exception) {
+			Timber.w(e, "On Now refresh failed, keeping the row")
+			return
+		}
+		withContext(Dispatchers.Main) {
+			if (!isAdded || onNowAdapters[ON_NOW_ROW_KEY] !== rowAdapter) return@withContext
+			if (items.isNotEmpty()) {
+				rowAdapter.replaceStaticItems(items)
+				return@withContext
+			}
+			val rowsAdapter = adapter as? MutableObjectAdapter<Row> ?: return@withContext
+			val listRow = (0 until rowsAdapter.size()).mapNotNull { rowsAdapter[it] as? ListRow }.firstOrNull { it.adapter === rowAdapter }
+			if (listRow != null) rowsAdapter.remove(listRow)
+			onNowAdapters.remove(ON_NOW_ROW_KEY)
+			currentRows = currentRows.filterNot { it is HomeFragmentTentacleRow && ON_NOW_ROW_KEY in it.playlistIds }.toMutableList()
+		}
 	}
 
 	/**
@@ -1361,6 +1390,22 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			"livetv" -> if (includeLiveTvRows) {
 				rows.add(liveTVRow)
 				rows.add(helper.loadOnNow())
+			}
+			// Tentacle's own: what's on now on the person's favourite channels; no row when
+			// there are none, nothing is on or they have no Live TV
+			ON_NOW_SECTION_ID -> {
+				val user = userRepository.currentUser.value
+				if (user != null && user.policy?.enableLiveTvAccess != false) {
+					val items = runCatching { loadOnNow(api, user.id) }
+						.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; Timber.w(it, "On Now unavailable") }
+						.getOrDefault(emptyList())
+					if (items.isNotEmpty()) {
+						rows.add(HomeFragmentTentacleRow(
+							listOf(TentacleRowData(getString(R.string.lbl_tentacle_on_now), ON_NOW_ROW_KEY, items, wide = true)),
+							onNowAdapters,
+						))
+					}
+				}
 			}
 		}
 	}

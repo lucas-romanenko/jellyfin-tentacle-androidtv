@@ -36,7 +36,13 @@ The code wins where they differ.
   sections are Tentacle playlists (`HomeFragmentTentacleRow`), `"builtin"`
   ones map to Jellyfin's own sections by id (`constant/HomeSectionType.kt`:
   `latestmedia`, `smalllibrarytiles`, `librarybuttons`, `resume`,
-  `resumeaudio`, `activerecordings`, `nextup`, `livetv`).
+  `resumeaudio`, `activerecordings`, `nextup`, `livetv`), except `onnow`,
+  Tentacle's own (`ui/home/OnNow.kt`): the person's favourite channels with
+  what's on now (`/LiveTv/Channels?isFavorite&addCurrentProgram` as them, so
+  kids get kids channels only), one card per channel named after the
+  programme with the channel and time left below; it tunes in like any
+  channel, leaves out when nothing is on, and is refilled on every home
+  refresh.
 - **Home's first load** (audit H4): `/Sections` is asked once, alongside
   `/UserViews` (no separate availability probe; `fetchSections()` settles
   it). Its `"hero"` section decides the media bar, which fetches

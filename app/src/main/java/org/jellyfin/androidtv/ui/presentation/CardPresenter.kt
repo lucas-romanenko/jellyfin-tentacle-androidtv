@@ -346,6 +346,9 @@ class CardPresenter @JvmOverloads constructor(
 				val url = jellyfinImage.getUrl(resolveApi(item), maxWidth = widthPx, maxHeight = heightPx)
 				// The same poster again (a row refresh rebinding its cards): keep what's on screen.
 				if (url == boundUrl && image.drawable != null) return
+				// Another picture on a card bound again without an unbind (a row refresh moving
+				// items, a row turning wide): drop the old one, or it showed until the new one came.
+				if (boundUrl != null) image.clear()
 				boundUrl = url
 				image.load(
 					url = url,

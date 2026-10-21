@@ -309,6 +309,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     }
 
     private void onChannelsLoaded(List<BaseItemDto> channels, int lastNdx, int generation) {
+        if (mDisplayProgramsTask != null) mDisplayProgramsTask.cancel(true);
         mAllChannels = channels;
         updateToggle();
 
@@ -686,6 +687,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         // pass for the page instead of one per channel.
         final List<BaseItemDto> rowChannels = new ArrayList<>();
         final List<LinearLayout> rows = new ArrayList<>();
+        // This page's channel list: a Favorites / All switch mid-way swaps mAllChannels
+        final List<BaseItemDto> channels = mAllChannels;
 
         @Override
         protected void onPreExecute() {
@@ -720,7 +723,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             LinearLayout prevRow = null;
             for (int i = start; i <= end; i++) {
                 if (isCancelled()) return null;
-                final BaseItemDto channel = mAllChannels.get(i);
+                if (i >= channels.size()) break;
+                final BaseItemDto channel = channels.get(i);
                 List<BaseItemDto> programs = TvManager.getProgramsForChannel(channel.getId(), mFilters);
                 final LinearLayout row = getProgramRow(programs, channel.getId());
                 if (row == null) continue; // no row to show

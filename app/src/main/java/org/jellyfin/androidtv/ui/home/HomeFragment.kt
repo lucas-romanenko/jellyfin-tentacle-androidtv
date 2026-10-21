@@ -600,7 +600,7 @@ private fun NotificationToast(
 			verticalArrangement = Arrangement.spacedBy(4.dp),
 		) {
 			Text(
-				text = "Ready to Watch",
+				text = notificationHeading(notification),
 				color = Color(0xFF8b5cf6),
 				fontSize = 11.sp,
 				fontWeight = FontWeight.Bold,
@@ -624,6 +624,13 @@ private fun NotificationToast(
 				.padding(4.dp),
 		)
 	}
+}
+
+/** The toast's heading: what the message is about. Without a kind (older servers) it's a download. */
+internal fun notificationHeading(notification: TentacleNotification): String = when (notification.kind) {
+	"request" -> "Request"
+	"problem" -> notification.title.ifBlank { "Problem" }
+	else -> "Ready to Watch"
 }
 
 internal const val NOTIFICATION_POLL_MS = 15_000L

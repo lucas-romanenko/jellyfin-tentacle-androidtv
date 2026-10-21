@@ -127,6 +127,12 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var updateNotificationsEnabled = booleanPreference("update_notifications_enabled", true)
 
 		/**
+		 * The version "Later" was pressed for, and when (ms): not offered again on launch for 3 days
+		 */
+		var updateSnoozedVersion = stringPreference("update_snoozed_version", "")
+		var updateSnoozedAt = longPreference("update_snoozed_at", 0L)
+
+		/**
 		 * Enable multi-server library aggregation
 		 * When enabled, shows libraries and content from all logged-in servers
 		 */

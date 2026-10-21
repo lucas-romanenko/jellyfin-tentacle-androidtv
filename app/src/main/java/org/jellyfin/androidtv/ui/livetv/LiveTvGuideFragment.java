@@ -12,7 +12,6 @@ import android.os.Handler;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.widget.Toast;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
@@ -212,6 +211,9 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             return null;
         });
 
+        // A known Live TV problem, in the server's words (Tentacle FamilyStatus)
+        LiveTvStatusNotice.onGuideOpened(this);
+
         return binding.getRoot();
     }
 
@@ -226,7 +228,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             if (!isAdded()) return null;
             if (ndx < 0 || TvManager.getAllChannels() == null) {
                 mSpinner.setVisibility(View.GONE);
-                Toast.makeText(requireContext(), R.string.msg_unable_load_channels, Toast.LENGTH_LONG).show();
+                // The server's plain words when it knows what is wrong, else "Unable to load channels"
+                LiveTvStatusNotice.onLiveTvError(this, getString(R.string.msg_unable_load_channels));
                 return null;
             }
             if (ndx >= PAGE_SIZE) {

@@ -30,6 +30,7 @@ import org.jellyfin.androidtv.preference.constant.RefreshRateSwitchingBehavior;
 import org.jellyfin.androidtv.preference.constant.StillWatchingBehavior;
 import org.jellyfin.androidtv.preference.constant.ZoomMode;
 import org.jellyfin.androidtv.ui.InteractionTrackerViewModel;
+import org.jellyfin.androidtv.ui.livetv.LiveTvStatusNotice;
 import org.jellyfin.androidtv.ui.livetv.TvManager;
 import org.jellyfin.androidtv.ui.playback.PrePlaybackTrackSelector;
 import org.jellyfin.androidtv.util.TimeUtils;
@@ -1857,6 +1858,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
         if (isLiveTv && directStreamLiveTv) {
             Utils.showToast(mFragment.getContext(), mFragment.getString(R.string.msg_error_live_stream));
+            // And the server's plain words when it knows what is wrong (Tentacle FamilyStatus)
+            LiveTvStatusNotice.onLiveTvError(mFragment, null);
             directStreamLiveTv = false;
         } else {
             String msg = mFragment.getString(R.string.video_error_unknown_error);

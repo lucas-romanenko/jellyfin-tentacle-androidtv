@@ -178,15 +178,25 @@ Fine-tuning for synchronized playback sessions.
 
 ## Updates & Support
 
- *Settings → Support & Updates*
+Install: the **Downloader** app on the TV with your Tentacle server's address + `/tv` (the
+server redirects to the newest release), or
+`https://github.com/lucas-romanenko/jellyfin-tentacle-androidtv/releases/latest/download/tentacle-androidtv-github-release.apk`.
+After that the app offers new versions itself (github flavor; not in the Play Store build).
 
-- **Check for Updates**  ⚠️
-  - Manually check for new Tentacle versions
-  - Download and install APK updates directly
-  - View release notes before updating
-  - ⚠️ Requires "Install Unknown Apps" permission on Android 8+
-- **Update Notifications** 
-  - Show notification on app launch when updates are available
+ *Settings → About*
+
+- **New version dialog**
+  - On launch, and when the app comes back after 12 hours or more: release notes, then
+    **Update now** (download with percent) and the system installer's **Install**
+  - **Later** hides that version for 3 days; a newer one shows at once
+  - ⚠️ The first time, Android asks to allow Tentacle to install apps; the update carries on
+    when you come back
+- **Check for updates**
+  - Says "You're on the latest version", offers the same dialog, or "Couldn't check for
+    updates right now" (no internet, GitHub busy)
+  - Debug builds don't update themselves ("Debug build: updates come from test builds")
+- **Tell me about new versions** (on by default)
+  - Off: no dialog on launch and no notification; Check for updates still works
 - **Support Tentacle** 
   - Donation links and ways to contribute
 

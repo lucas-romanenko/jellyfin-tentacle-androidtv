@@ -154,7 +154,7 @@ Tentacle is the first Android TV client with native Jellyseerr and Seerr support
 - **Trickplay Scrub** - Auto-confirm seeking with improved caching
 - **Automatic Screensaver Dimming** - Reduces brightness after 90 seconds of playback inactivity to prevent screen burn-in with dynamic logo/clock movement
 - **Exit Confirmation Dialog** - Optional confirmation prompt when exiting the app (configurable in settings)
-- **OTA Update System** - Automatic check for new Tentacle versions with in-app update notifications
+- **Updates from the app** - Tentacle offers new versions itself (release notes, Update now, Install)
 
 ### Centralized Shuffle System
 - Hybrid approach: server-side random sort first, client-side fallback if needed
@@ -203,7 +203,18 @@ https://github.com/user-attachments/assets/113fa9d8-039c-4f14-8c95-785ca6d47c9b
 ## Installation
 
 ### Pre-built Releases
-Download the latest APK from the [Releases page](https://github.com/lucas-romanenko/jellyfin-tentacle-androidtv/releases).
+On the TV, install the **Downloader** app (by AFTVnews) from the TV's app store, open it and
+enter either:
+
+- your Tentacle server's address followed by `/tv` (for example `http://your-server:port/tv`;
+  the server sends you to the newest release), or
+- `https://github.com/lucas-romanenko/jellyfin-tentacle-androidtv/releases/latest/download/tentacle-androidtv-github-release.apk`
+
+then choose Install. Downloader asks once for permission to install apps. After that, Tentacle
+offers new versions itself (Update now, then Install); Settings → About has
+**Check for updates** and the **Tell me about new versions** switch.
+
+Every release is also on the [Releases page](https://github.com/lucas-romanenko/jellyfin-tentacle-androidtv/releases).
 
 **Supported Devices:**
 - Android TV devices (Android 6.0+)
@@ -228,7 +239,7 @@ Your session is saved securely and will reconnect automatically.
 
 ### Sideloading Instructions
 1. Enable "Unknown Sources" or "Install Unknown Apps" in your device settings
-2. Transfer the APK to your device or download it directly
+2. Transfer the APK to your device or download it directly (see above)
 3. Use a file manager app to install the APK
 
 ## How to build

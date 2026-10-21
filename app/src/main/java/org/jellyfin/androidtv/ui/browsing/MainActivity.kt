@@ -7,7 +7,6 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.compose.runtime.mutableStateOf
 import androidx.fragment.app.Fragment
@@ -18,7 +17,6 @@ import androidx.lifecycle.lifecycleScope
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
@@ -28,7 +26,6 @@ import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.auth.repository.SessionRepositoryState
 import org.jellyfin.androidtv.auth.repository.UserRepository
-import org.jellyfin.androidtv.data.service.UpdateCheckerService
 import org.jellyfin.androidtv.data.syncplay.SyncPlayManager
 import org.jellyfin.androidtv.databinding.ActivityMainBinding
 import org.jellyfin.androidtv.integration.LeanbackChannelWorker
@@ -43,33 +40,20 @@ import org.jellyfin.androidtv.ui.playback.ThemeMusicPlayer
 import org.jellyfin.androidtv.ui.screensaver.InAppScreensaver
 import org.jellyfin.androidtv.ui.settings.compat.MainActivitySettings
 import org.jellyfin.androidtv.ui.startup.StartupActivity
+import org.jellyfin.androidtv.ui.update.UpdatePrompt
 import org.jellyfin.androidtv.util.applyTheme
 import org.jellyfin.androidtv.util.isMediaSessionKeyEvent
 import org.jellyfin.playback.core.PlaybackManager
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
 import timber.log.Timber
-import kotlin.time.Duration.Companion.seconds
 
 class MainActivity : FragmentActivity() {
-	companion object {
-		// Session-scoped so the update prompt shows once per app launch, not on every
-		// activity recreation
-		private var updateDialogShown = false
-
-		// Update waiting for the "install unknown apps" grant — resumed in onResume once
-		// the user returns from the settings screen
-		private var pendingUpdateInfo: UpdateCheckerService.UpdateInfo? = null
-
-		private val UPDATE_CHECK_DELAY = 20.seconds
-	}
-
 	private val navigationRepository by inject<NavigationRepository>()
 	private val sessionRepository by inject<SessionRepository>()
 	private val userRepository by inject<UserRepository>()
 	private val interactionTrackerViewModel by viewModel<InteractionTrackerViewModel>()
 	private val workManager by inject<WorkManager>()
-	private val updateCheckerService by inject<UpdateCheckerService>()
 	private val userPreferences by inject<UserPreferences>()
 	private val themeMusicPlayer by inject<ThemeMusicPlayer>()
 	private val syncPlayManager by inject<SyncPlayManager>()
@@ -173,10 +157,8 @@ class MainActivity : FragmentActivity() {
 			}
 		}
 
-		// Check for updates on app launch (libre builds only)
-		if (org.jellyfin.androidtv.BuildConfig.ENABLE_OTA_UPDATES) {
-			checkForUpdatesOnLaunch()
-		}
+		// New version check (github flavor): on launch, and on coming back after 12 hours
+		UpdatePrompt.autoCheck(this)
 	}
 	
 	private fun setupSyncPlayQueueLauncher() {
@@ -214,14 +196,8 @@ class MainActivity : FragmentActivity() {
 
 		interactionTrackerViewModel.activityPaused = false
 
-		// Resume a pending update install after the user returns from granting the
-		// "install unknown apps" permission
-		pendingUpdateInfo?.let { updateInfo ->
-			if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
-				pendingUpdateInfo = null
-				startUpdateDownload(updateInfo)
-			}
-		}
+		// Coming back after 12 hours checks for a new version again
+		UpdatePrompt.autoCheck(this)
 	}
 
 	private fun validateAuthentication(): Boolean {
@@ -233,100 +209,6 @@ class MainActivity : FragmentActivity() {
 		}
 
 		return true
-	}
-
-	private fun checkForUpdatesOnLaunch() {
-		// Check if update notifications are enabled
-		if (!userPreferences[UserPreferences.updateNotificationsEnabled]) {
-			Timber.d("Update notifications are disabled")
-			return
-		}
-
-		// Only prompt once per app session
-		if (updateDialogShown) return
-
-		lifecycleScope.launch(Dispatchers.IO) {
-			// After Home has loaded, not during it: the check asks GitHub and parses its releases.
-			delay(UPDATE_CHECK_DELAY)
-			try {
-				val result = updateCheckerService.checkForUpdate()
-				result.onSuccess { updateInfo ->
-					if (updateInfo != null && updateInfo.isNewer) {
-						Timber.i("Update available: ${updateInfo.version}")
-						launch(Dispatchers.Main) {
-							if (!isFinishing && !updateDialogShown) {
-								updateDialogShown = true
-								showUpdateDialog(updateInfo)
-							}
-						}
-					} else {
-						Timber.d("No updates available")
-					}
-				}.onFailure { error ->
-					Timber.e(error, "Failed to check for updates")
-				}
-			} catch (e: Exception) {
-				Timber.e(e, "Error checking for updates on launch")
-			}
-		}
-	}
-
-	private fun showUpdateDialog(updateInfo: UpdateCheckerService.UpdateInfo) {
-		android.app.AlertDialog.Builder(this)
-			.setTitle(getString(R.string.update_dialog_title, updateInfo.version))
-			.setMessage(updateInfo.releaseNotes.take(1500))
-			.setPositiveButton(R.string.update_dialog_update_now) { dialog, _ ->
-				dialog.dismiss()
-				startUpdateDownload(updateInfo)
-			}
-			.setNegativeButton(R.string.update_dialog_later) { dialog, _ -> dialog.dismiss() }
-			.show()
-	}
-
-	private fun startUpdateDownload(updateInfo: UpdateCheckerService.UpdateInfo) {
-		// Sideloaded apps need the one-time "install unknown apps" grant before the system
-		// installer will accept our APK. Send the user straight to the right settings screen.
-		if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
-			Toast.makeText(this, R.string.update_grant_install_permission, Toast.LENGTH_LONG).show()
-			pendingUpdateInfo = updateInfo
-			startActivity(
-				Intent(
-					android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-					android.net.Uri.parse("package:$packageName")
-				)
-			)
-			return
-		}
-
-		val progressBar = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-			isIndeterminate = false
-			max = 100
-		}
-		val container = android.widget.FrameLayout(this).apply {
-			val padding = (24 * resources.displayMetrics.density).toInt()
-			setPadding(padding, padding, padding, padding)
-			addView(progressBar)
-		}
-		val progressDialog = android.app.AlertDialog.Builder(this)
-			.setTitle(getString(R.string.update_downloading, updateInfo.version))
-			.setView(container)
-			.setCancelable(false)
-			.show()
-
-		lifecycleScope.launch(Dispatchers.IO) {
-			val result = updateCheckerService.downloadUpdate(updateInfo.downloadUrl) { progress ->
-				progressBar.progress = progress
-			}
-			launch(Dispatchers.Main) {
-				progressDialog.dismiss()
-				result.onSuccess { apkUri ->
-					updateCheckerService.installUpdate(apkUri)
-				}.onFailure { error ->
-					Timber.e(error, "Failed to download update")
-					Toast.makeText(this@MainActivity, R.string.update_download_failed, Toast.LENGTH_LONG).show()
-				}
-			}
-		}
 	}
 
 	override fun onPause() {

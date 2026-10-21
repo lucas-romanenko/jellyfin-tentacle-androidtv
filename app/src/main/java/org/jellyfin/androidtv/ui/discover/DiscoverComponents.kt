@@ -60,8 +60,11 @@ import okhttp3.OkHttpClient
 import org.jellyfin.androidtv.data.repository.DiscoverDetail
 import org.jellyfin.androidtv.data.repository.DiscoverItem
 import org.jellyfin.androidtv.data.repository.QualityProfile
+import org.jellyfin.androidtv.data.repository.RequestMode
 import org.jellyfin.androidtv.data.repository.SonarrEpisodesResponse
 import org.jellyfin.androidtv.data.repository.TentacleRepository
+import org.jellyfin.androidtv.data.repository.addButtonLabel
+import org.jellyfin.androidtv.data.repository.addOutcome
 import org.jellyfin.androidtv.data.repository.qualityProfileChoices
 import org.jellyfin.androidtv.data.repository.qualityProfileLabel
 import org.jellyfin.androidtv.ui.base.Text
@@ -276,6 +279,11 @@ internal fun DiscoverDetailDialog(
 	var isLoadingDetail by remember { mutableStateOf(true) }
 	var addStatus by remember { mutableStateOf<String?>(null) }
 	var isAdding by remember { mutableStateOf(false) }
+	// Sent to the admin for approval: the add button is done ("Requested")
+	var requested by remember { mutableStateOf(false) }
+	// "ask": this user's adds wait for approval, so the buttons read "Request"
+	var requestMode by remember { mutableStateOf(RequestMode.DIRECT) }
+	LaunchedEffect(Unit) { requestMode = tentacleRepository.getRequestMode() }
 	// An add of this title that is still running, also one started before the dialog was reopened
 	val addsInFlight by tentacleRepository.addGate.inFlight.collectAsState()
 	val addKey = remember(item.mediaType, item.tmdbId, item.tvdbId) {
@@ -398,6 +406,7 @@ internal fun DiscoverDetailDialog(
 							showEpisodePicker = false
 							addStatus = message
 						},
+						onRequested = { requested = true },
 					)
 				} else if (isLoadingDetail) {
 					Box(
@@ -713,20 +722,15 @@ internal fun DiscoverDetailDialog(
 										// Add to Radarr
 										Button(
 											onClick = {
-												if (!adding) {
+												if (!adding && !requested) {
 													isAdding = true
 													addStatus = null
 													scope.launch {
 														val result = tentacleRepository.addToRadarr(item.tmdbId, selectedProfileId)
 														isAdding = false
-														addStatus = when {
-															result.error != null -> "Error: ${result.error}"
-															result.added > 0 -> "Added to Radarr!"
-															result.alreadyExists > 0 -> "Already in Radarr"
-															result.detail != null -> result.detail
-															result.failed > 0 -> "Radarr rejected the request"
-															else -> "Failed to add"
-														}
+														val outcome = addOutcome(result, "Radarr")
+														addStatus = outcome.message
+														if (outcome.requested) requested = true
 													}
 												}
 											},
@@ -737,7 +741,7 @@ internal fun DiscoverDetailDialog(
 											modifier = Modifier.focusRequester(buttonFocusRequester),
 										) {
 											Text(
-												text = if (adding) "Adding..." else "Add to Radarr",
+												text = addButtonLabel("Radarr", requestMode, adding, requested),
 												fontSize = 14.sp,
 											)
 										}
@@ -759,7 +763,7 @@ internal fun DiscoverDetailDialog(
 										// Add to Sonarr button
 										Button(
 											onClick = {
-												if (!adding) {
+												if (!adding && !requested) {
 													val option = MONITOR_OPTIONS[monitorOptionIndex]
 													if (option.key == "pick") {
 														// Open episode picker
@@ -776,14 +780,9 @@ internal fun DiscoverDetailDialog(
 																tvdbId = item.tvdbId,
 															)
 															isAdding = false
-															addStatus = when {
-																result.error != null -> "Error: ${result.error}"
-																result.added > 0 -> "Added to Sonarr!"
-																result.alreadyExists > 0 -> "Already in Sonarr"
-																result.detail != null -> result.detail
-																result.failed > 0 -> "Sonarr rejected the request"
-																else -> "Failed to add"
-															}
+															val outcome = addOutcome(result, "Sonarr")
+															addStatus = outcome.message
+															if (outcome.requested) requested = true
 														}
 													}
 												}
@@ -795,7 +794,7 @@ internal fun DiscoverDetailDialog(
 											modifier = Modifier.focusRequester(buttonFocusRequester),
 										) {
 											Text(
-												text = if (adding) "Adding..." else "Add to Sonarr",
+												text = addButtonLabel("Sonarr", requestMode, adding, requested),
 												fontSize = 14.sp,
 											)
 										}

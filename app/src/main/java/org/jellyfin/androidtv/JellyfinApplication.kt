@@ -20,6 +20,8 @@ import org.jellyfin.androidtv.auth.repository.ServerRepository
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.data.eventhandling.SocketHandler
 import org.jellyfin.androidtv.data.repository.NotificationsRepository
+import org.jellyfin.androidtv.data.service.SelfUpdateMode
+import org.jellyfin.androidtv.data.service.UpdateCheckerService
 import org.jellyfin.androidtv.integration.LeanbackChannelWorker
 import org.jellyfin.androidtv.ui.background.UpdateCheckWorker
 import org.jellyfin.androidtv.telemetry.TelemetryService
@@ -65,8 +67,12 @@ class JellyfinApplication : Application(), SingletonImageLoader.Factory {
 		val workManager by inject<WorkManager>()
 		val socketListener by inject<SocketHandler>()
 		val serverRepository by inject<ServerRepository>()
+		val updateCheckerService by inject<UpdateCheckerService>()
 
 		launch { serverRepository.loadStoredServers() }
+
+		// The download of an earlier install attempt is no longer needed
+		launch { updateCheckerService.deleteOldDownload() }
 
 		launch {
 			workManager.cancelAllWork().await()
@@ -83,8 +89,9 @@ class JellyfinApplication : Application(), SingletonImageLoader.Factory {
 					.build()
 			).await()
 
-			// Schedule update check worker (daily) — libre builds only
-			if (BuildConfig.ENABLE_OTA_UPDATES) {
+			// Daily new-version check (github flavor release builds; secondary on TV, where
+			// launchers rarely show notifications: the in-app dialog is what people see)
+			if (updateCheckerService.mode == SelfUpdateMode.ENABLED) {
 				workManager.enqueueUniquePeriodicWork(
 					UpdateCheckWorker.WORK_NAME,
 					ExistingPeriodicWorkPolicy.KEEP,

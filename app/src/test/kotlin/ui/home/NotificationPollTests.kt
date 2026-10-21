@@ -2,6 +2,7 @@ package org.jellyfin.androidtv.ui.home
 
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import org.jellyfin.androidtv.data.repository.TentacleNotification
 
 /** The Home notification poll backs off while the server is down (#49). */
 class NotificationPollTests : FunSpec({
@@ -14,5 +15,12 @@ class NotificationPollTests : FunSpec({
 	test("the first answer brings it back to 15 s") {
 		nextNotificationPoll(120_000, answered = true) shouldBe 15_000
 		nextNotificationPoll(15_000, answered = true) shouldBe 15_000
+	}
+
+	test("the toast's heading says what the message is about") {
+		notificationHeading(TentacleNotification(title = "Dune", kind = "download")) shouldBe "Ready to Watch"
+		notificationHeading(TentacleNotification(title = "Dune")) shouldBe "Ready to Watch"
+		notificationHeading(TentacleNotification(title = "Dune", kind = "request")) shouldBe "Request"
+		notificationHeading(TentacleNotification(title = "Live TV is down", kind = "problem")) shouldBe "Live TV is down"
 	}
 })

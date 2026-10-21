@@ -32,8 +32,27 @@ App / Release (`app-release.yaml`) runs on the tag: it builds
 `assembleGithubRelease`, signed with the production keystore from the
 repository secrets (`KEYSTORE_*`, see the workflow; it fails without them,
 because an APK signed with another key can't update an installed one), and
-attaches the APK to the tag's release. A release the maintainer wrote keeps
-its title and notes; a bare tag gets one with generated notes.
+attaches the APK to the tag's release, twice: the versioned
+`tentacle-androidtv-vX.Y.Z-github-release.apk` and a copy named
+`tentacle-androidtv-github-release.apk`, so
+`https://github.com/lucas-romanenko/jellyfin-tentacle-androidtv/releases/latest/download/tentacle-androidtv-github-release.apk`
+is always the newest release (installs with the Downloader app; the
+Tentacle server's `/tv` redirects there). A release the maintainer wrote
+keeps its title and notes; a bare tag gets one with generated notes.
+
+## How installed apps update
+
+The github flavor's release build checks
+`api.github.com/repos/lucas-romanenko/jellyfin-tentacle-androidtv/releases/latest`
+(`data/service/UpdateCheckerService.kt`; decisions as pure functions in
+`UpdateLogic.kt`, `UpdateLogicTests`) on launch and when it comes back
+after 12 h, and offers a strictly newer tag (semver: an rc is older than
+its release) in a dialog (`ui/update/UpdatePrompt.kt`, also Settings →
+About "Check for updates" and the daily notification). It installs the
+`-github-release.apk` asset, never a debug one. So a release must have the
+APK attached and be marked latest (not a pre-release), or nobody is
+offered it. Debug builds (`.debug`) never offer releases: they update from
+PR builds.
 
 ## Check a release
 
@@ -41,5 +60,6 @@ its title and notes; a bare tag gets one with generated notes.
 gh release view vX.Y.Z -R lucas-romanenko/jellyfin-tentacle-androidtv
 ```
 
-It lists `tentacle-androidtv-vX.Y.Z-github-release.apk`, and the App /
-Release run succeeded.
+It lists `tentacle-androidtv-vX.Y.Z-github-release.apk` and
+`tentacle-androidtv-github-release.apk`, and the App / Release run
+succeeded.

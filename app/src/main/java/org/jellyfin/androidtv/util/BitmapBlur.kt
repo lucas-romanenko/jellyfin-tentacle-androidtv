@@ -35,6 +35,18 @@ object BitmapBlur {
 		return result
 	}
 	
+	/**
+	 * Blurs [bitmap] at its own size, without the quarter-size round trip of [blur], for a picture
+	 * already decoded small: the view scales the result up. A 480 px picture blurred here looks
+	 * like a 1920 px one through [blur] with the same radius. Returns a new bitmap.
+	 */
+	fun blurAtSize(bitmap: Bitmap, radius: Int): Bitmap {
+		if (radius <= 0) return bitmap
+		val blurred = bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: return bitmap
+		stackBlur(blurred, min(25, max(1, radius)))
+		return blurred
+	}
+
 	private fun stackBlur(bitmap: Bitmap, radius: Int) {
 		val w = bitmap.width
 		val h = bitmap.height

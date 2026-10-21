@@ -29,7 +29,6 @@ data class FavoritesBrowseUiState(
 	val shows: List<BaseItemDto> = emptyList(),
 	val episodes: List<BaseItemDto> = emptyList(),
 	val playlists: List<BaseItemDto> = emptyList(),
-	val focusedItem: BaseItemDto? = null,
 )
 
 class FavoritesBrowseViewModel(
@@ -40,9 +39,14 @@ class FavoritesBrowseViewModel(
 	private val _uiState = MutableStateFlow(FavoritesBrowseUiState())
 	val uiState: StateFlow<FavoritesBrowseUiState> = _uiState.asStateFlow()
 
+	// Kept out of uiState: the focus moves with every D-pad press, and only the header shows it.
+	private val _focusedItem = MutableStateFlow<BaseItemDto?>(null)
+	val focusedItem: StateFlow<BaseItemDto?> = _focusedItem.asStateFlow()
+
 	fun initialize() {
 		val savedSize = userPreferences[UserPreferences.favoritesPosterSize]
 		_uiState.value = FavoritesBrowseUiState(isLoading = true, posterSize = savedSize)
+		_focusedItem.value = null
 		loadAllRows()
 	}
 
@@ -52,7 +56,7 @@ class FavoritesBrowseViewModel(
 	}
 
 	fun setFocusedItem(item: BaseItemDto) {
-		_uiState.value = _uiState.value.copy(focusedItem = item)
+		_focusedItem.value = item
 	}
 
 	private fun loadAllRows() {

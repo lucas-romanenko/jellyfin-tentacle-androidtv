@@ -112,9 +112,10 @@ fun InfoRowMultipleRatings(item: BaseItemDto) {
 	val tmdbRepository = koinInject<TmdbRepository>()
 	val apiClient = koinInject<ApiClient>()
 	val baseUrl = apiClient.baseUrl
-	val enableAdditionalRatings = userSettingPreferences[UserSettingPreferences.enableAdditionalRatings]
-	val enableEpisodeRatings = userSettingPreferences[UserSettingPreferences.enableEpisodeRatings]
-	val showRatingLabels = userSettingPreferences[UserSettingPreferences.showRatingLabels]
+	// Read once per item, not on every recomposition (each one went to SharedPreferences)
+	val enableAdditionalRatings = remember(item.id) { userSettingPreferences[UserSettingPreferences.enableAdditionalRatings] }
+	val enableEpisodeRatings = remember(item.id) { userSettingPreferences[UserSettingPreferences.enableEpisodeRatings] }
+	val showRatingLabels = remember(item.id) { userSettingPreferences[UserSettingPreferences.showRatingLabels] }
 
 	var apiRatings by remember { mutableStateOf<Map<String, Float>?>(null) }
 	var isLoading by remember { mutableStateOf(false) }
@@ -279,7 +280,8 @@ fun InfoRowCompactRatings(item: BaseItemDto, leadingContent: @Composable () -> U
 	val mdbListRepository = koinInject<MdbListRepository>()
 	val apiClient = koinInject<ApiClient>()
 	val baseUrl = apiClient.baseUrl
-	val enableAdditionalRatings = userSettingPreferences[UserSettingPreferences.enableAdditionalRatings]
+	// Read once per item, not on every recomposition (each one went to SharedPreferences)
+	val enableAdditionalRatings = remember(item.id) { userSettingPreferences[UserSettingPreferences.enableAdditionalRatings] }
 
 	var apiRatings by remember { mutableStateOf<Map<String, Float>?>(null) }
 	var isLoading by remember { mutableStateOf(false) }

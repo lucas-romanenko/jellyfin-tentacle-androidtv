@@ -29,7 +29,6 @@ data class RecordingsBrowseUiState(
 	val sportsRecordings: List<BaseItemDto> = emptyList(),
 	val kidsRecordings: List<BaseItemDto> = emptyList(),
 	val scheduledNext24h: List<BaseItemDto> = emptyList(),
-	val focusedItem: BaseItemDto? = null,
 )
 
 class RecordingsBrowseViewModel(
@@ -39,13 +38,18 @@ class RecordingsBrowseViewModel(
 	private val _uiState = MutableStateFlow(RecordingsBrowseUiState())
 	val uiState: StateFlow<RecordingsBrowseUiState> = _uiState.asStateFlow()
 
+	// The focused card, apart from uiState: a D-pad press recomposes only the header HUD.
+	private val _focusedItem = MutableStateFlow<BaseItemDto?>(null)
+	val focusedItem: StateFlow<BaseItemDto?> = _focusedItem.asStateFlow()
+
 	fun initialize() {
 		_uiState.value = RecordingsBrowseUiState(isLoading = true)
+		_focusedItem.value = null
 		loadAllRows()
 	}
 
 	fun setFocusedItem(item: BaseItemDto) {
-		_uiState.update { it.copy(focusedItem = item) }
+		_focusedItem.value = item
 	}
 
 	private fun loadAllRows() {

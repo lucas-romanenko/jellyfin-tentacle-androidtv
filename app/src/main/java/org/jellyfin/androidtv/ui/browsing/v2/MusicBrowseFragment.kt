@@ -21,11 +21,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -35,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -62,7 +62,6 @@ import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.util.Utils
 import org.jellyfin.androidtv.util.apiclient.albumPrimaryImage
-import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.itemImages
 import org.jellyfin.androidtv.util.apiclient.parentImages
 import org.jellyfin.androidtv.util.sdk.compat.copyWithDisplayPreferencesId
@@ -208,7 +207,7 @@ class MusicBrowseFragment : Fragment() {
 
 			// Row 1: Focused item HUD
 			FocusedItemHud(
-				item = uiState.focusedItem,
+				itemFlow = viewModel.focusedItem,
 				modifier = Modifier.fillMaxWidth(),
 			)
 
@@ -238,49 +237,61 @@ class MusicBrowseFragment : Fragment() {
 		folder: BaseItemDto?,
 		modifier: Modifier = Modifier,
 	) {
-		val scrollState = rememberScrollState()
+		val bgDebouncer = rememberFocusDebouncer()
 
-		Column(
-			modifier = modifier
-				.fillMaxWidth()
-				.verticalScroll(scrollState)
-				.padding(bottom = 16.dp),
+		LazyColumn(
+			modifier = modifier.fillMaxWidth(),
+			contentPadding = PaddingValues(bottom = 16.dp),
 		) {
 			// Navigation buttons row (at the top)
 			if (folder != null) {
-				MusicViewsRow(folder = folder)
+				item(key = "views", contentType = "views") {
+					MusicViewsRow(folder = folder)
+				}
 			}
 
 			// Latest Audio
 			if (uiState.latestAudio.isNotEmpty()) {
-				MusicItemRow(
-					title = stringResource(R.string.lbl_latest),
-					items = uiState.latestAudio,
-				)
+				item(key = "latest", contentType = "row") {
+					MusicItemRow(
+						title = stringResource(R.string.lbl_latest),
+						items = uiState.latestAudio,
+						bgDebouncer = bgDebouncer,
+					)
+				}
 			}
 
 			// Last Played
 			if (uiState.lastPlayed.isNotEmpty()) {
-				MusicItemRow(
-					title = stringResource(R.string.lbl_last_played).trim(),
-					items = uiState.lastPlayed,
-				)
+				item(key = "lastPlayed", contentType = "row") {
+					MusicItemRow(
+						title = stringResource(R.string.lbl_last_played).trim(),
+						items = uiState.lastPlayed,
+						bgDebouncer = bgDebouncer,
+					)
+				}
 			}
 
 			// Favorite Albums
 			if (uiState.favoriteAlbums.isNotEmpty()) {
-				MusicItemRow(
-					title = stringResource(R.string.lbl_favorites),
-					items = uiState.favoriteAlbums,
-				)
+				item(key = "favorites", contentType = "row") {
+					MusicItemRow(
+						title = stringResource(R.string.lbl_favorites),
+						items = uiState.favoriteAlbums,
+						bgDebouncer = bgDebouncer,
+					)
+				}
 			}
 
 			// Playlists
 			if (uiState.playlists.isNotEmpty()) {
-				MusicItemRow(
-					title = stringResource(R.string.lbl_playlists),
-					items = uiState.playlists,
-				)
+				item(key = "playlists", contentType = "row") {
+					MusicItemRow(
+						title = stringResource(R.string.lbl_playlists),
+						items = uiState.playlists,
+						bgDebouncer = bgDebouncer,
+					)
+				}
 			}
 		}
 	}
@@ -293,7 +304,9 @@ class MusicBrowseFragment : Fragment() {
 	private fun MusicItemRow(
 		title: String,
 		items: List<BaseItemDto>,
+		bgDebouncer: FocusDebouncer,
 	) {
+		val rowItems = remember(items) { items.distinctById() }
 		Column(
 			modifier = Modifier
 				.fillMaxWidth()
@@ -313,13 +326,13 @@ class MusicBrowseFragment : Fragment() {
 				horizontalArrangement = Arrangement.spacedBy(12.dp),
 				contentPadding = PaddingValues(horizontal = 60.dp),
 			) {
-				items(items) { item ->
+				items(rowItems, key = { it.id }, contentType = { "card" }) { item ->
 					MusicSquareCard(
 						item = item,
 						onClick = { launchItem(item) },
 						onFocused = {
 							viewModel.setFocusedItem(item)
-							backgroundService.setBackground(item, BlurContext.BROWSING)
+							bgDebouncer.submit { backgroundService.setBackground(item, BlurContext.BROWSING) }
 						},
 					)
 				}
@@ -355,6 +368,8 @@ class MusicBrowseFragment : Fragment() {
 					scaleX = scale
 					scaleY = scale
 					this.alpha = alpha
+					// No offscreen buffer per unfocused card
+					compositingStrategy = CompositingStrategy.ModulateAlpha
 				}
 				.clickable(
 					interactionSource = interactionSource,
@@ -374,7 +389,8 @@ class MusicBrowseFragment : Fragment() {
 					)
 					.background(Color.White.copy(alpha = 0.06f)),
 			) {
-				val imageUrl = getMusicImageUrl(item)
+				val px = rememberCardPx(cardSize, cardSize)
+				val imageUrl = getMusicImageUrl(item, px)
 				if (imageUrl != null) {
 					AsyncImage(
 						model = imageUrl,
@@ -582,20 +598,20 @@ class MusicBrowseFragment : Fragment() {
 	/**
 	 * Get the best image URL for a music item (album art, audio album art, or primary).
 	 */
-	private fun getMusicImageUrl(item: BaseItemDto): String? {
+	private fun getMusicImageUrl(item: BaseItemDto, px: CardPx): String? {
 		// For audio items, prefer the album's primary image
 		if (item.type == BaseItemKind.AUDIO) {
 			val albumImage = item.albumPrimaryImage
-			if (albumImage != null) return albumImage.getUrl(viewModel.effectiveApi, maxHeight = 300)
+			if (albumImage != null) return albumImage.getCardUrl(viewModel.effectiveApi, px.width, px.height)
 		}
 
 		// Standard primary image
 		val primary = item.itemImages[JellyfinImageType.PRIMARY]
-		if (primary != null) return primary.getUrl(viewModel.effectiveApi, maxHeight = 300)
+		if (primary != null) return primary.getCardUrl(viewModel.effectiveApi, px.width, px.height)
 
 		// Parent primary image fallback
 		val parentPrimary = item.parentImages[JellyfinImageType.PRIMARY]
-		if (parentPrimary != null) return parentPrimary.getUrl(viewModel.effectiveApi, maxHeight = 300)
+		if (parentPrimary != null) return parentPrimary.getCardUrl(viewModel.effectiveApi, px.width, px.height)
 
 		return null
 	}

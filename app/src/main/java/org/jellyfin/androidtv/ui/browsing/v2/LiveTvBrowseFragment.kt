@@ -21,11 +21,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -35,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -60,7 +60,6 @@ import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
-import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.itemImages
 import org.jellyfin.androidtv.util.apiclient.parentImages
 import org.jellyfin.sdk.model.api.BaseItemDto
@@ -186,7 +185,7 @@ class LiveTvBrowseFragment : Fragment() {
 			Spacer(modifier = Modifier.height(6.dp))
 
 			FocusedItemHud(
-				item = uiState.focusedItem,
+				itemFlow = viewModel.focusedItem,
 				modifier = Modifier.fillMaxWidth(),
 			)
 
@@ -210,70 +209,35 @@ class LiveTvBrowseFragment : Fragment() {
 		uiState: LiveTvBrowseUiState,
 		modifier: Modifier = Modifier,
 	) {
-		val scrollState = rememberScrollState()
+		val bgDebouncer = rememberFocusDebouncer()
+		val rows = listOf(
+			Triple("onNow", R.string.lbl_on_now, uiState.onNow),
+			Triple("comingUp", R.string.lbl_coming_up, uiState.comingUp),
+			Triple("favoriteChannels", R.string.lbl_favorite_channels, uiState.favoriteChannels),
+			Triple("otherChannels", R.string.lbl_other_channels, uiState.otherChannels),
+			Triple("recentRecordings", R.string.lbl_recent_recordings, uiState.recentRecordings),
+			Triple("pastDay", R.string.past_24_hours, uiState.pastDay),
+			Triple("pastWeek", R.string.past_week, uiState.pastWeek),
+			Triple("scheduledNext24h", R.string.scheduled_in_next_24_hours, uiState.scheduledNext24h),
+		)
 
-		Column(
-			modifier = modifier
-				.fillMaxWidth()
-				.verticalScroll(scrollState)
-				.padding(bottom = 16.dp),
+		LazyColumn(
+			modifier = modifier.fillMaxWidth(),
+			contentPadding = PaddingValues(bottom = 16.dp),
 		) {
-			LiveTvViewsRow(uiState = uiState)
-
-			if (uiState.onNow.isNotEmpty()) {
-				LiveTvItemRow(
-					title = stringResource(R.string.lbl_on_now),
-					items = uiState.onNow,
-				)
+			item(key = "views") {
+				LiveTvViewsRow(uiState = uiState)
 			}
 
-			if (uiState.comingUp.isNotEmpty()) {
-				LiveTvItemRow(
-					title = stringResource(R.string.lbl_coming_up),
-					items = uiState.comingUp,
-				)
-			}
-
-			if (uiState.favoriteChannels.isNotEmpty()) {
-				LiveTvItemRow(
-					title = stringResource(R.string.lbl_favorite_channels),
-					items = uiState.favoriteChannels,
-				)
-			}
-
-			if (uiState.otherChannels.isNotEmpty()) {
-				LiveTvItemRow(
-					title = stringResource(R.string.lbl_other_channels),
-					items = uiState.otherChannels,
-				)
-			}
-
-			if (uiState.recentRecordings.isNotEmpty()) {
-				LiveTvItemRow(
-					title = stringResource(R.string.lbl_recent_recordings),
-					items = uiState.recentRecordings,
-				)
-			}
-
-			if (uiState.pastDay.isNotEmpty()) {
-				LiveTvItemRow(
-					title = stringResource(R.string.past_24_hours),
-					items = uiState.pastDay,
-				)
-			}
-
-			if (uiState.pastWeek.isNotEmpty()) {
-				LiveTvItemRow(
-					title = stringResource(R.string.past_week),
-					items = uiState.pastWeek,
-				)
-			}
-
-			if (uiState.scheduledNext24h.isNotEmpty()) {
-				LiveTvItemRow(
-					title = stringResource(R.string.scheduled_in_next_24_hours),
-					items = uiState.scheduledNext24h,
-				)
+			for ((key, titleRes, items) in rows) {
+				if (items.isEmpty()) continue
+				item(key = key) {
+					LiveTvItemRow(
+						title = stringResource(titleRes),
+						items = items,
+						bgDebouncer = bgDebouncer,
+					)
+				}
 			}
 		}
 	}
@@ -282,6 +246,7 @@ class LiveTvBrowseFragment : Fragment() {
 	private fun LiveTvItemRow(
 		title: String,
 		items: List<BaseItemDto>,
+		bgDebouncer: FocusDebouncer,
 	) {
 		Column(
 			modifier = Modifier
@@ -300,13 +265,13 @@ class LiveTvBrowseFragment : Fragment() {
 				horizontalArrangement = Arrangement.spacedBy(12.dp),
 				contentPadding = PaddingValues(horizontal = 60.dp),
 			) {
-				items(items) { item ->
+				items(items.distinctById(), key = { it.id }, contentType = { "liveTvCard" }) { item ->
 					LiveTvCard(
 						item = item,
 						onClick = { launchItem(item) },
 						onFocused = {
 							viewModel.setFocusedItem(item)
-							backgroundService.setBackground(item, BlurContext.BROWSING)
+							bgDebouncer.submit { backgroundService.setBackground(item, BlurContext.BROWSING) }
 						},
 					)
 				}
@@ -339,6 +304,8 @@ class LiveTvBrowseFragment : Fragment() {
 					scaleX = scale
 					scaleY = scale
 					this.alpha = alpha
+					// Fades without an offscreen layer per unfocused card.
+					compositingStrategy = CompositingStrategy.ModulateAlpha
 				}
 				.clickable(
 					interactionSource = interactionSource,
@@ -358,7 +325,8 @@ class LiveTvBrowseFragment : Fragment() {
 					)
 					.background(Color.White.copy(alpha = 0.06f)),
 			) {
-				val imageUrl = getLiveTvImageUrl(item)
+				val px = rememberCardPx(cardWidth, cardHeight)
+				val imageUrl = getLiveTvImageUrl(item, px)
 				if (imageUrl != null) {
 					AsyncImage(
 						model = imageUrl,
@@ -514,18 +482,18 @@ class LiveTvBrowseFragment : Fragment() {
 		}
 	}
 
-	private fun getLiveTvImageUrl(item: BaseItemDto): String? {
+	private fun getLiveTvImageUrl(item: BaseItemDto, px: CardPx): String? {
 		val thumb = item.itemImages[JellyfinImageType.THUMB]
-		if (thumb != null) return thumb.getUrl(viewModel.api, maxHeight = 300)
+		if (thumb != null) return thumb.getCardUrl(viewModel.api, px.width, px.height)
 
 		val primary = item.itemImages[JellyfinImageType.PRIMARY]
-		if (primary != null) return primary.getUrl(viewModel.api, maxHeight = 300)
+		if (primary != null) return primary.getCardUrl(viewModel.api, px.width, px.height)
 
 		val parentThumb = item.parentImages[JellyfinImageType.THUMB]
-		if (parentThumb != null) return parentThumb.getUrl(viewModel.api, maxHeight = 300)
+		if (parentThumb != null) return parentThumb.getCardUrl(viewModel.api, px.width, px.height)
 
 		val parentPrimary = item.parentImages[JellyfinImageType.PRIMARY]
-		if (parentPrimary != null) return parentPrimary.getUrl(viewModel.api, maxHeight = 300)
+		if (parentPrimary != null) return parentPrimary.getCardUrl(viewModel.api, px.width, px.height)
 
 		return null
 	}

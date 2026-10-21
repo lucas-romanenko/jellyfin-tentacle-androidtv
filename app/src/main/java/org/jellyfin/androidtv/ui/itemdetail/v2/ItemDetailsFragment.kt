@@ -80,6 +80,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import coil3.compose.AsyncImage
+import coil3.request.allowHardware
 import coil3.toBitmap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -165,6 +166,10 @@ class ItemDetailsFragment : Fragment() {
 	private val settingsViewModel by activityViewModel<SettingsViewModel>()
 
 	private var backdropImage: ImageView? = null
+	// The backdrop shown (url + blur) and its load: uiState emits many times per item (seasons,
+	// cast, refreshes), and each emission used to fetch, blur and set the same picture again.
+	private var backdropKey: String? = null
+	private var backdropJob: Job? = null
 	private var gradientView: View? = null
 	private var sidebarId: Int = View.NO_ID
 	private var contentId: Int = View.NO_ID
@@ -290,6 +295,8 @@ class ItemDetailsFragment : Fragment() {
 		}
 		this.mainContainer = mainContainer
 
+		backdropJob?.cancel()
+		backdropKey = null
 		backdropImage = ImageView(requireContext()).apply {
 			layoutParams = FrameLayout.LayoutParams(
 				FrameLayout.LayoutParams.MATCH_PARENT,
@@ -434,23 +441,34 @@ class ItemDetailsFragment : Fragment() {
 					} else {
 						backdropImage?.isVisible = true
 						gradientView?.isVisible = true
-						val backdropUrl = getBackdropUrl(item)
-						if (backdropUrl != null) {
 						val blurAmount = userSettingPreferences[UserSettingPreferences.detailsBackgroundBlurAmount]
+						val spec = detailsBackdropSpec(Build.VERSION.SDK_INT, blurAmount)
+						val backdropUrl = getBackdropUrl(item, spec.maxWidth)
+						val key = backdropUrl?.let { "$it|$blurAmount" }
+						if (backdropUrl != null && key != backdropKey) {
+						backdropKey = key
 						val imageLoader = coil3.SingletonImageLoader.get(requireContext())
-						lifecycleScope.launch {
-							val result = imageLoader.execute(
-								coil3.request.ImageRequest.Builder(requireContext())
-									.data(backdropUrl)
-									.build()
-							)
+						backdropJob?.cancel()
+						backdropJob = lifecycleScope.launch {
+							val request = coil3.request.ImageRequest.Builder(requireContext())
+								.data(backdropUrl)
+								.apply {
+									if (spec.cpuBlur) {
+										// Small and in software memory: the CPU blur reads its pixels and
+										// the heavy blur hides the resolution; the view scales it up.
+										size(spec.decodeWidth, spec.decodeHeight)
+										precision(coil3.size.Precision.INEXACT)
+										allowHardware(false)
+									}
+								}
+								.build()
+							val result = imageLoader.execute(request)
 							val bitmap = result.image?.toBitmap()
 							if (bitmap != null) {
-								val useComposeBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-								val finalBitmap: android.graphics.Bitmap = if (!useComposeBlur && blurAmount > 0) {
-									BitmapBlur.blur(bitmap, blurAmount)
+								val finalBitmap: android.graphics.Bitmap = if (spec.cpuBlur) {
+									withContext(Dispatchers.Default) { BitmapBlur.blurAtSize(bitmap, blurAmount) }
 								} else {
-									if (useComposeBlur && blurAmount > 0) {
+									if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blurAmount > 0) {
 										// On Android 12+, apply RenderEffect blur
 										backdropImage?.setRenderEffect(
 											android.graphics.RenderEffect.createBlurEffect(
@@ -463,6 +481,9 @@ class ItemDetailsFragment : Fragment() {
 								}
 								backdropImage?.setImageBitmap(finalBitmap)
 								backdropImage?.alpha = 0.8f
+							} else if (backdropKey == key) {
+								// Failed: let the next emission try again
+								backdropKey = null
 							}
 						}
 					}
@@ -1680,13 +1701,14 @@ class ItemDetailsFragment : Fragment() {
 		firstItemFocusRequester: FocusRequester? = null,
 		onItemFocused: ((BaseItemDto) -> Unit)? = null,
 	) {
+		val keys = remember(items) { uniqueKeys(items.map { it.id }) }
 		Column {
 			SectionHeader(title = title)
 			LazyRow(
 				horizontalArrangement = Arrangement.spacedBy(16.dp),
 				contentPadding = PaddingValues(horizontal = 0.dp),
 			) {
-				items(items.size) { index ->
+				items(items.size, key = { keys[it] }, contentType = { "card" }) { index ->
 					val item = items[index]
 					val cardModifier = if (index == 0 && firstItemFocusRequester != null)
 						Modifier.focusRequester(firstItemFocusRequester)
@@ -1762,6 +1784,7 @@ class ItemDetailsFragment : Fragment() {
 		val listState = rememberLazyListState()
 		val playButtonFocusRequester = remember { FocusRequester() }
 		val scrollLockScope = rememberCoroutineScope()
+		val episodeKeys = remember(uiState.episodes) { uniqueKeys(uiState.episodes.map { it.id }) }
 		val backdropUrl = getBackdropUrl(item)
 		val posterUrl = getPosterUrl(item)
 
@@ -1906,7 +1929,7 @@ class ItemDetailsFragment : Fragment() {
 					Spacer(modifier = Modifier.height(24.dp))
 				}
 
-				items(uiState.episodes.size) { index ->
+				items(uiState.episodes.size, key = { episodeKeys[it] }, contentType = { "episode" }) { index ->
 					val ep = uiState.episodes[index]
 					SeasonEpisodeItem(
 						episodeNumber = ep.indexNumber,
@@ -2173,13 +2196,13 @@ class ItemDetailsFragment : Fragment() {
 		}
 	}
 
-	private fun getBackdropUrl(item: BaseItemDto): String? {
+	private fun getBackdropUrl(item: BaseItemDto, maxWidth: Int = DETAILS_BACKDROP_WIDTH): String? {
 		// Try item's own backdrop first, then fall back to parent's backdrop
 		val backdropImage = item.itemBackdropImages.firstOrNull()
 			?: item.parentBackdropImages.firstOrNull()
 		return backdropImage?.getUrl(
 			viewModel.effectiveApi,
-			maxWidth = 1920,
+			maxWidth = maxWidth,
 		)
 	}
 

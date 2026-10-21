@@ -13,6 +13,7 @@ import org.jellyfin.androidtv.data.repository.ItemMutationRepository
 import org.jellyfin.androidtv.ui.GuideChannelHeader
 import org.jellyfin.androidtv.ui.asTimerInfoDto
 import org.jellyfin.androidtv.ui.livetv.TvManager
+import org.jellyfin.androidtv.util.apiclient.ReportingHelper
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
 import org.jellyfin.sdk.api.client.extensions.userLibraryApi
@@ -63,9 +64,16 @@ fun CustomPlaybackOverlayFragment.refreshSelectedProgram() {
 	}
 }
 
+/**
+ * Plays [id] after a channel switch. The previous channel was just stopped: its stream is
+ * opened only once the server has handled that stop, so the provider never sees two
+ * connections at once (one-connection accounts) and the late stop can't release the new
+ * channel's stream (#50).
+ */
 fun CustomPlaybackOverlayFragment.playChannel(id: UUID) {
 	val api by inject<ApiClient>()
 	val playbackControllerContainer by inject<PlaybackControllerContainer>()
+	val reportingHelper by inject<ReportingHelper>()
 
 	lifecycleScope.launch {
 		runCatching {
@@ -74,8 +82,10 @@ fun CustomPlaybackOverlayFragment.playChannel(id: UUID) {
 			}
 		}.fold(
 			onSuccess = { channel ->
-				playbackControllerContainer.playbackController?.setItems(listOf(channel))
-				playbackControllerContainer.playbackController?.play(0)
+				reportingHelper.whenStopReported(this@playChannel) {
+					playbackControllerContainer.playbackController?.setItems(listOf(channel))
+					playbackControllerContainer.playbackController?.play(0)
+				}
 			},
 			onFailure = {
 				// Back pressed while this request ran: the player is gone, nothing to tell.

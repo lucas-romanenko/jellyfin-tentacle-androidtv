@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -30,6 +33,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -37,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import androidx.fragment.app.Fragment
 import androidx.fragment.compose.content
+import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.data.model.DataRefreshService
 import org.jellyfin.androidtv.data.repository.DiscoverItem
 import org.jellyfin.androidtv.data.repository.TentacleRepository
@@ -44,15 +49,20 @@ import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
 import org.jellyfin.androidtv.ui.discover.DiscoverCard
 import org.jellyfin.androidtv.ui.discover.DiscoverDetailDialog
+import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
+import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.preference.constant.NavbarPosition
+import org.jellyfin.androidtv.ui.search.composable.SearchItemCard
 import org.jellyfin.androidtv.ui.search.composable.SearchTextInput
 import org.jellyfin.androidtv.ui.search.composable.SearchVoiceInput
 import org.jellyfin.androidtv.ui.shared.toolbar.NavbarActiveButton
 import org.jellyfin.androidtv.ui.shared.toolbar.NavigationLayout
 import org.jellyfin.androidtv.ui.shared.toolbar.rememberNavbarPosition
 import org.jellyfin.androidtv.util.speech.rememberSpeechRecognizerAvailability
+import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.model.api.BaseItemDto
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 
@@ -71,6 +81,8 @@ class SearchFragment : Fragment() {
 			val tentacleRepository = koinInject<TentacleRepository>()
 			val navigationRepository = koinInject<NavigationRepository>()
 			val dataRefreshService = koinInject<DataRefreshService>()
+			val itemLauncher = koinInject<ItemLauncher>()
+			val api = koinInject<ApiClient>()
 			var query by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
 			val textInputFocusRequester = remember { FocusRequester() }
 			val resultsFocusRequester = remember { FocusRequester() }
@@ -81,6 +93,9 @@ class SearchFragment : Fragment() {
 			// TMDB search results
 			val tmdbResults by viewModel.tmdbResultsFlow.collectAsState()
 			val isTmdbSearching by viewModel.isTmdbSearching.collectAsState()
+			// Jellyfin results: Live TV channels (OK tunes) and library items
+			val channelResults by viewModel.channelResultsFlow.collectAsState()
+			val libraryResults by viewModel.libraryResultsFlow.collectAsState()
 			val tmdbUnavailable by tentacleRepository.discoverUnavailable.collectAsState()
 			var selectedItem by remember { mutableStateOf<DiscoverItem?>(null) }
 			val scope = rememberCoroutineScope()
@@ -172,57 +187,93 @@ class SearchFragment : Fragment() {
 						)
 					}
 
-					// TMDB search results
-					if (tmdbResults.isNotEmpty() || isTmdbSearching) {
-						Column(
-							modifier = Modifier
-								.focusGroup()
-								.padding(top = 8.dp),
-						) {
-							if (isTmdbSearching) {
-								Text(
-									text = "Searching...",
-									fontSize = 14.sp,
-									color = Color.White.copy(alpha = 0.5f),
-									modifier = Modifier.padding(start = 48.dp),
-								)
-							} else {
-								LazyRow(
-									contentPadding = PaddingValues(horizontal = 48.dp),
-									horizontalArrangement = Arrangement.spacedBy(12.dp),
-									modifier = Modifier.fillMaxWidth(),
-								) {
-									// Key MUST be unique per item or Compose crashes. Prefixing with the
-									// list index guarantees uniqueness even when results share ids —
-									// e.g. multiple unidentified items (tmdbId=0 && tvdbId=0) or a movie
-									// and series with the same numeric TMDB id.
-									itemsIndexed(
-										tmdbResults,
-										key = { index, it -> "$index:${it.mediaType}:${it.tmdbId}:${it.tvdbId}" },
-									) { index, item ->
-										DiscoverCard(
-											item = item,
-											// The focus hop from the search input targets the first
-											// card directly — requesting focus on the container
-											// Column throws (it isn't focusable) and lands nowhere.
-											modifier = if (index == 0) Modifier.focusRequester(resultsFocusRequester) else Modifier,
-											onClick = {
-												if (item.inLibrary) {
-													scope.launch {
-														val itemId = tentacleRepository.resolveOwnedItem(
-															item.mediaType, item.tmdbId, item.title, item.year
-														)
-														if (itemId != null) {
-															navigationRepository.navigate(Destinations.itemDetails(itemId))
-														} else {
-															selectedItem = item // open the detail dialog instead of doing nothing
+					// Results: Channels, then In your library (both from Jellyfin), then Discover
+					// (TMDB / Radarr / Sonarr). Down from the search field goes to the first card
+					// of the first row shown.
+					val showChannels = channelResults.isNotEmpty()
+					val showLibrary = libraryResults.isNotEmpty()
+					val showDiscover = tmdbResults.isNotEmpty() || isTmdbSearching
+					val openItem: (BaseItemDto) -> Unit = { item ->
+						itemLauncher.launch(BaseItemDtoBaseRowItem(item), null, requireContext())
+					}
+
+					Column(
+						modifier = Modifier
+							.verticalScroll(rememberScrollState())
+							.padding(bottom = 27.dp),
+					) {
+						if (showChannels) {
+							SearchJellyfinRow(
+								title = stringResource(R.string.channels),
+								items = channelResults,
+								api = api,
+								firstCardModifier = Modifier.focusRequester(resultsFocusRequester),
+								onClick = openItem,
+							)
+						}
+
+						if (showLibrary) {
+							SearchJellyfinRow(
+								title = stringResource(R.string.search_row_library),
+								items = libraryResults,
+								api = api,
+								firstCardModifier = if (!showChannels) Modifier.focusRequester(resultsFocusRequester) else Modifier,
+								onClick = openItem,
+							)
+						}
+
+						if (showDiscover) {
+							Column(
+								modifier = Modifier
+									.focusGroup()
+									.padding(top = 8.dp),
+							) {
+								if (showChannels || showLibrary) SearchRowTitle(stringResource(R.string.lbl_add_media))
+								if (isTmdbSearching) {
+									Text(
+										text = "Searching...",
+										fontSize = 14.sp,
+										color = Color.White.copy(alpha = 0.5f),
+										modifier = Modifier.padding(start = 48.dp),
+									)
+								} else {
+									LazyRow(
+										contentPadding = PaddingValues(horizontal = 48.dp),
+										horizontalArrangement = Arrangement.spacedBy(12.dp),
+										modifier = Modifier.fillMaxWidth(),
+									) {
+										// Key MUST be unique per item or Compose crashes. Prefixing with the
+										// list index guarantees uniqueness even when results share ids —
+										// e.g. multiple unidentified items (tmdbId=0 && tvdbId=0) or a movie
+										// and series with the same numeric TMDB id.
+										itemsIndexed(
+											tmdbResults,
+											key = { index, it -> "$index:${it.mediaType}:${it.tmdbId}:${it.tvdbId}" },
+										) { index, item ->
+											DiscoverCard(
+												item = item,
+												// The focus hop from the search input targets the first
+												// card directly — requesting focus on the container
+												// Column throws (it isn't focusable) and lands nowhere.
+												modifier = if (index == 0 && !showChannels && !showLibrary) Modifier.focusRequester(resultsFocusRequester) else Modifier,
+												onClick = {
+													if (item.inLibrary) {
+														scope.launch {
+															val itemId = tentacleRepository.resolveOwnedItem(
+																item.mediaType, item.tmdbId, item.title, item.year
+															)
+															if (itemId != null) {
+																navigationRepository.navigate(Destinations.itemDetails(itemId))
+															} else {
+																selectedItem = item // open the detail dialog instead of doing nothing
+															}
 														}
+													} else {
+														selectedItem = item
 													}
-												} else {
-													selectedItem = item
-												}
-											},
-										)
+												},
+											)
+										}
 									}
 								}
 							}
@@ -242,6 +293,48 @@ class SearchFragment : Fragment() {
 						navigationRepository.navigate(Destinations.itemDetails(itemId))
 					},
 				)
+			}
+		}
+	}
+
+	@Composable
+	private fun SearchRowTitle(title: String) {
+		Text(
+			text = title,
+			fontSize = 16.sp,
+			fontWeight = FontWeight.SemiBold,
+			color = Color.White.copy(alpha = 0.85f),
+			modifier = Modifier.padding(start = 48.dp, bottom = 6.dp),
+		)
+	}
+
+	@Composable
+	private fun SearchJellyfinRow(
+		title: String,
+		items: List<BaseItemDto>,
+		api: ApiClient,
+		firstCardModifier: Modifier,
+		onClick: (BaseItemDto) -> Unit,
+	) {
+		Column(
+			modifier = Modifier
+				.focusGroup()
+				.padding(top = 8.dp),
+		) {
+			SearchRowTitle(title)
+			LazyRow(
+				contentPadding = PaddingValues(horizontal = 48.dp),
+				horizontalArrangement = Arrangement.spacedBy(12.dp),
+				modifier = Modifier.fillMaxWidth(),
+			) {
+				itemsIndexed(items, key = { index, it -> "$index:${it.id}" }) { index, item ->
+					SearchItemCard(
+						item = item,
+						api = api,
+						onClick = { onClick(item) },
+						modifier = if (index == 0) firstCardModifier else Modifier,
+					)
+				}
 			}
 		}
 	}

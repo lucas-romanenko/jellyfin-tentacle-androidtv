@@ -6,16 +6,22 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.jellyfin.androidtv.data.repository.DiscoverItem
 import org.jellyfin.androidtv.data.repository.TentacleRepository
+import org.jellyfin.sdk.model.api.BaseItemDto
 import timber.log.Timber
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
 class SearchViewModel(
 	private val tentacleRepository: TentacleRepository,
+	private val librarySearch: LibrarySearch,
 ) : ViewModel() {
 	companion object {
 		private val debounceDuration = 600.milliseconds
@@ -29,6 +35,18 @@ class SearchViewModel(
 
 	private val _isTmdbSearching = MutableStateFlow(false)
 	val isTmdbSearching = _isTmdbSearching.asStateFlow()
+
+	// Live TV channels from Jellyfin: their cards tune the channel.
+	private val _channelResultsFlow = MutableStateFlow<List<BaseItemDto>>(emptyList())
+	val channelResultsFlow = _channelResultsFlow.asStateFlow()
+
+	// Library items from Jellyfin (recordings, YouTube-library videos, …), without the owned
+	// titles the Discover row already shows.
+	private val _libraryMatches = MutableStateFlow<List<BaseItemDto>>(emptyList())
+	val libraryResultsFlow: StateFlow<List<BaseItemDto>> = combine(_libraryMatches, _tmdbResultsFlow, ::libraryRowItems)
+		.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+	private var librarySearchJob: Job? = null
 
 	fun searchImmediately(query: String) = searchDebounced(query, 0.milliseconds)
 
@@ -45,11 +63,21 @@ class SearchViewModel(
 		previousQuery = trimmed
 
 		searchJob?.cancel()
+		librarySearchJob?.cancel()
 
 		if (trimmed.isBlank()) {
 			_tmdbResultsFlow.value = emptyList()
+			_channelResultsFlow.value = emptyList()
+			_libraryMatches.value = emptyList()
 			_isTmdbSearching.value = false
 			return true
+		}
+
+		// Jellyfin answers in well under a second; don't make its rows wait for TMDB.
+		librarySearchJob = viewModelScope.launch {
+			delay(debounce)
+			launch { _channelResultsFlow.value = librarySearch.channels(trimmed) }
+			launch { _libraryMatches.value = librarySearch.library(trimmed) }
 		}
 
 		searchJob = viewModelScope.launch {

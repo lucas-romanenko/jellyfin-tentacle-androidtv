@@ -57,11 +57,12 @@ fun SearchTextInput(
 	var isFirstFocus by remember { mutableStateOf(true) }
 	val focusManager = LocalFocusManager.current
 
-	// Auto-open keyboard on first focus
+	// Auto-open keyboard on first focus, but not when the field already has a query: that is Search
+	// coming back from an opened result, and the keyboard would cover the results (one more Back).
 	LaunchedEffect(focused) {
 		if (focused && isFirstFocus) {
 			isFirstFocus = false
-			isEditing = true
+			if (query.isEmpty()) isEditing = true
 		}
 	}
 

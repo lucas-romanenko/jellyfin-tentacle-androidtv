@@ -51,6 +51,7 @@ import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentRepositoryImpl
 import org.jellyfin.androidtv.ui.playback.stillwatching.StillWatchingViewModel
 import org.jellyfin.androidtv.ui.player.photo.PhotoPlayerViewModel
 import org.jellyfin.androidtv.ui.search.SearchFragmentDelegate
+import org.jellyfin.androidtv.ui.search.LibrarySearch
 import org.jellyfin.androidtv.ui.search.SearchRepository
 import org.jellyfin.androidtv.ui.search.SearchRepositoryImpl
 import org.jellyfin.androidtv.ui.search.SearchViewModel
@@ -207,7 +208,10 @@ val appModule = module {
 	viewModel { NextUpViewModel(get(), get(), get()) }
 	viewModel { StillWatchingViewModel(get(), get(), get(), get()) }
 	viewModel { PhotoPlayerViewModel(get()) }
-	viewModel { SearchViewModel(get()) }
+	viewModel {
+		val parentalControls = get<org.jellyfin.androidtv.data.repository.ParentalControlsRepository>()
+		SearchViewModel(get(), LibrarySearch(get(), parentalControls::shouldFilterItem))
+	}
 	viewModel { DreamViewModel(get(), get(), get(), get(), get()) }
 	viewModel { SettingsViewModel() }
 	viewModel { SyncPlayViewModel() }

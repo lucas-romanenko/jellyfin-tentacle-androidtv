@@ -648,6 +648,7 @@
     <string name="lbl_album_artists">Album artists</string>
     <string name="disable_ui_mode_warning">Disable device type warning</string>
     <string name="channels">Channels</string>
+    <string name="search_row_library">In your library</string>
     <string name="photo_albums">Photo albums</string>
     <string name="photos">Photos</string>
     <string name="person_birthday_and_age">Born %1$s (%2$d)</string>

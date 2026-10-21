@@ -142,13 +142,12 @@ val appModule = module {
 			serviceLoaderEnabled(false)
 			logger(CoilTimberLogger(if (BuildConfig.DEBUG) Logger.Level.Warn else Logger.Level.Error))
 
-			// Configure memory cache - use 30% of available memory for images.
-			// 40% with strong references starved low-RAM TV sticks (1-1.5GB, not
-			// flagged isLowRamDevice) and drove GC churn during scroll; 30% is a
-			// safer balance that still avoids re-fetching while scrolling rows.
+			// Memory cache: 30% of the heap, at most 64 MB. With largeHeap the heap is 512 MB on
+			// a 2 GB Sony, so 30% alone let ~150 MB of posters stay strongly held while the
+			// TV's other apps were being swapped out (kswapd busy during the 2026-10-21 ANR).
 			memoryCache {
 				coil3.memory.MemoryCache.Builder()
-					.maxSizePercent(context, percent = 0.30)
+					.maxSizeBytes(imageMemoryCacheBytes(Runtime.getRuntime().maxMemory()))
 					.strongReferencesEnabled(true)
 					.build()
 			}
@@ -243,3 +242,7 @@ val appModule = module {
 		SearchFragmentDelegate(context, get(), get(), get()) 
 	}
 }
+
+/** The image memory cache size for a heap of [maxHeapBytes]: 30%, at most 64 MB. */
+internal fun imageMemoryCacheBytes(maxHeapBytes: Long): Long =
+	minOf((maxHeapBytes * 0.30).toLong(), 64L * 1024 * 1024)

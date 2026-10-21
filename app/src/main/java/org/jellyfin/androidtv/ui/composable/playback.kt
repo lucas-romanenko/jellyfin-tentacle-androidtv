@@ -1,11 +1,13 @@
 package org.jellyfin.androidtv.ui.composable
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,12 +70,38 @@ fun rememberPlayerProgress(
 	)
 }
 
+/**
+ * [rememberPlayerProgress] as a State: read it only where it is drawn (drawWithContent), so a
+ * playing track redraws that, not the whole composable, every frame.
+ */
+@Composable
+fun rememberPlayerProgressState(
+	playbackManager: PlaybackManager = koinInject(),
+): State<Float> {
+	val playState by playbackManager.state.playState.collectAsState()
+	val active = playbackManager.state.positionInfo.active
+	val duration = playbackManager.state.positionInfo.duration
+
+	return rememberPlayerProgressAnimatable(
+		playing = playState == PlayState.PLAYING,
+		active = active,
+		duration = duration,
+	).asState()
+}
+
 @Composable
 fun rememberPlayerProgress(
 	playing: Boolean,
 	active: Duration,
 	duration: Duration,
-): Float {
+): Float = rememberPlayerProgressAnimatable(playing, active, duration).value
+
+@Composable
+private fun rememberPlayerProgressAnimatable(
+	playing: Boolean,
+	active: Duration,
+	duration: Duration,
+): Animatable<Float, AnimationVector1D> {
 	val animatable = remember { Animatable(0f, 0f) }
 
 	LaunchedEffect(playing, duration) {
@@ -94,5 +122,5 @@ fun rememberPlayerProgress(
 		}
 	}
 
-	return animatable.value
+	return animatable
 }

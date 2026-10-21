@@ -104,7 +104,9 @@ fun <T : Any> ItemRowAdapter.setItems(
 		}
 	}
 
-	replaceAll(allItems)
+	// By item id, so a changed watch state rebinds that card instead of remove + insert,
+	// and DiffUtil doesn't compare whole BaseItemDtos for every pair.
+	replaceAll(allItems, CardDiff::sameCard, CardDiff::sameContent)
 	itemsLoaded = allItems.size
 }
 
@@ -307,7 +309,7 @@ fun ItemRowAdapter.retrieveLatestMedia(api: ApiClient, query: GetLatestMediaRequ
 			val effectiveChunk = if (chunkSize > 0) chunkSize else allRowItems.size
 			val firstChunkEnd = min(effectiveChunk, allRowItems.size)
 			val firstChunk = allRowItems.subList(0, firstChunkEnd)
-			replaceAll(firstChunk.toList())
+			replaceAll(firstChunk.toList(), CardDiff::sameCard, CardDiff::sameContent)
 			itemsLoaded = firstChunk.size
 
 			Timber.d("LatestMedia: loaded first chunk ${firstChunk.size}/${allRowItems.size} (chunkSize=$chunkSize)")

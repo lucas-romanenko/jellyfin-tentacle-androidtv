@@ -46,8 +46,12 @@ class MdbListRepository(
 	private val okHttpClient: OkHttpClient,
 	private val apiClient: ApiClient,
 ) {
-	private val ratingsCache = mutableMapOf<String, Map<String, Float>>()
+	// Written from IO threads, cleared from the main thread on low memory.
+	private val ratingsCache = java.util.concurrent.ConcurrentHashMap<String, Map<String, Float>>()
 	private val pendingRequests = mutableMapOf<String, CompletableDeferred<Map<String, Float>?>>()
+
+	/** Forget cached ratings (low memory); they are fetched again when shown. */
+	fun clearCache() = ratingsCache.clear()
 
 	private val json = Json {
 		ignoreUnknownKeys = true

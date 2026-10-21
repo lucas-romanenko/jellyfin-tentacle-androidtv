@@ -653,7 +653,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 	/**
 	 * Add built rows to the Leanback adapter, publish the initial selected item,
-	 * flag content ready, and pre-warm poster images. Shared by the instant
+	 * and flag content ready. Shared by the instant
 	 * cache render and the fresh network render.
 	 */
 	private suspend fun renderInitialRows(rows: List<HomeFragmentRow>, contentReady: Boolean = true) {
@@ -675,45 +675,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			if (contentReady) markContentReady()
 
-			// Pre-warm Coil cache for poster images in the FIRST row only.
-			// Leanback already binds/loads visible cards, so warming more rows just
-			// competes with the render for network/decode threads right when the
-			// home screen is trying to become interactive.
-			// Collect image URLs on Main thread (adapter access), then load on IO.
-			val imageUrls = mutableListOf<String>()
-			val rowsToPrewarm = 2
-			var rowCount = 0
-			for (i in contentRowStartIndex until adapter.size()) {
-				if (rowCount >= rowsToPrewarm) break
-				val listRow = adapter[i] as? ListRow ?: continue
-				val rowAdapter = listRow.adapter as? MutableObjectAdapter<*> ?: continue
-				rowCount++
-				for (j in 0 until minOf(rowAdapter.size(), 10)) {
-					val item = (rowAdapter[j] as? BaseRowItem)?.baseItem ?: continue
-					val imageTag = item.imageTags?.get(org.jellyfin.sdk.model.api.ImageType.PRIMARY) ?: continue
-					imageUrls += api.imageApi.getItemImageUrl(
-						itemId = item.id,
-						imageType = org.jellyfin.sdk.model.api.ImageType.PRIMARY,
-						tag = imageTag,
-						maxHeight = 150,
-					)
-				}
-			}
-			if (imageUrls.isNotEmpty()) {
-				val ctx = context
-				lifecycleScope.launch(Dispatchers.IO) {
-					val loader = ctx?.let { coil3.SingletonImageLoader.get(it) } ?: return@launch
-					for (url in imageUrls) {
-						try {
-							loader.execute(
-								coil3.request.ImageRequest.Builder(ctx)
-									.data(url)
-									.build()
-							)
-						} catch (_: Exception) { }
-					}
-				}
-			}
+			// No poster pre-warm: it asked for a different URL and size than the cards do, so
+			// it decoded up to 20 full posters nothing reused, during the first render.
 		}
 	}
 
@@ -820,7 +783,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		verticalGridView?.apply {
 			// Cache nearby rows to reduce view re-creation during vertical scroll.
 			// Lower than the default to avoid excessive upfront binding on low-end devices.
-			setItemViewCacheSize(12)
+			setItemViewCacheSize(6)
 			
 			// Intercept DPAD_LEFT before HorizontalGridView consumes it.
 			// HorizontalGridView eats DPAD_LEFT even at position 0, so the only

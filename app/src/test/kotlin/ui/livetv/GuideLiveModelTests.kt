@@ -80,7 +80,7 @@ class GuideLiveModelTests : FunSpec({
 			)
 			update.channels.shouldBeNull()
 			update.relist shouldBe false
-			guideFavoriteFlips(favorites, me.toString(), someoneElse.toString(), listOf(GuideUserData(channelId(1).toString(), false))).shouldBeEmpty()
+			guideFavoriteFlips(favorites, me.toString(), someoneElse.toString(), listOf(GuideUserData(channelId(1).toString(), false))) shouldBe emptyMap()
 			isCurrentUser(null, me.toString()) shouldBe false
 		}
 

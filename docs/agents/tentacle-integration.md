@@ -75,6 +75,13 @@ The code wins where they differ.
   kept in the `tentacle` SharedPreferences), follow/unfollow series (Sonarr
   "monitor new items"). TMDB images straight from the CDN
   (`image.tmdb.org/t/p/w342` posters, `w1280` backdrops).
+- **Search tab** (`ui/search/`): Jellyfin channels and library rows, then
+  Discover (`/TentacleDiscover/Search`). Typing waits 350 ms
+  (`SearchQueries`); Discover needs 2 letters. A newer query cancels the
+  older searches, HTTP call included (`executeCancellable`), and
+  `DiscoverSearchState` ignores late answers and keeps the last good
+  titles when a search fails or times out: the "busy" line shows only
+  when Discover has nothing on screen (`DiscoverSearchStateTests`).
 - **Requests that wait for approval** (family members; pure functions in
   `data/repository/FamilyRequests.kt`, `FamilyRequestsTests`):
   `/RequestMode` (`{"mode":"ask"|"direct","approver"}`, asked once per

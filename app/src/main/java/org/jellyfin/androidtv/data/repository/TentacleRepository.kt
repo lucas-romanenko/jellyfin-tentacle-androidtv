@@ -3,6 +3,10 @@ package org.jellyfin.androidtv.data.repository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,10 +19,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.itemsApi
@@ -179,15 +185,14 @@ class TentacleRepository(
 	val discoverUnavailable: StateFlow<String?> = _discoverUnavailable.asStateFlow()
 
 	private fun noteDiscover(error: String?, message: String?) {
-		_discoverUnavailable.value = if (error.isNullOrBlank()) null
-		else message?.takeIf { it.isNotBlank() } ?: "Tentacle is unavailable right now."
+		_discoverUnavailable.value = discoverProblem(error, message)
 	}
 
 	private fun noteDiscoverHttp(code: Int) =
-		noteDiscover("http_$code", "The server answered with an error (HTTP $code). Try again in a moment.")
+		noteDiscover("http_$code", discoverHttpProblem(code))
 
 	private fun noteDiscoverUnreachable() =
-		noteDiscover("unreachable", "Can't reach the server right now. Try again in a moment.")
+		noteDiscover("unreachable", DISCOVER_UNREACHABLE)
 
 	// Activity download count for navbar badge
 	private val _activityDownloadCount = MutableStateFlow(0)
@@ -535,36 +540,66 @@ class TentacleRepository(
 		fetchDiscoverItems("/TentacleDiscover/ListMissing", "&list_id=$listId&type=$type")
 
 	/**
-	 * Search TMDB for movies/series via Tentacle.
+	 * Search TMDB for movies/series via Tentacle. A failure comes back as
+	 * [DiscoverSearchOutcome.Failed] for the Search tab to judge (it keeps the titles it already
+	 * shows); it does not touch [discoverUnavailable], so a search typed past can't leave its
+	 * error on the Discover tab.
+	 *
+	 * Cancelling the caller (a newer query) also cancels the HTTP call, so the server stops
+	 * working on a prefix the user already typed past.
 	 */
-	suspend fun searchDiscover(query: String, type: String = "all"): List<DiscoverItem> = withContext(Dispatchers.IO) {
+	suspend fun searchDiscover(query: String, type: String = "all"): DiscoverSearchOutcome = withContext(Dispatchers.IO) {
 		try {
 			val encodedQuery = java.net.URLEncoder.encode(query, "UTF-8")
 			val baseUrl = buildUrl("/TentacleDiscover/Search")
 			val url = "$baseUrl&q=$encodedQuery&type=$type"
 			val request = Request.Builder().url(url).get().build()
-			val response = httpClient.newCall(request).execute()
-
-			if (!response.isSuccessful) {
-				noteDiscoverHttp(response.code)
-				response.close()
-				return@withContext emptyList()
+			httpClient.newCall(request).executeCancellable { response ->
+				if (!response.isSuccessful) {
+					DiscoverSearchOutcome.Failed(discoverHttpProblem(response.code))
+				} else {
+					val body = response.body?.string()
+					if (body == null) {
+						DiscoverSearchOutcome.Found(emptyList())
+					} else {
+						val result = json.decodeFromString<DiscoverSearchResponse>(body)
+						val problem = discoverProblem(result.error, result.message)
+						if (problem != null) DiscoverSearchOutcome.Failed(problem)
+						else DiscoverSearchOutcome.Found(discoverSearchCards(result.items))
+					}
+				}
 			}
-
-			val body = response.body?.string() ?: return@withContext emptyList()
-			response.close()
-
-			val result = json.decodeFromString<DiscoverSearchResponse>(body)
-			noteDiscover(result.error, result.message)
-			discoverSearchCards(result.items)
 		} catch (e: kotlinx.coroutines.CancellationException) {
-			// A newer keystroke cancelled this request — propagate cancellation
-			// instead of swallowing it and returning an empty list.
 			throw e
 		} catch (e: Exception) {
+			// A cancelled call fails with IOException("Canceled"): that is the newer query
+			// taking over, not a failure to report.
+			ensureActive()
 			Timber.w(e, "Failed to search discover for '$query'")
-			noteDiscoverUnreachable()
-			emptyList()
+			DiscoverSearchOutcome.Failed(DISCOVER_UNREACHABLE)
+		}
+	}
+
+	/**
+	 * [Call.execute] that the calling coroutine's cancellation cancels on the wire (a plain
+	 * execute() keeps blocking an IO thread, and the server keeps working, until it answers).
+	 * [read] runs on the response before the watcher is stopped, so the body is read whole.
+	 * execute(), not enqueue(): the shared client's dispatcher allows 5 async calls per host,
+	 * and Jellyfin image loads would queue this search behind them.
+	 */
+	private suspend fun <T> Call.executeCancellable(read: (Response) -> T): T = coroutineScope {
+		val call = this@executeCancellable
+		val watcher = launch {
+			try {
+				awaitCancellation()
+			} finally {
+				call.cancel()
+			}
+		}
+		try {
+			call.execute().use(read)
+		} finally {
+			watcher.cancel()
 		}
 	}
 
@@ -1513,6 +1548,22 @@ data class DiscoverSection(
  * Live TV channels first (`media_type` "channel", a channel id, no TMDB/TVDB id): as cards they
  * were labelled "Series", had no poster and opened a detail page that could not load.
  */
+/** One Discover search's answer: its titles (maybe none), or why Tentacle could not be asked. */
+sealed interface DiscoverSearchOutcome {
+	data class Found(val items: List<DiscoverItem>) : DiscoverSearchOutcome
+	data class Failed(val message: String) : DiscoverSearchOutcome
+}
+
+/** The line to show for a Discover answer's {error, message}; null when there was no error. */
+internal fun discoverProblem(error: String?, message: String?): String? =
+	if (error.isNullOrBlank()) null
+	else message?.takeIf { it.isNotBlank() } ?: "Tentacle is unavailable right now."
+
+internal fun discoverHttpProblem(code: Int): String =
+	"The server answered with an error (HTTP $code). Try again in a moment."
+
+internal const val DISCOVER_UNREACHABLE = "Can't reach the server right now. Try again in a moment."
+
 internal fun discoverSearchCards(items: List<DiscoverItem>): List<DiscoverItem> =
 	items.filter { it.mediaType != "channel" }
 

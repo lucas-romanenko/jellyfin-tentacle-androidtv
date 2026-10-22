@@ -67,6 +67,15 @@ fun decideHomeRefresh(
 }
 
 /**
+ * The rows a home rebuild keeps as they are on screen, by playlist id: on a layout change (a row
+ * moved, renamed or reshaped) every row with cards keeps them and only the rows not on screen are
+ * fetched; their content is refreshed in place after. When the layout did not change (a row came
+ * back or left) none is kept and every row is asked again.
+ */
+internal fun <T> keptRowItems(layoutChanged: Boolean, shown: Map<String, List<T>>): Map<String, List<T>> =
+	if (layoutChanged) shown.filterValues { it.isNotEmpty() } else emptyMap()
+
+/**
  * Runs [action] for one request at a time; requests that come in meanwhile are merged into
  * one that runs next, so the newest always runs and an older one never lands last. Nothing
  * runs before [ready] (the first load) completes: what was asked meanwhile runs once after.

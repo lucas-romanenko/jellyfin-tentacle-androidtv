@@ -13,8 +13,12 @@ import java.util.UUID
 /** The home version a LibraryChanged message carries, and whether it is everyone's (a sync) or one user's save. */
 data class HomePush(val version: Long, val everyone: Boolean)
 
-/** One LibraryChanged message as Home and the navbar see it. [push] is null without a home version (an older plugin, or a library scan). */
-data class HomeChange(val push: HomePush?, val itemsAdded: Boolean = false)
+/**
+ * One LibraryChanged message as Home, the navbar and the Live TV guide see it. [push] is null without a
+ * home version (an older plugin, or a library scan); [liveTvVersion] is Tentacle's Live TV setup run
+ * ("tentacle-livetv:<version>"), null when the message isn't one.
+ */
+data class HomeChange(val push: HomePush?, val itemsAdded: Boolean = false, val liveTvVersion: Long? = null)
 
 private const val HOME_VERSION_MARKER = "tentacle-home:"
 

@@ -44,6 +44,7 @@ public class GuideChannelHeader extends RelativeLayout {
         ));
         this.addView(v);
         this.setFocusable(true);
+        setBackground(ContextCompat.getDrawable(mContext, R.drawable.guide_channel_bg));
         ((TextView) findViewById(R.id.channelName)).setText(channel.getName());
         ((TextView) findViewById(R.id.channelNumber)).setText(channel.getNumber());
         mChannelImage = findViewById(R.id.channelImage);
@@ -67,6 +68,23 @@ public class GuideChannelHeader extends RelativeLayout {
     public BaseItemDto getChannel() { return mChannel; }
     public void setChannel(BaseItemDto channel) { mChannel = channel; }
 
+    /**
+     * The guide's list changed live (another name, number, logo or star): this row shows [channel]
+     * now, without a new view, so focus stays. The logo loads again only when it changed.
+     */
+    public void update(BaseItemDto channel) {
+        boolean newImage = !java.util.Objects.equals(primaryTag(mChannel), primaryTag(channel));
+        mChannel = channel;
+        ((TextView) findViewById(R.id.channelName)).setText(channel.getName());
+        ((TextView) findViewById(R.id.channelNumber)).setText(channel.getNumber());
+        refreshFavorite();
+        if (newImage) loadImage();
+    }
+
+    private static String primaryTag(BaseItemDto channel) {
+        return channel.getImageTags() == null ? null : channel.getImageTags().get(org.jellyfin.sdk.model.api.ImageType.PRIMARY);
+    }
+
     public void refreshFavorite() {
         if (mChannel.getUserData() != null && mChannel.getUserData().isFavorite())
             mFavImage.setVisibility(View.VISIBLE);
@@ -78,12 +96,14 @@ public class GuideChannelHeader extends RelativeLayout {
     protected void onFocusChanged(boolean gainFocus, int direction, Rect previouslyFocusedRect) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
 
+        // On the purple focus the muted number would hardly show: white while focused
+        ((TextView) findViewById(R.id.channelNumber)).setTextColor(ContextCompat.getColor(mContext, gainFocus ? R.color.white : R.color.guide_text_muted));
         if (gainFocus) {
-            setBackgroundColor(Utils.getThemeColor(mContext, android.R.attr.colorAccent));
+            setBackground(ContextCompat.getDrawable(mContext, R.drawable.guide_channel_focused_bg));
 
             mTvGuide.setSelectedProgram(this);
         } else {
-            setBackground(ContextCompat.getDrawable(mContext, R.drawable.light_border));
+            setBackground(ContextCompat.getDrawable(mContext, R.drawable.guide_channel_bg));
         }
     }
 }

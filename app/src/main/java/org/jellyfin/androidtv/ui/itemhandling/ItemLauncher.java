@@ -62,7 +62,9 @@ public class ItemLauncher {
             case MUSIC:
                 return Destinations.INSTANCE.musicBrowser(baseItem, null, null);
             case LIVETV:
-                return Destinations.INSTANCE.liveTvBrowser(baseItem);
+                // Live TV opens straight to the guide (Favorites / All); Recordings, Schedule
+                // and Series are buttons in its header.
+                return Destinations.INSTANCE.getLiveTvGuide();
             default:
                 return Destinations.INSTANCE.libraryBrowser(baseItem);
         }

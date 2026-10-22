@@ -4,6 +4,7 @@
 
     <!-- Home row spacing -->
     <dimen name="home_row_spacing">24dp</dimen>
+    <dimen name="guide_chip_icon_gap">6dp</dimen>
     <dimen name="home_row_spacing_large">32dp</dimen>
 
     <dimen name="lb_browse_padding_start">61dp</dimen>

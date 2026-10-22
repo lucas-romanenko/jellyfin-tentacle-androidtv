@@ -96,6 +96,33 @@ The code wins where they differ.
   text when the guide opens, instead of "Unable to load channels", and
   next to the player's "Error streaming live TV" (same text at most once
   per 30 s).
+- **Live TV guide** (`ui/livetv/LiveTvGuideFragment.java`, pure helpers in
+  `ui/livetv/GuideModel.kt`, `GuideModelTests`; plain Jellyfin, no plugin
+  call): Live TV (the library tile, the sidebar, `ItemLauncher`) opens
+  straight to the guide; the old `LiveTvBrowseFragment` landing is no
+  longer reached. Favorites / All at the top: Favorites asks
+  `LiveTv/Channels?isFavorite=true` (fast, plus a `limit=1` count of all),
+  All is `TvManager.loadAllChannels`. The choice is Jellyfin display
+  preferences `tentacle-livetv` / client `tentacle` / CustomPrefs
+  `guideView` = `favorites` | `all`, the same as Tentacle's web guide, so
+  it follows the person. Days: today up to the furthest programme end
+  (`POST LiveTv/Programs`, StartDate descending, Limit 1, favourite ids in
+  the body for Favorites); one day of data = no day chips, and paging right
+  stops there. Recordings / Schedule / Series are header buttons (the last
+  two for people who may manage recordings). Holding OK on a channel name
+  favourites it.
+  Live updates (`ui/livetv/GuideLiveUpdates.kt`, pure logic in `GuideModel.kt`,
+  `GuideLiveModelTests`), while the guide is started: the websocket's
+  `UserDataChanged` (Jellyfin sends it ~1 s after any favourite change,
+  whoever made it, Tentacle's server included) changes the stars, and in
+  Favorites removes or adds just those rows (a starred channel not shown
+  re-reads the favourites list); `LibraryChanged` (via SocketHandler and
+  `HomeVersionTracker.changes`; Tentacle marks its Live TV setup runs
+  `tentacle-livetv:<version>`) re-reads the channel list after 1.5 s of
+  quiet and applies only what differs; a socket reconnect or the guide's
+  `onResume` re-reads once. Rows change in place
+  (`LiveTvGuideFragment.applyLiveChannels`): focus stays on its row and
+  programme (the nearest row when its row goes), the screen doesn't scroll.
 - **Episode picker** (`ui/discover/EpisodePickerDialog.kt`,
   `EpisodePickerMode`): `ADD_NEW` (add a series with chosen episodes),
   `DOWNLOAD_MORE` (VOD series: download missing episodes), `MANAGE` (change

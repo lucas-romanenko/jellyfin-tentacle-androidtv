@@ -52,6 +52,22 @@
         <item name="android:stateListAnimator">@null</item>
     </style>
 
+    <!-- Live TV guide header chips: Favorites / All, the days, Recordings / Schedule / Series -->
+    <style name="GuideChip">
+        <item name="android:background">@drawable/guide_chip_bg</item>
+        <item name="android:textColor">@color/guide_chip_text</item>
+        <item name="android:drawableTint">@color/guide_chip_text</item>
+        <item name="android:drawablePadding">@dimen/guide_chip_icon_gap</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:clickable">true</item>
+    </style>
+
     <style name="Button.Icon" parent="android:Widget.Button">
         <item name="android:background">@drawable/button_icon_back</item>
         <item name="android:foreground">@drawable/button_icon_ripple</item>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Guide header chips (Favorites / All, days, Recordings…): focused = white, chosen = purple -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:color="@color/tentacle_bg" />
+    <item android:state_selected="true" android:color="@color/white" />
+    <item android:color="@color/guide_text" />
+</selector>

@@ -299,6 +299,7 @@ fun BaseItemInfoRow(
 	item: BaseItemDto,
 	mediaSource: MediaSourceInfo?,
 	includeRuntime: Boolean,
+	programSubText: Boolean = true,
 ) {
 	BulletSeparatedRow {
 		when (item.type) {
@@ -338,7 +339,7 @@ fun BaseItemInfoRow(
 
 			BaseItemKind.PROGRAM -> {
 				val context = LocalContext.current
-				InfoRowItem(contentDescription = null) {
+				if (programSubText) InfoRowItem(contentDescription = null) {
 					Text(item.getProgramSubText(context))
 				}
 
@@ -431,6 +432,7 @@ class BaseItemInfoRowView @JvmOverloads constructor(
 	private val _item = MutableStateFlow<BaseItemDto?>(null)
 	private val _mediaSource = MutableStateFlow<MediaSourceInfo?>(null)
 	private val _includeRuntime = MutableStateFlow(false)
+	private val _programSubText = MutableStateFlow(true)
 
 	var item: BaseItemDto?
 		get() = _item.value
@@ -450,6 +452,13 @@ class BaseItemInfoRowView @JvmOverloads constructor(
 			_includeRuntime.value = value
 		}
 
+	/** A programme's "channel - episode - time" item; the guide shows those on its own line. */
+	var programSubText: Boolean
+		get() = _programSubText.value
+		set(value) {
+			_programSubText.value = value
+		}
+
 	init {
 		isFocusable = false
 		descendantFocusability = FOCUS_BLOCK_DESCENDANTS
@@ -460,8 +469,9 @@ class BaseItemInfoRowView @JvmOverloads constructor(
 		val item by _item.collectAsState()
 		val mediaSource by _mediaSource.collectAsState()
 		val includeRuntime by _includeRuntime.collectAsState()
+		val programSubText by _programSubText.collectAsState()
 
-		item?.let { BaseItemInfoRow(it, mediaSource, includeRuntime) }
+		item?.let { BaseItemInfoRow(it, mediaSource, includeRuntime, programSubText) }
 	}
 }
 

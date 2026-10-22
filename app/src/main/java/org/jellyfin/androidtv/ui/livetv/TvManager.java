@@ -6,6 +6,7 @@ import android.text.format.DateUtils;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 import androidx.leanback.widget.HeaderItem;
 import androidx.leanback.widget.ListRow;
@@ -41,6 +42,8 @@ import timber.log.Timber;
 
 public class TvManager {
     private static List<BaseItemDto> allChannels;
+    // The guide's Favorites view: only this person's favourite channels (loaded on their own, fast)
+    private static List<BaseItemDto> favoriteChannels;
     private static UUID[] channelIds;
     private static HashMap<UUID, ArrayList<BaseItemDto>> mProgramsDict = new HashMap<>();
     private static LocalDateTime needLoadTime;
@@ -97,6 +100,62 @@ public class TvManager {
     public static void updateChannel(BaseItemDto channel) {
         int ndx = getAllChannelsIndex(channel.getId());
         if (ndx >= 0) allChannels.set(ndx, channel);
+        if (favoriteChannels != null) {
+            for (int i = 0; i < favoriteChannels.size(); i++) {
+                if (favoriteChannels.get(i).getId().equals(channel.getId())) favoriteChannels.set(i, channel);
+            }
+        }
+    }
+
+    /** The stored copy of a channel (every channel, else the favourites), or null. */
+    @Nullable
+    public static BaseItemDto findChannel(UUID id) {
+        int ndx = getAllChannelsIndex(id);
+        if (ndx >= 0) return allChannels.get(ndx);
+        if (favoriteChannels != null) {
+            for (BaseItemDto channel : favoriteChannels) {
+                if (channel.getId().equals(id)) return channel;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The guide's list changed live (GuideLiveUpdates): the stored copy follows, and the guide shows
+     * the stored list, so later changes (a star from the guide) reach both. Returns it.
+     */
+    public static List<BaseItemDto> setLiveChannels(boolean favorites, List<BaseItemDto> channels) {
+        if (favorites) {
+            favoriteChannels = new ArrayList<>(channels);
+            return favoriteChannels;
+        }
+        allChannels = new ArrayList<>(channels);
+        fillChannelIds();
+        return allChannels;
+    }
+
+    /** Programmes of channels that just came into the guide; the other channels' programmes stay. */
+    public static void addPrograms(Collection<BaseItemDto> programs, Collection<UUID> channelIds, LocalDateTime startTime) {
+        for (UUID id : channelIds) mProgramsDict.put(id, new ArrayList<>());
+        for (BaseItemDto program : programs) {
+            UUID id = program.getChannelId();
+            if (id == null || !mProgramsDict.containsKey(id)) continue;
+            if (program.getEndDate() != null && program.getEndDate().isAfter(startTime))
+                mProgramsDict.get(id).add(program);
+        }
+    }
+
+    public static List<BaseItemDto> getFavoriteChannels() {
+        return favoriteChannels;
+    }
+
+    /** Loads this person's favourite channels; the callback gets them (null = failed) and the count of all channels (null = unknown). */
+    public static void loadFavoriteChannels(Fragment fragment, kotlin.jvm.functions.Function2<List<BaseItemDto>, Integer, kotlin.Unit> outerResponse) {
+        TvManagerHelperKt.loadFavoriteLiveTvChannels(fragment, (channels, allCount) -> {
+            if (channels != null) favoriteChannels = new ArrayList<>(channels);
+            outerResponse.invoke(channels != null ? favoriteChannels : null, allCount);
+            return kotlin.Unit.INSTANCE;
+        });
     }
 
     public static void loadAllChannels(Fragment fragment, Function<Integer, Void> outerResponse) {
@@ -128,12 +187,17 @@ public class TvManager {
     }
 
     public static void getProgramsAsync(Fragment fragment, int startNdx, int endNdx, final LocalDateTime startTime, LocalDateTime endTime, final EmptyResponse outerResponse) {
+        endNdx = endNdx > channelIds.length ? channelIds.length : endNdx+1; //array copy range final ndx is exclusive
+
+        getProgramsAsync(fragment, Arrays.copyOfRange(channelIds, startNdx, endNdx), startTime, endTime, outerResponse);
+    }
+
+    /** Programmes of the channels [ids] (the guide's current page of its own channel list). */
+    public static void getProgramsAsync(Fragment fragment, UUID[] ids, final LocalDateTime startTime, LocalDateTime endTime, final EmptyResponse outerResponse) {
         LocalDateTime startTimeRounded = startTime.withMinute(startTime.getMinute() >= 30 ? 30 : 0).withSecond(0).withNano(0);
         LocalDateTime endTimeRounded = endTime.minusSeconds(1);
 
-        endNdx = endNdx > channelIds.length ? channelIds.length : endNdx+1; //array copy range final ndx is exclusive
-
-        TvManagerHelperKt.getPrograms(fragment, Arrays.copyOfRange(channelIds, startNdx, endNdx), startTimeRounded, endTimeRounded, programs -> {
+        TvManagerHelperKt.getPrograms(fragment, ids, startTimeRounded, endTimeRounded, programs -> {
             if (programs != null) {
                 Timber.d("*** About to build dictionary");
                 buildProgramsDict(programs, startTime);

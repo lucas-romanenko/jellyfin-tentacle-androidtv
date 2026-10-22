@@ -42,6 +42,8 @@ import timber.log.Timber;
 
 public class TvManager {
     private static List<BaseItemDto> allChannels;
+    // Whose channels allChannels holds: the guide shows them at once on the next open, for them only
+    private static UUID allChannelsUserId;
     // The guide's Favorites view: only this person's favourite channels (loaded on their own, fast)
     private static List<BaseItemDto> favoriteChannels;
     private static UUID[] channelIds;
@@ -67,6 +69,27 @@ public class TvManager {
 
     public static List<BaseItemDto> getAllChannels() {
         return allChannels;
+    }
+
+    /** The stored list of every channel when it is the signed-in person's (the guide shows it at once), else null. */
+    @Nullable
+    public static List<BaseItemDto> getCachedAllChannels() {
+        UUID user = TvManagerHelperKt.currentLiveTvUserId();
+        if (allChannels != null && (user == null || !user.equals(allChannelsUserId))) {
+            // Someone else's channels (another person signed in since): never shown, read anew
+            allChannels = null;
+            channelIds = null;
+        }
+        return allChannels;
+    }
+
+    /** Index of the last channel watched in [channels], 0 when it isn't there. */
+    public static int lastChannelIndex(List<BaseItemDto> channels) {
+        UUID last = getLastLiveTvChannel();
+        for (int i = 0; i < channels.size(); i++) {
+            if (channels.get(i).getId().equals(last)) return i;
+        }
+        return 0;
     }
 
     public static void forceReload() {
@@ -130,6 +153,7 @@ public class TvManager {
             return favoriteChannels;
         }
         allChannels = new ArrayList<>(channels);
+        allChannelsUserId = TvManagerHelperKt.currentLiveTvUserId();
         fillChannelIds();
         return allChannels;
     }
@@ -162,6 +186,7 @@ public class TvManager {
         TvManagerHelperKt.loadLiveTvChannels(fragment, channels -> {
             if (channels != null) {
                 allChannels = new ArrayList<>(channels);
+                allChannelsUserId = TvManagerHelperKt.currentLiveTvUserId();
                 outerResponse.apply(fillChannelIds());
             } else {
                 // -1: the channels could not be loaded (allChannels keeps what it had, maybe null)

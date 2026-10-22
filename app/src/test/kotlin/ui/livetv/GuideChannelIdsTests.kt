@@ -77,4 +77,14 @@ class GuideChannelIdsTests : FunSpec({
 	test("a last channel that is no longer in the lineup starts at the beginning") {
 		load(channels(200), last = UUID.fromString("99999999-0000-4000-8000-000000000000")) shouldBe 0
 	}
+
+	test("the stored channel list is shown again only to the person it was read for") {
+		val lucas = UUID.fromString("11111111-0000-4000-8000-000000000000")
+		val guest = UUID.fromString("22222222-0000-4000-8000-000000000000")
+		every { currentLiveTvUserId() } returns lucas
+		load(channels(5), last = null)
+		TvManager.getCachedAllChannels()?.size shouldBe 5
+		every { currentLiveTvUserId() } returns guest
+		TvManager.getCachedAllChannels() shouldBe null
+	}
 })

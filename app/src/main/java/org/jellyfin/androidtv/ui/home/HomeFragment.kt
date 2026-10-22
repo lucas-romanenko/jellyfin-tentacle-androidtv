@@ -11,6 +11,7 @@ import android.widget.TextView
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.view.doOnPreDraw
 import androidx.core.view.isVisible
@@ -33,6 +34,8 @@ import org.jellyfin.androidtv.ui.home.mediabar.MediaBarSlideshowViewModel
 import org.jellyfin.androidtv.ui.home.mediabar.HeroPause
 import org.jellyfin.androidtv.ui.home.mediabar.TrailerPreviewState
 import org.jellyfin.androidtv.ui.home.mediabar.ExoPlayerTrailerView
+import org.jellyfin.androidtv.ui.home.mediabar.TrailerLinger
+import org.jellyfin.androidtv.ui.home.mediabar.playableInfo
 import org.jellyfin.androidtv.ui.shared.toolbar.LeftSidebarNavigation
 import org.jellyfin.androidtv.ui.shared.toolbar.Navbar
 import org.jellyfin.androidtv.ui.shared.toolbar.NavbarActiveButton
@@ -311,40 +314,51 @@ class HomeFragment : Fragment() {
 			.onEach { updateMediaBarBackground() }
 			.launchIn(viewLifecycleOwner.lifecycleScope)
 
+		// The hero trailer stays a moment after focus leaves the hero (TrailerLinger): torn down at
+		// once, it blocked the frame the rows start scrolling in.
+		val linger = TrailerLinger()
 		trailerWebView?.setContent {
-			val trailerState by mediaBarViewModel.trailerState.collectAsState()
 			val isMuted by _isTrailerMuted.collectAsState()
 			val httpDataSourceFactory = koinInject<HttpDataSource.Factory>()
-
-			val activeInfo = when (val state = trailerState) {
-				is TrailerPreviewState.Buffering -> state.info
-				is TrailerPreviewState.Playing -> state.info
-				else -> null
-			}
+			val trailerState by mediaBarViewModel.trailerState.collectAsState()
 			val showTrailer = trailerState is TrailerPreviewState.Playing
 
-			if (activeInfo?.streamInfo != null) {
-				key(activeInfo.previewKey, isMuted) {
+			LaunchedEffect(linger.lingering) {
+				if (linger.lingering) {
+					delay(TrailerLinger.DELAY_MS)
+					linger.finish()
+				}
+			}
+
+			val shownInfo = linger.shown
+			if (shownInfo?.streamInfo != null) {
+				key(shownInfo.previewKey, isMuted, linger.epoch) {
 					ExoPlayerTrailerView(
-						streamInfo = activeInfo.streamInfo,
-						startSeconds = activeInfo.startSeconds,
-						segments = activeInfo.segments,
+						streamInfo = shownInfo.streamInfo,
+						startSeconds = shownInfo.startSeconds,
+						segments = shownInfo.segments,
 						muted = isMuted,
 						isVisible = showTrailer,
+						active = !linger.lingering,
 						onVideoEnded = { mediaBarViewModel.onTrailerEnded() },
 						onVideoReady = { mediaBarViewModel.onTrailerReady() },
-						dataSourceFactory = if (activeInfo.isLocal) httpDataSourceFactory else null,
+						dataSourceFactory = if (shownInfo.isLocal) httpDataSourceFactory else null,
 					)
 				}
 			}
 		}
 
-		mediaBarViewModel.trailerState
+		kotlinx.coroutines.flow.combine(
+			mediaBarViewModel.trailerState,
+			snapshotFlow { linger.lingering },
+		) { trailerState, _ -> trailerState }
 			.flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
 			.onEach { trailerState ->
+				// Told here, before the view's visibility below, so the view stays while it lingers.
+				linger.update(trailerState.playableInfo())
 				val hasTrailer = trailerState is TrailerPreviewState.Buffering ||
 					trailerState is TrailerPreviewState.Playing
-				trailerWebView?.isVisible = hasTrailer && shouldShowMediaBar()
+				trailerWebView?.isVisible = (hasTrailer && shouldShowMediaBar()) || linger.lingering
 				muteButton?.isVisible = trailerState is TrailerPreviewState.Playing && shouldShowMediaBar()
 			}
 			.launchIn(viewLifecycleOwner.lifecycleScope)
@@ -422,9 +436,9 @@ class HomeFragment : Fragment() {
 			infoRowView?.isVisible = false
 			summaryView?.isVisible = false
 		} else {
-			// Ensure trailer overlay cannot linger when media bar is not active.
+			// Ensure the trailer cannot play on when the media bar is not active. Its view is hidden
+			// by the trailer state collector, after a short linger (TrailerLinger), not here.
 			mediaBarViewModel.stopTrailer()
-			trailerWebView?.isVisible = false
 
 			shownBackdropUrl = null
 			shownLogoUrl = null

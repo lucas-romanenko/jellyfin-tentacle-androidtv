@@ -1123,11 +1123,13 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         int y = mProgramVScroller.getScrollY();
         UUID topId = null;
         int offset = 0;
-        for (int i = 0; i < mChannels.getChildCount(); i++) {
+        // Positions from the programme rows (the ones this scroller moves); the names beside them
+        for (int i = 0; i < mChannels.getChildCount() && i < mProgramRows.getChildCount(); i++) {
             View header = mChannels.getChildAt(i);
-            if (header instanceof GuideChannelHeader && header.getBottom() > y) {
+            View row = mProgramRows.getChildAt(i);
+            if (header instanceof GuideChannelHeader && row.getBottom() > y) {
                 topId = ((GuideChannelHeader) header).getChannel().getId();
-                offset = y - header.getTop();
+                offset = y - row.getTop();
                 break;
             }
         }
@@ -1158,10 +1160,11 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
                 View header = mChannels.getChildAt(i);
                 if (!(header instanceof GuideChannelHeader)) continue;
                 UUID id = ((GuideChannelHeader) header).getChannel().getId();
-                if (id.equals(place.getTopId())) topRowTop = header.getTop();
-                if (id.equals(focusId) && mProgramRows.getChildAt(i) instanceof LinearLayout) {
-                    focusRowTop = header.getTop();
-                    focusRow = (LinearLayout) mProgramRows.getChildAt(i);
+                View row = mProgramRows.getChildAt(i);
+                if (id.equals(place.getTopId())) topRowTop = row.getTop();
+                if (id.equals(focusId) && row instanceof LinearLayout) {
+                    focusRowTop = row.getTop();
+                    focusRow = (LinearLayout) row;
                 }
             }
             final int x = GuidePlaces.placeScrollX(place, mCurrentGuideStart, guideRowWidthPerMinPx);

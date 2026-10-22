@@ -1228,6 +1228,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						if (existingAdapter != null && freshAdapter != null && onNowAdapters[ON_NOW_ROW_KEY] === freshAdapter) {
 							onNowAdapters[ON_NOW_ROW_KEY] = existingAdapter
 							onNowReused = true
+							Timber.w("On Now row kept on screen by the rebuild")
 						}
 						newContentRows.add(existingRow)
 					}
@@ -1346,6 +1347,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				// Left out (nothing was on, no favourites) and now there is something: build
 				// Home again so the row takes its place, as a user switch does. Only then:
 				// mid-rebuild the row exists but isn't registered yet.
+				Timber.w("On Now refill: no row shown (left out: $onNowLeftOut), ${items.size} cards now")
 				if (onNowLeftOut && items.isNotEmpty() && isResumed && !isStateSaved) {
 					Timber.i("On Now has channels now, rebuilding Home")
 					parentFragmentManager.beginTransaction()
@@ -1354,6 +1356,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				}
 				return@withContext
 			}
+			Timber.w("On Now refill: ${items.size} cards")
 			if (items.isNotEmpty()) {
 				rowAdapter.replaceStaticItems(items)
 				return@withContext
@@ -1448,10 +1451,11 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				onNowInHome = true
 				val user = userRepository.currentUser.value
 				if (user != null && user.policy?.enableLiveTvAccess != false) {
-					val items = runCatching { loadOnNow(api, user.id) }
+					val items = runCatching { withContext(Dispatchers.IO) { loadOnNow(api, user.id) } }
 						.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; Timber.w(it, "On Now unavailable") }
 						.getOrDefault(emptyList())
 					onNowLeftOut = items.isEmpty()
+					Timber.w("On Now: ${items.size} cards for this build")
 					if (items.isNotEmpty()) {
 						rows.add(HomeFragmentTentacleRow(
 							listOf(TentacleRowData(getString(R.string.lbl_tentacle_on_now), ON_NOW_ROW_KEY, items, wide = true)),

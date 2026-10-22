@@ -186,7 +186,9 @@ After that the app offers new versions itself (github flavor; not in the Play St
  *Settings → About*
 
 - **New version dialog**
-  - On launch, and when the app comes back after 12 hours or more: release notes, then
+  - When Home shows (opening the app, coming back to it, back from playback) and the last
+    check you saw is 6 hours old, or at once when the daily background check found a new
+    version; after Home has loaded, never over playback: release notes, then
     **Update now** (download with percent) and the system installer's **Install**
   - **Later** hides that version for 3 days; a newer one shows at once
   - ⚠️ The first time, Android asks to allow Tentacle to install apps; the update carries on

@@ -34,6 +34,9 @@ class UpdateCheckerService(private val context: Context) {
 	/** Whether this build updates itself; debug builds and the playstore flavor don't. */
 	val mode: SelfUpdateMode = selfUpdateMode(BuildConfig.ENABLE_OTA_UPDATES, BuildConfig.DEBUG, BuildConfig.APPLICATION_ID)
 
+	/** The version installed. */
+	val installedVersion: String = BuildConfig.VERSION_NAME
+
 	private var oldDownloadDeleted = false
 
 	/** Ask GitHub for the latest release: up to date, a newer version, or no answer. */

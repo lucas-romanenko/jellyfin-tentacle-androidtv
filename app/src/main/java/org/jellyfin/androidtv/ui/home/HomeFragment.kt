@@ -48,6 +48,7 @@ import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.data.repository.TentacleNotification
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
+import org.jellyfin.androidtv.ui.update.UpdatePrompt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.animation.AnimatedVisibility
@@ -577,6 +578,10 @@ class HomeFragment : Fragment() {
 		super.onResume()
 		if (heroPause.onResume()) mediaBarViewModel.setFocused(true)
 		else mediaBarViewModel.restartTrailerForCurrentSlide()
+		// A new version (github flavor): asked once Home has loaded, each time it shows
+		UpdatePrompt.onHomeShown(this) {
+			loadingOverlay?.isVisible != true && !interactionTrackerViewModel.visible.value
+		}
 	}
 
 	override fun onDestroyView() {

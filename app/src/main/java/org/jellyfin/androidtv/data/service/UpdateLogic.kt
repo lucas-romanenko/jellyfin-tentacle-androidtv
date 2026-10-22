@@ -182,8 +182,11 @@ fun parseUpdateResponse(code: Int?, body: String?, installedVersion: String): Up
 /** How long "Later" keeps one version from being offered again on launch. */
 const val UPDATE_SNOOZE_MS = 3L * 24 * 60 * 60 * 1000
 
-/** How long the app must have been away before coming back checks again. */
-const val UPDATE_RECHECK_MS = 12L * 60 * 60 * 1000
+/** How old the last check the person saw may be before Home checks again. */
+const val UPDATE_RECHECK_MS = 6L * 60 * 60 * 1000
+
+/** After a check that got no answer, Home waits this long before asking GitHub again. */
+const val UPDATE_RETRY_MS = 15L * 60 * 1000
 
 /** "Later" was pressed for this [version] less than 3 days ago. A newer version is never snoozed. */
 fun isUpdateSnoozed(version: String, snoozedVersion: String?, snoozedAtMs: Long, nowMs: Long): Boolean {
@@ -192,9 +195,26 @@ fun isUpdateSnoozed(version: String, snoozedVersion: String?, snoozedAtMs: Long,
 	return elapsed in 0 until UPDATE_SNOOZE_MS
 }
 
-/** The automatic check runs once per process ([lastCheckMs] null) and again after 12 hours. */
-fun isAutoCheckDue(lastCheckMs: Long?, nowMs: Long): Boolean =
-	lastCheckMs == null || nowMs - lastCheckMs >= UPDATE_RECHECK_MS || nowMs < lastCheckMs
+/**
+ * Whether Home, now on screen, asks GitHub for a new version. Yes when the background check
+ * found a [foundVersion] newer than the [installedVersion] that isn't [foundSnoozed], or when the
+ * last check the person saw ([lastSeenCheckMs], 0 = never) is 6 hours old or more. Not within
+ * 15 minutes of a check that got no answer ([lastFailedMs]). Not tied to the process: Android
+ * starts the app in the background for its workers, and opening it later must still check.
+ */
+fun isHomeCheckDue(
+	installedVersion: String,
+	lastSeenCheckMs: Long,
+	foundVersion: String?,
+	foundSnoozed: Boolean,
+	lastFailedMs: Long?,
+	nowMs: Long,
+): Boolean {
+	if (lastFailedMs != null && nowMs - lastFailedMs in 0 until UPDATE_RETRY_MS) return false
+	if (!foundVersion.isNullOrBlank() && !foundSnoozed && isNewerVersion(foundVersion, installedVersion)) return true
+	// A clock set back counts as due
+	return lastSeenCheckMs <= 0 || nowMs - lastSeenCheckMs !in 0 until UPDATE_RECHECK_MS
+}
 
 /** Percent of a download, 0-100; null when the size is unknown. */
 fun downloadPercent(bytesRead: Long, contentLength: Long): Int? =

@@ -25,6 +25,8 @@ import org.jellyfin.androidtv.data.repository.TmdbRepository
 import org.jellyfin.androidtv.preference.UserSettingPreferences
 import org.jellyfin.androidtv.ui.composable.getResolutionName
 import org.jellyfin.androidtv.util.TimeUtils
+import org.jellyfin.androidtv.util.sdk.isTentacleYouTube
+import org.jellyfin.androidtv.util.sdk.youTubeSubtitle
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
@@ -93,10 +95,12 @@ class SimpleInfoRowView @JvmOverloads constructor(
 		
 		val metadataItems = mutableListOf<String>()
 		
-		val dateText = when (item.type) {
-			BaseItemKind.SERIES -> item.productionYear?.toString()
-			BaseItemKind.EPISODE -> item.premiereDate?.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
-			else -> item.productionYear?.toString() 
+		val dateText = when {
+			// "YouTube · <channel>" in place of the upload year (or nothing)
+			item.isTentacleYouTube -> item.youTubeSubtitle
+			item.type == BaseItemKind.SERIES -> item.productionYear?.toString()
+			item.type == BaseItemKind.EPISODE -> item.premiereDate?.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
+			else -> item.productionYear?.toString()
 				?: item.premiereDate?.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
 		}
 		dateText?.let { metadataItems.add(it) }

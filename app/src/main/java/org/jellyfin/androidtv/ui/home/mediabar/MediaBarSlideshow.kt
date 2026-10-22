@@ -33,6 +33,10 @@ data class MediaBarSlideItem(
 	val tmdbId: String? = null,
 	val imdbId: String? = null,
 	val itemType: BaseItemKind = BaseItemKind.MOVIE,
+	/** A Tentacle YouTube video: shown with [youTubeSubtitle] instead of its year. */
+	val youTube: Boolean = false,
+	/** "YouTube · <channel>", or null when the channel is unknown. */
+	val youTubeSubtitle: String? = null,
 )
 
 /**

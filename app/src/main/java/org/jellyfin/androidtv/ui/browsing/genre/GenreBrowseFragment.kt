@@ -39,6 +39,8 @@ import org.jellyfin.androidtv.ui.presentation.CardPresenter
 import org.jellyfin.androidtv.util.Utils
 import org.jellyfin.androidtv.util.sdk.ApiClientFactory
 import org.jellyfin.androidtv.util.sdk.compat.copyWithServerId
+import org.jellyfin.androidtv.util.sdk.isTentacleYouTube
+import org.jellyfin.androidtv.util.sdk.youTubeSubtitle
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.itemsApi
 import org.jellyfin.sdk.model.api.BaseItemDto
@@ -324,8 +326,10 @@ class GenreBrowseFragment : Fragment() {
 		// Add metadata items
 		val metadataItems = mutableListOf<String>()
 		
-		// Year
-		item.productionYear?.let { metadataItems.add(it.toString()) }
+		// Year; for a Tentacle YouTube video "YouTube · <channel>" (or nothing)
+		val youTube = item.isTentacleYouTube
+		if (youTube) item.youTubeSubtitle?.let { metadataItems.add(it) }
+		else item.productionYear?.let { metadataItems.add(it.toString()) }
 		
 		// Rating (if available)
 		item.communityRating?.let { rating ->
@@ -349,9 +353,10 @@ class GenreBrowseFragment : Fragment() {
 		}
 		
 		// Media type
-		val typeLabel = when (item.type) {
-			BaseItemKind.MOVIE -> getString(R.string.lbl_movies)
-			BaseItemKind.SERIES -> getString(R.string.lbl_tv_series)
+		val typeLabel = when {
+			youTube -> ""
+			item.type == BaseItemKind.MOVIE -> getString(R.string.lbl_movies)
+			item.type == BaseItemKind.SERIES -> getString(R.string.lbl_tv_series)
 			else -> ""
 		}
 		if (typeLabel.isNotEmpty()) metadataItems.add(typeLabel)

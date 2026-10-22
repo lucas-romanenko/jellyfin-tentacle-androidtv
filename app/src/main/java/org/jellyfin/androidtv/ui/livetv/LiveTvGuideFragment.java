@@ -54,6 +54,7 @@ import org.jellyfin.sdk.model.api.BaseItemDto;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -64,6 +65,7 @@ import timber.log.Timber;
 public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.OnKeyListener {
     public static final int GUIDE_ROW_HEIGHT_DP = 55;
     public static final int GUIDE_ROW_WIDTH_PER_MIN_DP = 7;
+    /** The most channels on one guide page (and per programs request, TvManagerHelper). */
     public static final int PAGE_SIZE = 75;
     public static final int NORMAL_HOURS = 9;
     public static final int FILTERED_HOURS = 4;
@@ -96,6 +98,10 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     private int mCurrentDisplayChannelStartNdx = 0;
     private int mCurrentDisplayChannelEndNdx = 0;
 
+    // Channels on one page: fewer on a small-memory TV (GuidePageSize.kt), where building 75
+    // rows of program cells at once took seconds and most of the heap.
+    private int pageSize = PAGE_SIZE;
+
     private int guideRowHeightPx;
     private int guideRowWidthPerMinPx;
 
@@ -113,6 +119,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
         guideRowHeightPx = Utils.convertDpToPixel(requireContext(), GUIDE_ROW_HEIGHT_DP);
         guideRowWidthPerMinPx = Utils.convertDpToPixel(requireContext(), GUIDE_ROW_WIDTH_PER_MIN_DP);
+        pageSize = GuidePageSizeKt.guidePageSize(requireContext());
 
         LiveTvGuideBinding binding = LiveTvGuideBinding.inflate(getLayoutInflater(), container, false);
 
@@ -232,16 +239,16 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
                 LiveTvStatusNotice.onLiveTvError(this, getString(R.string.msg_unable_load_channels));
                 return null;
             }
-            if (ndx >= PAGE_SIZE) {
+            if (ndx >= pageSize) {
                 // last channel is not in first page so grab a set where it will be in the middle
-                ndx = ndx - (PAGE_SIZE / 2);
+                ndx = ndx - (pageSize / 2);
             } else {
                 ndx = 0; // just start at beginning
             }
 
             mAllChannels = TvManager.getAllChannels();
             if (!mAllChannels.isEmpty()) {
-                displayChannels(ndx, PAGE_SIZE);
+                displayChannels(ndx, pageSize);
             } else {
                 mSpinner.setVisibility(View.GONE);
             }
@@ -286,8 +293,11 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     public void onPause() {
         super.onPause();
 
-        if (mDisplayProgramsTask != null) {
+        if (mDisplayProgramsTask != null && mDisplayProgramsTask.getStatus() != AsyncTask.Status.FINISHED) {
             mDisplayProgramsTask.cancel(true);
+            // Its rows are only added when it finishes: leave the guide empty so onResume reloads it
+            mChannels.removeAllViews();
+            mProgramRows.removeAllViews();
         }
         if (mDetailPopup != null) {
             mDetailPopup.dismiss();
@@ -476,7 +486,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     }
 
     public void displayChannels(int start, int max) {
-        int end = start + max;
+        // GuidePagingButton asks for PAGE_SIZE channels: never more than this TV's page
+        int end = start + Math.min(max, pageSize);
         if (end > mAllChannels.size()) {
             end = mAllChannels.size();
         }
@@ -517,6 +528,10 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
 
         View firstFocusView;
         int displayedChannels = 0;
+        // Built off the main thread, added in one go in onPostExecute: one post and one layout
+        // pass for the page instead of one per channel.
+        final List<BaseItemDto> rowChannels = new ArrayList<>();
+        final List<LinearLayout> rows = new ArrayList<>();
 
         @Override
         protected void onPreExecute() {
@@ -526,7 +541,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
 
             if (mCurrentDisplayChannelStartNdx > 0) {
                 // Show a paging row for channels above
-                int pageUpStart = mCurrentDisplayChannelStartNdx - PAGE_SIZE;
+                int pageUpStart = mCurrentDisplayChannelStartNdx - pageSize;
                 if (pageUpStart < 0) {
                     pageUpStart = 0;
                 }
@@ -569,24 +584,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
                 }
                 prevRow = row;
 
-                requireActivity().runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (!getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) return;
-
-                        GuideChannelHeader header = getChannelHeader(requireContext(), channel);
-                        mChannels.addView(header);
-                        header.loadImage();
-                        mProgramRows.addView(row);
-                        // put focus on the last tuned channel
-                        if (channel.getId().equals(mFirstFocusChannelId)) {
-                            firstFocusView = focusAtEnd ? row.getChildAt(row.getChildCount()-1) : row;
-                            focusAtEnd = false;
-                            mFirstFocusChannelId = null;
-                        }
-
-                    }
-                });
+                rowChannels.add(channel);
+                rows.add(row);
 
                 displayedChannels++;
             }
@@ -596,9 +595,27 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         @Override
         protected void onPostExecute(Void aVoid) {
             Timber.d("*** Display programs post execute");
+            if (getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) {
+                Context context = requireContext();
+                for (int i = 0; i < rows.size(); i++) {
+                    BaseItemDto channel = rowChannels.get(i);
+                    LinearLayout row = rows.get(i);
+                    GuideChannelHeader header = getChannelHeader(context, channel);
+                    mChannels.addView(header);
+                    header.loadImage();
+                    mProgramRows.addView(row);
+                    // put focus on the last tuned channel
+                    if (channel.getId().equals(mFirstFocusChannelId)) {
+                        firstFocusView = focusAtEnd ? row.getChildAt(row.getChildCount()-1) : row;
+                        focusAtEnd = false;
+                        mFirstFocusChannelId = null;
+                    }
+                }
+            }
+
             if (mCurrentDisplayChannelEndNdx < mAllChannels.size()-1 && !mFilters.any()) {
                 // Show a paging row for channels below
-                int pageDnEnd = mCurrentDisplayChannelEndNdx + PAGE_SIZE;
+                int pageDnEnd = mCurrentDisplayChannelEndNdx + pageSize;
                 if (pageDnEnd >= mAllChannels.size()) pageDnEnd = mAllChannels.size()-1;
 
                 TextView placeHolder = new TextView(requireContext());

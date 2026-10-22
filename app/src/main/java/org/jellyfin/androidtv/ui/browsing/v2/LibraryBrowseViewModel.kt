@@ -63,7 +63,6 @@ data class LibraryBrowseUiState(
 	val filterSeriesStatus: SeriesStatusFilter = SeriesStatusFilter.ALL,
 	val startLetter: String? = null,
 	val hasMoreItems: Boolean = false,
-	val focusedItem: BaseItemDto? = null,
 	val posterSize: PosterSize = PosterSize.MED,
 	val imageType: ImageType = ImageType.POSTER,
 	val gridDirection: GridDirection = GridDirection.VERTICAL,
@@ -84,6 +83,10 @@ class LibraryBrowseViewModel(
 
 	private val _uiState = MutableStateFlow(LibraryBrowseUiState())
 	val uiState: StateFlow<LibraryBrowseUiState> = _uiState.asStateFlow()
+
+	// Kept out of uiState: the focus moves with every D-pad press, and only the header shows it.
+	private val _focusedItem = MutableStateFlow<BaseItemDto?>(null)
+	val focusedItem: StateFlow<BaseItemDto?> = _focusedItem.asStateFlow()
 
 	var effectiveApi: ApiClient = api
 		private set
@@ -300,7 +303,7 @@ class LibraryBrowseViewModel(
 	}
 
 	fun setFocusedItem(item: BaseItemDto) {
-		_uiState.value = _uiState.value.copy(focusedItem = item)
+		_focusedItem.value = item
 	}
 
 	/**
@@ -350,7 +353,8 @@ class LibraryBrowseViewModel(
 				savedScrollOffset = 0
 				savedFocusedIndex = 0
 				hasRestoredScroll = false
-				_uiState.value = _uiState.value.copy(isLoading = true, items = emptyList(), focusedItem = null)
+				_uiState.value = _uiState.value.copy(isLoading = true, items = emptyList())
+				_focusedItem.value = null
 			}
 			isLoadingMore = true
 
@@ -484,16 +488,18 @@ class LibraryBrowseViewModel(
 					newItems
 				}
 
-				val allItems = if (reset) annotatedItems else _uiState.value.items + annotatedItems
+				val allItems = if (reset) annotatedItems.distinctBy { it.id }
+					else appendDistinctBy(_uiState.value.items, annotatedItems) { it.id }
 				currentPage++
 
 				_uiState.value = _uiState.value.copy(
 					isLoading = false,
 					items = allItems,
 					totalItems = totalItems,
-					hasMoreItems = allItems.size < totalItems,
-					focusedItem = if (reset) allItems.firstOrNull() else _uiState.value.focusedItem,
+					// Counted by what the server sent, so a dropped repeat can't stop paging
+					hasMoreItems = currentPage * pageSize < totalItems && newItems.isNotEmpty(),
 				)
+				if (reset) _focusedItem.value = allItems.firstOrNull()
 			} catch (err: Exception) {
 				coroutineContext.ensureActive()
 				Timber.e(err, "Failed to load library items")

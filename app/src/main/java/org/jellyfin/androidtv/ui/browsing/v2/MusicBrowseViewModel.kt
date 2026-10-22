@@ -29,7 +29,6 @@ data class MusicBrowseUiState(
 	val lastPlayed: List<BaseItemDto> = emptyList(),
 	val favoriteAlbums: List<BaseItemDto> = emptyList(),
 	val playlists: List<BaseItemDto> = emptyList(),
-	val focusedItem: BaseItemDto? = null,
 )
 
 class MusicBrowseViewModel(
@@ -39,6 +38,10 @@ class MusicBrowseViewModel(
 
 	private val _uiState = MutableStateFlow(MusicBrowseUiState())
 	val uiState: StateFlow<MusicBrowseUiState> = _uiState.asStateFlow()
+
+	// Kept out of uiState: a focus move recomposes only the header HUD, not the rows.
+	private val _focusedItem = MutableStateFlow<BaseItemDto?>(null)
+	val focusedItem: StateFlow<BaseItemDto?> = _focusedItem.asStateFlow()
 
 	var effectiveApi: ApiClient = api
 		private set
@@ -70,7 +73,7 @@ class MusicBrowseViewModel(
 	}
 
 	fun setFocusedItem(item: BaseItemDto) {
-		_uiState.value = _uiState.value.copy(focusedItem = item)
+		_focusedItem.value = item
 	}
 
 	private fun loadAllRows() {

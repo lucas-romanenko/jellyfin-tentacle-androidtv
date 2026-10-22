@@ -30,7 +30,6 @@ data class ScheduleGroup(
 data class ScheduleBrowseUiState(
 	val isLoading: Boolean = true,
 	val scheduleGroups: List<ScheduleGroup> = emptyList(),
-	val focusedItem: BaseItemDto? = null,
 )
 
 class ScheduleBrowseViewModel(
@@ -40,13 +39,18 @@ class ScheduleBrowseViewModel(
 	private val _uiState = MutableStateFlow(ScheduleBrowseUiState())
 	val uiState: StateFlow<ScheduleBrowseUiState> = _uiState.asStateFlow()
 
+	// The focused card, apart from uiState: a D-pad press recomposes only the header HUD.
+	private val _focusedItem = MutableStateFlow<BaseItemDto?>(null)
+	val focusedItem: StateFlow<BaseItemDto?> = _focusedItem.asStateFlow()
+
 	fun initialize(context: Context) {
 		_uiState.value = ScheduleBrowseUiState(isLoading = true)
+		_focusedItem.value = null
 		loadSchedule(context)
 	}
 
 	fun setFocusedItem(item: BaseItemDto) {
-		_uiState.update { it.copy(focusedItem = item) }
+		_focusedItem.value = item
 	}
 
 	private fun loadSchedule(context: Context) {

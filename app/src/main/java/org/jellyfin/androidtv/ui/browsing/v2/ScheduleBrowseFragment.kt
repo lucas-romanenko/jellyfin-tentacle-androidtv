@@ -21,11 +21,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -35,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -58,7 +58,6 @@ import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
-import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.itemImages
 import org.jellyfin.androidtv.util.apiclient.parentImages
 import org.jellyfin.sdk.model.api.BaseItemDto
@@ -173,7 +172,7 @@ class ScheduleBrowseFragment : Fragment() {
 			Spacer(modifier = Modifier.height(6.dp))
 
 			FocusedItemHud(
-				item = uiState.focusedItem,
+				itemFlow = viewModel.focusedItem,
 				modifier = Modifier.fillMaxWidth(),
 			)
 
@@ -197,33 +196,36 @@ class ScheduleBrowseFragment : Fragment() {
 		uiState: ScheduleBrowseUiState,
 		modifier: Modifier = Modifier,
 	) {
-		val scrollState = rememberScrollState()
+		val bgDebouncer = rememberFocusDebouncer()
 
-		Column(
-			modifier = modifier
-				.fillMaxWidth()
-				.verticalScroll(scrollState)
-				.padding(bottom = 16.dp),
+		LazyColumn(
+			modifier = modifier.fillMaxWidth(),
+			contentPadding = PaddingValues(bottom = 16.dp),
 		) {
 			if (uiState.scheduleGroups.isEmpty()) {
-				Box(
-					modifier = Modifier
-						.fillMaxWidth()
-						.padding(top = 40.dp),
-					contentAlignment = Alignment.Center,
-				) {
-					Text(
-						text = stringResource(R.string.lbl_no_items),
-						fontSize = 16.sp,
-						color = Color.White.copy(alpha = 0.5f),
-					)
+				item(key = "empty") {
+					Box(
+						modifier = Modifier
+							.fillMaxWidth()
+							.padding(top = 40.dp),
+						contentAlignment = Alignment.Center,
+					) {
+						Text(
+							text = stringResource(R.string.lbl_no_items),
+							fontSize = 16.sp,
+							color = Color.White.copy(alpha = 0.5f),
+						)
+					}
 				}
 			} else {
-				for (group in uiState.scheduleGroups) {
-					ScheduleItemRow(
-						title = group.dateLabel,
-						items = group.items,
-					)
+				uiState.scheduleGroups.forEachIndexed { index, group ->
+					item(key = "group-$index-${group.dateLabel}") {
+						ScheduleItemRow(
+							title = group.dateLabel,
+							items = group.items,
+							bgDebouncer = bgDebouncer,
+						)
+					}
 				}
 			}
 		}
@@ -233,6 +235,7 @@ class ScheduleBrowseFragment : Fragment() {
 	private fun ScheduleItemRow(
 		title: String,
 		items: List<BaseItemDto>,
+		bgDebouncer: FocusDebouncer,
 	) {
 		Column(
 			modifier = Modifier
@@ -251,13 +254,13 @@ class ScheduleBrowseFragment : Fragment() {
 				horizontalArrangement = Arrangement.spacedBy(12.dp),
 				contentPadding = PaddingValues(horizontal = 60.dp),
 			) {
-				items(items) { item ->
+				items(items.distinctById(), key = { it.id }, contentType = { "scheduleCard" }) { item ->
 					ScheduleCard(
 						item = item,
 						onClick = { launchItem(item) },
 						onFocused = {
 							viewModel.setFocusedItem(item)
-							backgroundService.setBackground(item, BlurContext.BROWSING)
+							bgDebouncer.submit { backgroundService.setBackground(item, BlurContext.BROWSING) }
 						},
 					)
 				}
@@ -290,6 +293,8 @@ class ScheduleBrowseFragment : Fragment() {
 					scaleX = scale
 					scaleY = scale
 					this.alpha = alpha
+					// Fades without an offscreen layer per unfocused card.
+					compositingStrategy = CompositingStrategy.ModulateAlpha
 				}
 				.clickable(
 					interactionSource = interactionSource,
@@ -309,7 +314,8 @@ class ScheduleBrowseFragment : Fragment() {
 					)
 					.background(Color.White.copy(alpha = 0.06f)),
 			) {
-				val imageUrl = getScheduleImageUrl(item)
+				val px = rememberCardPx(cardWidth, cardHeight)
+				val imageUrl = getScheduleImageUrl(item, px)
 				if (imageUrl != null) {
 					AsyncImage(
 						model = imageUrl,
@@ -357,18 +363,18 @@ class ScheduleBrowseFragment : Fragment() {
 		}
 	}
 
-	private fun getScheduleImageUrl(item: BaseItemDto): String? {
+	private fun getScheduleImageUrl(item: BaseItemDto, px: CardPx): String? {
 		val thumb = item.itemImages[JellyfinImageType.THUMB]
-		if (thumb != null) return thumb.getUrl(viewModel.api, maxHeight = 300)
+		if (thumb != null) return thumb.getCardUrl(viewModel.api, px.width, px.height)
 
 		val primary = item.itemImages[JellyfinImageType.PRIMARY]
-		if (primary != null) return primary.getUrl(viewModel.api, maxHeight = 300)
+		if (primary != null) return primary.getCardUrl(viewModel.api, px.width, px.height)
 
 		val parentThumb = item.parentImages[JellyfinImageType.THUMB]
-		if (parentThumb != null) return parentThumb.getUrl(viewModel.api, maxHeight = 300)
+		if (parentThumb != null) return parentThumb.getCardUrl(viewModel.api, px.width, px.height)
 
 		val parentPrimary = item.parentImages[JellyfinImageType.PRIMARY]
-		if (parentPrimary != null) return parentPrimary.getUrl(viewModel.api, maxHeight = 300)
+		if (parentPrimary != null) return parentPrimary.getCardUrl(viewModel.api, px.width, px.height)
 
 		return null
 	}

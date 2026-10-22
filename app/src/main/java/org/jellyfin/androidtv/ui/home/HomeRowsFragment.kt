@@ -1219,9 +1219,13 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			hasMediaBarAtPosition0 = mediaBarRowObj != null
 			val fullList = prefixRows + listOfNotNull(mediaBarRowObj) + newContentRows
 
+			// A row rebuilt for its new card shape is the same row to the diff (same playlist), so it
+			// is changed in place (a crossfade) instead of removed and inserted, which left its place
+			// blank for a moment while the focus was on it.
+			fun playlistOf(row: Row): String? = (row as? ListRow)?.adapter?.let { oldIdByAdapter[it] ?: freshIdByAdapter[it] }
 			rowsAdapter.replaceAll(
 				fullList,
-				areItemsTheSame = { old, new -> old === new },
+				areItemsTheSame = { old, new -> old === new || playlistOf(old)?.let { it == playlistOf(new) } == true },
 				areContentsTheSame = { old, new -> old === new },
 			)
 

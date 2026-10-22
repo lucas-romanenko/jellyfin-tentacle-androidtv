@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.preference.LiveTvPreferences
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.displayPreferencesApi
@@ -23,7 +24,6 @@ import org.jellyfin.sdk.model.api.SortOrder
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
 import org.koin.android.ext.android.inject
 import org.koin.java.KoinJavaComponent
-import org.jellyfin.androidtv.auth.repository.SessionRepository
 import timber.log.Timber
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -127,9 +127,9 @@ fun loadAllGuideChannels(fragment: Fragment, callback: (channels: List<BaseItemD
 	}
 }
 
-/** Who is signed in: the stored channel list is theirs only. */
+/** Who is signed in: the stored channel list is theirs only (null when nobody is, so nothing stored is shown). */
 fun currentLiveTvUserId(): UUID? =
-	KoinJavaComponent.get<SessionRepository>(SessionRepository::class.java).currentSession.value?.userId
+	KoinJavaComponent.getOrNull<SessionRepository>(SessionRepository::class.java)?.currentSession?.value?.userId
 
 /** This person's favourite channels only, in the guide's order (the Favorites view). */
 suspend fun fetchFavoriteGuideChannels(api: ApiClient, liveTvPreferences: LiveTvPreferences): List<BaseItemDto> {

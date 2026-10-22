@@ -119,26 +119,11 @@ class ParentalControlsRepositoryImpl(
 	private fun getPrefsForUser(userId: UUID) =
 		context.getSharedPreferences("$PREFS_NAME_PREFIX$userId", Context.MODE_PRIVATE)
 
+	// The TV's own rating blocks left Settings (2026-10-22): Tentacle's kids profiles limit what a
+	// child sees, on every device. A block set on the TV before no longer applies, since nothing
+	// could undo it any more.
 	private fun loadBlockedRatings() {
-		val userId = getCurrentUserId()
-		if (userId == null) {
-			Timber.d("ParentalControlsRepository: No current user, cannot load blocked ratings")
-			return
-		}
-		val prefs = getPrefsForUser(userId)
-		val jsonString = prefs.getString(KEY_BLOCKED_RATINGS, null)
-		val ratings = if (jsonString != null) {
-			try {
-				json.decodeFromString<Set<String>>(jsonString)
-			} catch (e: Exception) {
-				Timber.e(e, "Failed to parse blocked ratings")
-				emptySet()
-			}
-		} else {
-			emptySet()
-		}
-		_blockedRatingsFlow.value = ratings
-		Timber.d("ParentalControlsRepository: Loaded ${ratings.size} blocked ratings for user $userId: $ratings")
+		_blockedRatingsFlow.value = emptySet()
 	}
 
 	override suspend fun getAvailableRatings(): List<String> = withContext(Dispatchers.IO) {
@@ -241,42 +226,7 @@ class ParentalControlsRepositoryImpl(
 
 	override fun getBlockedRatings(): Set<String> = getBlockedRatingsInternal()
 
-	/**
-	 * Get blocked ratings, loading from SharedPreferences if not yet loaded.
-	 * This ensures we never miss filtering due to race conditions at startup.
-	 */
-	private fun getBlockedRatingsInternal(): Set<String> {
-		// Fast path - we already have loaded ratings
-		val current = _blockedRatingsFlow.value
-		if (current.isNotEmpty()) return current
-		
-		// Try to load from prefs directly if flow is empty (race condition at startup)
-		val userId = getCurrentUserId()
-		if (userId == null) {
-			Timber.d("ParentalControlsRepository: getBlockedRatingsInternal - no userId available")
-			return emptySet()
-		}
-		
-		// Always try to load from prefs when flow is empty, regardless of currentLoadedUserId
-		// This handles the case where init ran before session was available
-		val prefs = getPrefsForUser(userId)
-		val jsonString = prefs.getString(KEY_BLOCKED_RATINGS, null)
-		if (jsonString != null) {
-			try {
-				val ratings = json.decodeFromString<Set<String>>(jsonString)
-				if (ratings.isNotEmpty()) {
-					Timber.d("ParentalControlsRepository: Loaded ${ratings.size} blocked ratings on-demand for user $userId: $ratings")
-					_blockedRatingsFlow.value = ratings
-					currentLoadedUserId = userId
-					return ratings
-				}
-			} catch (e: Exception) {
-				Timber.e(e, "ParentalControlsRepository: Failed to parse blocked ratings on-demand")
-			}
-		}
-		
-		return emptySet()
-	}
+	private fun getBlockedRatingsInternal(): Set<String> = _blockedRatingsFlow.value
 
 	override fun setBlockedRatings(ratings: Set<String>) {
 		val userId = getCurrentUserId() ?: return

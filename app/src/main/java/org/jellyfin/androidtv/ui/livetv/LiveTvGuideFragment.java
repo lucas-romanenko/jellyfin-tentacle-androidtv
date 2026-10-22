@@ -142,7 +142,6 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     private final Lazy<PlaybackHelper> playbackHelper = inject(PlaybackHelper.class);
     private final Lazy<ImageHelper> imageHelper = inject(ImageHelper.class);
     private final Lazy<PlaybackLauncher> playbackLauncher = inject(PlaybackLauncher.class);
-    private MutableStateFlow<Boolean> showOptions;
     private MutableStateFlow<Boolean> showFilterOptions;
 
     // Favourite and lineup changes while the guide is open, applied in place (GuideLiveUpdates)
@@ -198,16 +197,6 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             }
         });
         mFilterButton.setContentDescription(getString(R.string.lbl_filters));
-
-        showOptions = LiveTvGuideFragmentHelperKt.addSettingsOptions(this, binding);
-        View mOptionsButton = binding.optionsButton;
-        mOptionsButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                showOptions.setValue(true);
-            }
-        });
-        mOptionsButton.setContentDescription(getString(R.string.lbl_other_options));
 
         mProgramTime = binding.programTime;
         mDays = binding.days;

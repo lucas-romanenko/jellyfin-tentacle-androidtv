@@ -1,6 +1,5 @@
 package org.jellyfin.androidtv.ui.browsing.genre
 
-import android.content.SharedPreferences
 import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
@@ -14,7 +13,6 @@ import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.leanback.widget.ArrayObjectAdapter
 import androidx.leanback.widget.BaseGridView
-import androidx.leanback.widget.FocusHighlight
 import androidx.leanback.widget.OnItemViewClickedListener
 import androidx.leanback.widget.OnItemViewSelectedListener
 import androidx.leanback.widget.VerticalGridPresenter
@@ -28,6 +26,7 @@ import org.jellyfin.androidtv.data.repository.MultiServerRepository
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.databinding.HorizontalGridBrowseBinding
 import org.jellyfin.androidtv.databinding.PopupEmptyBinding
+import org.jellyfin.androidtv.preference.FixedLook
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.ui.AlphaPickerView
 import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
@@ -92,12 +91,6 @@ class GenreBrowseFragment : Fragment() {
 	private var currentSortOption: GenreItemSortOption = SORT_OPTIONS[1]
 	private var sortButton: ImageButton? = null
 
-	private val preferenceChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-		if (key == UserPreferences.cardFocusExpansion.key) {
-			setupGrid()
-		}
-	}
-	
 	private var startLetter: String? = null
 	private var letterButton: ImageButton? = null
 	private var jumplistPopup: JumplistPopup? = null
@@ -152,8 +145,6 @@ class GenreBrowseFragment : Fragment() {
 		if (isFirstLoad) {
 			loadContent()
 		}
-
-		userPreferences.registerChangeListener(preferenceChangeListener)
 	}
 
 	private fun setupHeader() {
@@ -225,7 +216,7 @@ class GenreBrowseFragment : Fragment() {
 	}
 
 	private fun setupGrid() {
-		val zoomFactor = if (userPreferences[UserPreferences.cardFocusExpansion]) FocusHighlight.ZOOM_FACTOR_MEDIUM else FocusHighlight.ZOOM_FACTOR_NONE
+		val zoomFactor = FixedLook.CARD_FOCUS_ZOOM
 		gridPresenter = VerticalGridPresenter(zoomFactor, false).apply {
 			numberOfColumns = NUM_COLUMNS
 			shadowEnabled = false
@@ -542,7 +533,6 @@ class GenreBrowseFragment : Fragment() {
 
 	override fun onDestroyView() {
 		super.onDestroyView()
-		userPreferences.unregisterChangeListener(preferenceChangeListener)
 		jumplistPopup?.dismiss()
 		binding = null
 		gridViewHolder = null

@@ -138,34 +138,6 @@ fun LiveTvGuideFragment.refreshSelectedProgram() {
 	}
 }
 
-fun LiveTvGuideFragment.addSettingsOptions(binding: LiveTvGuideBinding): MutableStateFlow<Boolean> {
-	val visible = MutableStateFlow(false)
-
-	binding.settingsOptions.setContent {
-		val isVisible by visible.collectAsState(false)
-
-		JellyfinTheme {
-			ProvideRouter(
-				routes,
-				Routes.LIVETV_GUIDE_OPTIONS
-			) {
-				SettingsDialog(
-					visible = isVisible,
-					onDismissRequest = {
-						visible.value = false
-						TvManager.forceReload()
-						doLoad()
-					}
-				) {
-					SettingsRouterContent()
-				}
-			}
-		}
-	}
-
-	return visible
-}
-
 fun LiveTvGuideFragment.addSettingsFilters(binding: LiveTvGuideBinding): MutableStateFlow<Boolean> {
 	val visible = MutableStateFlow(false)
 

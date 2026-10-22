@@ -360,7 +360,7 @@
     <string name="update_downloading">Downloading Tentacle %1$s…</string>
     <string name="update_download_percent">%1$d%%</string>
     <string name="update_download_failed">Couldn\'t download the new version. Check the internet connection and try again.</string>
-    <string name="update_install_failed">Couldn\'t open the installer. Try again from Settings, About.</string>
+    <string name="update_install_failed">Couldn\'t open the installer. Try again from Settings.</string>
     <string name="update_grant_install_permission">Allow Tentacle to install apps, then press Back. The update continues by itself.</string>
     <string name="update_check_title">Check for updates</string>
     <string name="update_check_caption">See if a new version of Tentacle is out</string>
@@ -368,6 +368,13 @@
     <string name="update_up_to_date">You\'re on the latest version</string>
     <string name="update_check_failed">Couldn\'t check for updates right now. Try again later.</string>
     <string name="update_debug_build">Debug build: updates come from test builds</string>
+    <string name="settings_switch_user">Switch user</string>
+    <string name="settings_switch_user_caption">Choose who\'s watching</string>
+    <string name="settings_log_out">Log out</string>
+    <string name="settings_log_out_caption">Sign %1$s out of this TV. Their password is needed next time.</string>
+    <string name="settings_screensaver_caption">Shows pictures from your library when the TV is left alone</string>
+    <string name="settings_app_version">App version</string>
+    <string name="settings_signed_in_as">Signed in as</string>
     <string name="update_notify_title">Tell me about new versions</string>
     <string name="update_notify_on">Tentacle asks when a new version is out</string>
     <string name="update_notify_off">Off: use Check for updates to look yourself</string>

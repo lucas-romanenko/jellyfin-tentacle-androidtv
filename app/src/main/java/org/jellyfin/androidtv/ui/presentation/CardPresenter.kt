@@ -31,13 +31,12 @@ import androidx.savedstate.findViewTreeSavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.auth.repository.ServerRepository
-import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.constant.ImageType
 import org.jellyfin.androidtv.data.repository.TentacleRepository
+import org.jellyfin.androidtv.preference.FixedLook
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.UserSettingPreferences
 import org.jellyfin.androidtv.ui.AsyncImageView
-import org.jellyfin.androidtv.ui.base.focusBorderColorFor
 import org.jellyfin.androidtv.ui.composable.item.EpisodePreviewOverlay
 import org.jellyfin.androidtv.ui.composable.item.SeriesTrailerOverlay
 import org.jellyfin.androidtv.ui.composable.item.hasLocalMedia
@@ -139,7 +138,6 @@ class CardPresenter @JvmOverloads constructor(
 
 	private val userPreferences by inject<UserPreferences>()
 	private val userSettingPreferences by inject<UserSettingPreferences>()
-	private val userRepository by inject<UserRepository>()
 	private val serverRepository by inject<ServerRepository>()
 	private val tentacleRepository by inject<TentacleRepository>()
 	private val playbackManager by inject<PlaybackManager>()
@@ -487,7 +485,7 @@ class CardPresenter @JvmOverloads constructor(
 
 		private fun applyFocus(focused: Boolean) {
 			if (focused) {
-				focusBorder.setStroke(dp(2), focusBorderColorFor(context, userRepository.currentUser.value?.id).toArgb())
+				focusBorder.setStroke(dp(2), FixedLook.FOCUS_COLOR.toArgb())
 				focusBorder.cornerRadius = if (isCircular) 0f else dp(12).toFloat()
 				focusBorder.shape = if (isCircular) GradientDrawable.OVAL else GradientDrawable.RECTANGLE
 				frame.foreground = focusBorder

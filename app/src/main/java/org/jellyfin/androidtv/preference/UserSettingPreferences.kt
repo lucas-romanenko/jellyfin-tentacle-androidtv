@@ -67,8 +67,8 @@ class UserSettingPreferences(
 		// Background blur settings
 		@Deprecated("Use detailsBackgroundBlurAmount or browsingBackgroundBlurAmount instead", ReplaceWith("detailsBackgroundBlurAmount"))
 		val backgroundBlurAmount = intPreference("backgroundBlurAmount", 10)
-		val detailsBackgroundBlurAmount = intPreference("detailsBackgroundBlurAmount", 10)
-		val browsingBackgroundBlurAmount = intPreference("browsingBackgroundBlurAmount", 10)
+		val detailsBackgroundBlurAmount = intPreference("detailsBackgroundBlurAmount", FixedLook.BLUR)
+		val browsingBackgroundBlurAmount = intPreference("browsingBackgroundBlurAmount", FixedLook.BLUR)
 
 		// Rating settings
 		val enableAdditionalRatings = booleanPreference("enableAdditionalRatings", false)
@@ -330,5 +330,8 @@ class UserSettingPreferences(
 				putString(enabledRatings.key, newEnabledRatings)
 			}
 		}
+
+		// The global store shares the default preferences with UserPreferences
+		if (userId == null) FixedLook.forgetChoices(sharedPreferences)
 	}
 }

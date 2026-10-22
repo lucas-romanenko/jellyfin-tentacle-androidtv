@@ -151,6 +151,9 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     // Programmes of a page are on their way (paging, a new day): the rows are about to be replaced
     private boolean mProgramsLoading = false;
     private int mProgramsToken = 0;
+    private ObservableHorizontalScrollView mProgramHScroller;
+    // Where the guide was when it was left (onPause): the next load comes back there
+    @Nullable private GuidePlace mPlace;
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -251,6 +254,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         mChannelScroller.setFocusable(false);
         mChannelScroller.setFocusableInTouchMode(false);
         ObservableHorizontalScrollView programHScroller = binding.programHScroller;
+        mProgramHScroller = programHScroller;
         programHScroller.setScrollViewListener(new HorizontalScrollViewListener() {
             @Override
             public void onScrollChanged(ObservableHorizontalScrollView scrollView, int x, int y, int oldx, int oldy) {
@@ -291,7 +295,9 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             mFirstScreenLogged = false;
             android.util.Log.i("GuideTiming", "load at " + mLoadStartMs);
         }
-        mCurrentGuideStart = GuideModel.guideStartFor(LocalDateTime.now());
+        // Back from a channel: the hours page it was on, when that hasn't gone by
+        GuidePlace place = pendingPlace();
+        mCurrentGuideStart = place != null ? GuidePlaces.placeGuideStart(place, LocalDateTime.now()) : GuideModel.guideStartFor(LocalDateTime.now());
         fillTimeLine(mCurrentGuideStart, getGuideHours());
         mSpinner.setVisibility(View.VISIBLE);
         mEmptyFavorites.setVisibility(View.GONE);
@@ -395,8 +401,13 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             return;
         }
 
+        // Back from a channel: the page it was on, when the channel to focus is on it
+        GuidePlace place = pendingPlace();
+        Integer placed = place != null ? GuidePlaces.placePageStart(idsOf(channels), place, GuidePlaces.placeFocus(place, TvManager.getLastLiveTvChannel()), pageSize) : null;
         int start;
-        if (lastNdx >= pageSize) {
+        if (placed != null) {
+            start = placed;
+        } else if (lastNdx >= pageSize) {
             // last channel is not in first page so grab a set where it will be in the middle
             start = lastNdx - (pageSize / 2);
         } else {
@@ -434,6 +445,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         if (view == mView) return;
         mView = view;
         TvManagerHelperKt.saveGuideView(this, view);
+        mPlace = null;
         mFirstFocusChannelId = TvManager.getLastLiveTvChannel();
         mKeepHeaderFocus = true;
         updateToggle();
@@ -521,7 +533,11 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
 
         // Back in front (from the player, another screen, the TV's home): a change meanwhile wasn't
         // heard, so the channels are read once and only what differs changes
-        if (!doLoad() && mLiveUpdates != null) mLiveUpdates.relist();
+        if (!doLoad()) {
+            // Still as it was (the rows stayed): nothing to come back to
+            mPlace = null;
+            if (mLiveUpdates != null) mLiveUpdates.relist();
+        }
         mHandler.removeCallbacks(mNowTick);
         mHandler.postDelayed(mNowTick, 60_000);
     }
@@ -534,7 +550,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         if (TvManager.shouldForceReload() || mCurrentGuideStart.plusMinutes(30).isBefore(LocalDateTime.now()) || mChannels.getChildCount() == 0) {
             load();
 
-            mFirstFocusChannelId = TvManager.getLastLiveTvChannel();
+            GuidePlace place = pendingPlace();
+            mFirstFocusChannelId = place != null ? GuidePlaces.placeFocus(place, TvManager.getLastLiveTvChannel()) : TvManager.getLastLiveTvChannel();
             return true;
         }
         return false;
@@ -545,6 +562,9 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         super.onPause();
 
         mHandler.removeCallbacks(mNowTick);
+        // Leaving (a channel, a programme's page): kept to come back to (see GuidePlace)
+        GuidePlace place = currentPlace();
+        if (place != null) mPlace = place;
         if (mDisplayProgramsTask != null && mDisplayProgramsTask.getStatus() != AsyncTask.Status.FINISHED) {
             mDisplayProgramsTask.cancel(true);
             // Its rows are only added when it finishes: leave the guide empty so onResume reloads it
@@ -892,6 +912,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
                 firstFocusView.requestFocus();
             }
             mKeepHeaderFocus = false;
+            if (pendingPlace() != null) restorePlace();
 
             onFirstScreen(displayedChannels);
             timing("whole page on screen: " + displayedChannels + " rows");
@@ -1086,6 +1107,75 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             if (chip != null) chip.requestFocus();
             else mViewFavorites.requestFocus();
         }
+    }
+
+    /** The place kept when the guide was left, for the view it shows; null when there is none. */
+    @Nullable
+    private GuidePlace pendingPlace() {
+        return mPlace != null && mPlace.getView() == mView ? mPlace : null;
+    }
+
+    /** Where the guide is (see GuidePlace); null when it shows no channel rows. */
+    @Nullable
+    private GuidePlace currentPlace() {
+        if (mView == null || mAllChannels == null || mChannels == null || mProgramVScroller == null || mProgramHScroller == null) return null;
+        int y = mProgramVScroller.getScrollY();
+        UUID topId = null;
+        int offset = 0;
+        for (int i = 0; i < mChannels.getChildCount(); i++) {
+            View header = mChannels.getChildAt(i);
+            if (header instanceof GuideChannelHeader && header.getBottom() > y) {
+                topId = ((GuideChannelHeader) header).getChannel().getId();
+                offset = y - header.getTop();
+                break;
+            }
+        }
+        if (topId == null) return null;
+        LocalDateTime left = mCurrentGuideStart.plusMinutes(guideRowWidthPerMinPx > 0 ? mProgramHScroller.getScrollX() / guideRowWidthPerMinPx : 0);
+        UUID pageStart = mCurrentDisplayChannelStartNdx >= 0 && mCurrentDisplayChannelStartNdx < mAllChannels.size()
+                ? mAllChannels.get(mCurrentDisplayChannelStartNdx).getId() : null;
+        UUID focus = mSelectedProgram != null ? mSelectedProgram.getChannelId() : null;
+        return new GuidePlace(mView, mCurrentGuideStart, pageStart, topId, offset, left,
+                GuidePlaces.placeAtNow(left, LocalDateTime.now()), focus, TvManager.getLastLiveTvChannel());
+    }
+
+    /**
+     * Back where the guide was left, once the page's rows are laid out: the same rows and time in
+     * view, focus on the channel played last (Channel Up / Down in the player included).
+     */
+    private void restorePlace() {
+        final GuidePlace place = mPlace;
+        mPlace = null;
+        if (place == null || mProgramVScroller == null) return;
+        final UUID focusId = GuidePlaces.placeFocus(place, TvManager.getLastLiveTvChannel());
+        mProgramRows.post(() -> {
+            if (!isAdded() || mProgramVScroller == null) return;
+            Integer topRowTop = null;
+            Integer focusRowTop = null;
+            LinearLayout focusRow = null;
+            for (int i = 0; i < mChannels.getChildCount() && i < mProgramRows.getChildCount(); i++) {
+                View header = mChannels.getChildAt(i);
+                if (!(header instanceof GuideChannelHeader)) continue;
+                UUID id = ((GuideChannelHeader) header).getChannel().getId();
+                if (id.equals(place.getTopId())) topRowTop = header.getTop();
+                if (id.equals(focusId) && mProgramRows.getChildAt(i) instanceof LinearLayout) {
+                    focusRowTop = header.getTop();
+                    focusRow = (LinearLayout) mProgramRows.getChildAt(i);
+                }
+            }
+            final int x = GuidePlaces.placeScrollX(place, mCurrentGuideStart, guideRowWidthPerMinPx);
+            final int y = GuidePlaces.placeScrollY(topRowTop, place.getTopOffset(), focusRowTop, guideRowHeightPx, mProgramVScroller.getHeight());
+            if (focusRow != null) {
+                LocalDateTime at = place.getAtNow() ? LocalDateTime.now() : mCurrentGuideStart.plusMinutes(guideRowWidthPerMinPx > 0 ? x / guideRowWidthPerMinPx : 0);
+                cellAt(focusRow, at).requestFocus();
+            }
+            // After the scroll the focus asked for (it runs at the next layout)
+            mProgramRows.post(() -> {
+                if (!isAdded() || mProgramVScroller == null) return;
+                mProgramVScroller.scrollTo(0, y);
+                mProgramHScroller.scrollTo(x, 0);
+            });
+        });
     }
 
     /** The cell of [row] at [time] (the one on then), else its first. */
@@ -1358,8 +1448,12 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
                 start = getCurrentLocalStartDate();
             }
 
-            if (start.isBefore(prevEnd))
-                continue;
+            if (start.isBefore(prevEnd)) {
+                // Programmes that overlap (a guide merged from several sources): a later one
+                // starts where the last ended, or isn't drawn when nothing of it is left
+                if (item.getEndDate() == null || !item.getEndDate().isAfter(prevEnd)) continue;
+                start = prevEnd;
+            }
 
             if (start.isAfter(prevEnd)) {
                 // fill empty time slot

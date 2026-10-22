@@ -1,6 +1,7 @@
 package org.jellyfin.androidtv
 
 import android.app.Application
+import android.content.ComponentCallbacks2
 import android.content.Context
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.lifecycleScope
@@ -19,7 +20,9 @@ import org.jellyfin.androidtv.util.apiclient.ioCall
 import org.jellyfin.androidtv.auth.repository.ServerRepository
 import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.data.eventhandling.SocketHandler
+import org.jellyfin.androidtv.data.repository.MdbListRepository
 import org.jellyfin.androidtv.data.repository.NotificationsRepository
+import org.jellyfin.androidtv.ui.composable.item.CardPreviewPlayer
 import org.jellyfin.androidtv.data.service.SelfUpdateMode
 import org.jellyfin.androidtv.data.service.UpdateCheckerService
 import org.jellyfin.androidtv.integration.LeanbackChannelWorker
@@ -43,6 +46,18 @@ class JellyfinApplication : Application(), SingletonImageLoader.Factory {
 		val notificationsRepository by inject<NotificationsRepository>()
 		notificationsRepository.addDefaultNotifications()
 		HomeTiming.mark("Application onCreate done")
+	}
+
+	/**
+	 * Low memory (a 2 GB TV with other apps open): let go of what can be loaded again. Coil
+	 * trims its own memory cache through its system callbacks.
+	 */
+	override fun onTrimMemory(level: Int) {
+		super.onTrimMemory(level)
+		if (level < ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) return
+		CardPreviewPlayer.releaseIfIdle()
+		val mdbListRepository by inject<MdbListRepository>()
+		mdbListRepository.clearCache()
 	}
 
 	/**

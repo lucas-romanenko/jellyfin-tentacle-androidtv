@@ -13,6 +13,7 @@ import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import coil3.ImageLoader
 import coil3.asImage
+import coil3.request.Disposable
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import coil3.request.target
@@ -43,6 +44,11 @@ class AsyncImageView @JvmOverloads constructor(
 	private val styledAttributes = context.obtainStyledAttributes(attrs, R.styleable.AsyncImageView, defStyleAttr, 0)
 	private val imageLoader by inject<ImageLoader>()
 	private var loadJob: Job? = null
+	private var loadGeneration = 0
+	// The request Coil is running for this view, so a recycled card can drop it (clear).
+	@Volatile
+	private var inFlight: Disposable? = null
+	private val isLowRamDevice by lazy { context.getSystemService<ActivityManager>()?.isLowRamDevice == true }
 
 	/**
 	 * The duration of the crossfade when changing switching the images of the url, blurhash and
@@ -69,7 +75,19 @@ class AsyncImageView @JvmOverloads constructor(
 		placeholder: Drawable? = null,
 		aspectRatio: Double = 1.0,
 		blurHashResolution: Int = 32,
-	) = doOnAttach {
+	) {
+		// A load waiting for attach is dropped when a newer load or clear() comes first.
+		val generation = ++loadGeneration
+		doOnAttach { if (generation == loadGeneration) start(url, blurHash, placeholder, aspectRatio, blurHashResolution) }
+	}
+
+	private fun start(
+		url: String?,
+		blurHash: String?,
+		placeholder: Drawable?,
+		aspectRatio: Double,
+		blurHashResolution: Int,
+	) {
 		// Cancel the previous load if still running
 		loadJob?.cancel()
 
@@ -77,7 +95,6 @@ class AsyncImageView @JvmOverloads constructor(
 			var placeholderOrBlurHash = placeholder
 
 			// Only show blurhash if an image is going to be loaded from the network
-			val isLowRamDevice = context.getSystemService<ActivityManager>()?.isLowRamDevice == true
 			if (url != null && blurHash != null && !isLowRamDevice) withContext(Dispatchers.IO) {
 				val blurHashBitmap = BlurHashDecoder.decode(
 					blurHash,
@@ -115,7 +132,22 @@ class AsyncImageView @JvmOverloads constructor(
 				}.build()
 			}
 
-			imageLoader.enqueue(request).job.await()
+			val disposable = imageLoader.enqueue(request)
+			inFlight = disposable
+			disposable.job.await()
 		}
+	}
+
+	/**
+	 * Drop the image and any load still running, without starting a new one: a card going back
+	 * to the pool must not have an old poster land on it later.
+	 */
+	fun clear() {
+		loadGeneration++
+		loadJob?.cancel()
+		loadJob = null
+		inFlight?.dispose()
+		inFlight = null
+		setImageDrawable(null)
 	}
 }

@@ -39,7 +39,7 @@ import org.jellyfin.androidtv.ui.base.ProvideTextStyle
 import org.jellyfin.androidtv.ui.base.Text
 import org.jellyfin.androidtv.ui.base.button.ButtonBase
 import org.jellyfin.androidtv.ui.composable.AsyncImage
-import org.jellyfin.androidtv.ui.composable.rememberPlayerProgress
+import org.jellyfin.androidtv.ui.composable.rememberPlayerProgressState
 import org.jellyfin.androidtv.ui.composable.rememberQueueEntry
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
@@ -67,7 +67,7 @@ fun NowPlayingComposable(
 
 	val entry by rememberQueueEntry(playbackManager)
 	val item = entry?.run { baseItemFlow.collectAsState(baseItem) }?.value
-	val progress = rememberPlayerProgress(playbackManager)
+	val progress = rememberPlayerProgressState(playbackManager)
 
 	LaunchedEffect(item == null) { onFocusableChange(item != null) }
 
@@ -121,7 +121,7 @@ fun NowPlayingComposable(
 										color = progressFillColor,
 										useCenter = false,
 										startAngle = -90f,
-										sweepAngle = 360f * progress,
+										sweepAngle = 360f * progress.value,
 									)
 								},
 							scaleType = ImageView.ScaleType.CENTER_CROP,

@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.ui.base
 
+import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -37,10 +38,12 @@ fun focusBorderColor(): Color {
 	val currentUser by userRepository.currentUser.collectAsState()
 	val userId: UUID? = currentUser?.id
 
-	return remember(userId) {
-		focusColorByUser.getOrPut(userId?.toString() ?: "") {
-			val prefs = UserSettingPreferences(context.applicationContext, userId)
-			Color(prefs[UserSettingPreferences.focusColor].colorValue)
-		}
-	}
+	return remember(userId) { focusBorderColorFor(context, userId) }
 }
+
+/** [focusBorderColor] outside Compose (the View-based cards), from the same per-user cache. */
+fun focusBorderColorFor(context: Context, userId: UUID?): Color =
+	focusColorByUser.getOrPut(userId?.toString() ?: "") {
+		val prefs = UserSettingPreferences(context.applicationContext, userId)
+		Color(prefs[UserSettingPreferences.focusColor].colorValue)
+	}

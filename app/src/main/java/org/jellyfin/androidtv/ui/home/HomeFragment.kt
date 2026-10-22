@@ -362,6 +362,10 @@ class HomeFragment : Fragment() {
 			.launchIn(viewLifecycleOwner.lifecycleScope)
 	}
 
+	// What the hero's backdrop and logo views show, so an unchanged slide isn't loaded again.
+	private var shownBackdropUrl: String? = null
+	private var shownLogoUrl: String? = null
+
 	private fun updateMediaBarBackground() {
 		val state = mediaBarViewModel.state.value
 		val shouldShowMediaBar = shouldShowMediaBar()
@@ -372,7 +376,11 @@ class HomeFragment : Fragment() {
 			val backdropUrl = currentItem?.backdropUrl
 			val logoUrl = currentItem?.logoUrl
 
-			if (backdropUrl != null) {
+			if (backdropUrl != null && backdropUrl == shownBackdropUrl && backgroundImage?.isVisible == true) {
+				// Same slide again (a row change, a focus or playback-state emission): keep it,
+				// no new full-screen decode and crossfade.
+			} else if (backdropUrl != null) {
+				shownBackdropUrl = backdropUrl
 				backgroundImage?.isVisible = true
 				backgroundImage?.load(backdropUrl) {
 					// First composition happens behind the loading overlay — render it
@@ -388,6 +396,7 @@ class HomeFragment : Fragment() {
 					})
 				}
 			} else {
+				shownBackdropUrl = null
 				backgroundImage?.isVisible = false
 				// Only release the overlay when the current SLIDE genuinely has no
 				// backdrop. currentItem can be transiently null right as the state
@@ -396,12 +405,16 @@ class HomeFragment : Fragment() {
 				if (currentItem != null) heroBackdropDrawn.value = true
 			}
 
-			if (logoUrl != null) {
+			if (logoUrl != null && logoUrl == shownLogoUrl && logoView?.isVisible == true) {
+				// Same logo: nothing to do.
+			} else if (logoUrl != null) {
+				shownLogoUrl = logoUrl
 				logoView?.isVisible = true
 				logoView?.load(logoUrl) {
 					crossfade(300)
 				}
 			} else {
+				shownLogoUrl = null
 				logoView?.isVisible = false
 			}
 
@@ -413,6 +426,8 @@ class HomeFragment : Fragment() {
 			mediaBarViewModel.stopTrailer()
 			trailerWebView?.isVisible = false
 
+			shownBackdropUrl = null
+			shownLogoUrl = null
 			backgroundImage?.isVisible = false
 			logoView?.isVisible = false
 			titleView?.isVisible = true
@@ -558,6 +573,8 @@ class HomeFragment : Fragment() {
 		summaryView = null
 		infoRowView = null
 		backgroundImage = null
+		shownBackdropUrl = null
+		shownLogoUrl = null
 		trailerWebView = null
 		rowsFragment = null
 	}

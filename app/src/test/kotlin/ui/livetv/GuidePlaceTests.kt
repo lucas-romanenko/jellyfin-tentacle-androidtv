@@ -65,8 +65,9 @@ class GuidePlaceTests : FunSpec({
 		placeScrollY(topRowTop = 3600, topOffset = 20, focusRowTop = 3900, rowHeight = 100, viewHeight = 600) shouldBe 3620
 		// focus far below (Channel Up a lot): it in the middle
 		placeScrollY(topRowTop = 3600, topOffset = 20, focusRowTop = 6000, rowHeight = 100, viewHeight = 600) shouldBe 5750
-		// the top row went: the focused one in the middle
-		placeScrollY(topRowTop = null, topOffset = 20, focusRowTop = 500, rowHeight = 100, viewHeight = 600) shouldBe 250
+		// the top row went: from the top, the focused one in the middle when it is below the screen
+		placeScrollY(topRowTop = null, topOffset = 20, focusRowTop = 400, rowHeight = 100, viewHeight = 600) shouldBe 0
+		placeScrollY(topRowTop = null, topOffset = 20, focusRowTop = 900, rowHeight = 100, viewHeight = 600) shouldBe 650
 		placeScrollY(topRowTop = null, topOffset = 0, focusRowTop = null, rowHeight = 100, viewHeight = 600) shouldBe 0
 	}
 })

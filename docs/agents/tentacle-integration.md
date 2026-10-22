@@ -173,6 +173,15 @@ The code wins where they differ.
   `pendingNotifications` (a StateFlow), which `HomeFragment` shows as toasts
   (its heading adds "for <name>" from the notification's `for`);
   `dismissNotification(id)`. Home polls every 15 s while shown, plus the push.
+- **YouTube videos** (`util/sdk/TentacleYouTube.kt`, `TentacleYouTubeTests`):
+  Tentacle writes each one as a Movie (genre `YouTube`, tag `youtube`,
+  provider id `youtube`, studio = channel, path
+  `<root>/<Channel>/<YYYY-MM-DD Title [id]>/…strm`). `isTentacleYouTube`
+  takes any of these, since each screen asks different fields (Tentacle rows
+  have only Genres and Path); every card subtitle and meta line (cards'
+  `getSubName`, home info row, hero, library grid and HUD, search, genre and
+  favourites browse, details) shows `youTubeSubtitle`, "YouTube · <channel>"
+  (studio, else the channel folder), or nothing, never "Movie • 2026".
 - **Preferences** (`preference/UserSettingPreferences.kt`): media bar
   `mediaBarEnabled`, `mediaBarSourceType` (`"plugin"` = the Tentacle hero
   playlist only, no random fallback), `mediaBarContentType`,

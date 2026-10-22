@@ -305,13 +305,16 @@ private fun MediaInfoOverlay(
 			// Metadata + genres row
 			val context = LocalContext.current
 			val infoParts = buildList {
-				item.year?.let { add(it.toString()) }
+				// A Tentacle YouTube video: "YouTube · <channel>" (or nothing), not its year and genre
+				if (item.youTube) item.youTubeSubtitle?.let { add(it) }
+				else item.year?.let { add(it.toString()) }
 				item.rating?.let { add(it) }
 				if (item.itemType != BaseItemKind.SERIES) {
 					item.runtime?.let { add(TimeUtils.formatRuntimeHoursMinutes(context, it)) }
 				}
-				if (item.genres.isNotEmpty()) {
-					add(item.genres.joinToString(" • "))
+				val genres = if (item.youTube) item.genres.filterNot { it.equals("YouTube", ignoreCase = true) } else item.genres
+				if (genres.isNotEmpty()) {
+					add(genres.joinToString(" • "))
 				}
 			}
 			if (infoParts.isNotEmpty()) {

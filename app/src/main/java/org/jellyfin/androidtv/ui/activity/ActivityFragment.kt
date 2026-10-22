@@ -194,6 +194,7 @@ class ActivityFragment : Fragment() {
 					val unreleased = activity?.unreleased.orEmpty()
 					val comingUp = activity?.comingUp.orEmpty()
 					val problems = activity?.problems.orEmpty()
+					val forNames = activity?.forNames == true
 					// Set when the server could not ask Tentacle (busy, not set up) —
 					// an empty list then means "unknown", not "nothing happening".
 					val unavailable = activity?.message?.takeIf { !activity?.error.isNullOrBlank() }
@@ -227,27 +228,27 @@ class ActivityFragment : Fragment() {
 							}
 							if (downloads.isNotEmpty()) {
 								item(key = "downloads") {
-									DownloadsRow(downloads)
+									DownloadsRow(downloads, forNames)
 								}
 							}
 							if (searching.isNotEmpty()) {
 								item(key = "searching") {
-									SearchingRow(searching) { actionItem = it }
+									SearchingRow(searching, forNames) { actionItem = it }
 								}
 							}
 							if (recentlyDownloaded.isNotEmpty()) {
 								item(key = "recently_downloaded") {
-									RecentlyDownloadedRow(recentlyDownloaded) { jellyfinId ->
+									RecentlyDownloadedRow(recentlyDownloaded, forNames) { jellyfinId ->
 										navigationRepository.navigate(Destinations.itemDetails(jellyfinId))
 									}
 								}
 							}
 							if (comingUp.isNotEmpty()) {
-								item(key = "coming_up") { ComingUpRow(comingUp) }
+								item(key = "coming_up") { ComingUpRow(comingUp, forNames) }
 							}
 							if (unreleased.isNotEmpty()) {
 								item(key = "unreleased") {
-									UnreleasedRow(unreleased)
+									UnreleasedRow(unreleased, forNames)
 								}
 							}
 						}
@@ -288,7 +289,7 @@ class ActivityFragment : Fragment() {
 }
 
 @Composable
-private fun DownloadsRow(downloads: List<ActivityDownload>) {
+private fun DownloadsRow(downloads: List<ActivityDownload>, forNames: Boolean) {
 	Column(modifier = Modifier.focusGroup()) {
 		Text(
 			text = "Downloading",
@@ -307,14 +308,14 @@ private fun DownloadsRow(downloads: List<ActivityDownload>) {
 			// uses separate id spaces for movies and series, so the two can
 			// collide) and neither is tmdbId+episode.
 			itemsIndexed(downloads, key = { index, it -> "$index:${it.tmdbId}:${it.episode}" }) { _, download ->
-				DownloadCard(download)
+				DownloadCard(download, forNames)
 			}
 		}
 	}
 }
 
 @Composable
-private fun DownloadCard(download: ActivityDownload) {
+private fun DownloadCard(download: ActivityDownload, forNames: Boolean) {
 	var isFocused by remember { mutableStateOf(false) }
 
 	Column(
@@ -477,12 +478,14 @@ private fun DownloadCard(download: ActivityDownload) {
 				overflow = TextOverflow.Ellipsis,
 			)
 		}
+		ForLine(forLabel(forNames, download.forName))
 	}
 }
 
 @Composable
 private fun RecentlyDownloadedRow(
 	items: List<ActivityRecentlyDownloaded>,
+	forNames: Boolean,
 	onNavigate: (UUID) -> Unit,
 ) {
 	Column(modifier = Modifier.focusGroup()) {
@@ -499,7 +502,7 @@ private fun RecentlyDownloadedRow(
 			horizontalArrangement = Arrangement.spacedBy(16.dp),
 		) {
 			itemsIndexed(items, key = { index, it -> "$index:${it.tmdbId}" }) { _, item ->
-				RecentlyDownloadedCard(item, onNavigate)
+				RecentlyDownloadedCard(item, forNames, onNavigate)
 			}
 		}
 	}
@@ -508,6 +511,7 @@ private fun RecentlyDownloadedRow(
 @Composable
 private fun RecentlyDownloadedCard(
 	item: ActivityRecentlyDownloaded,
+	forNames: Boolean,
 	onNavigate: (UUID) -> Unit,
 ) {
 	var isFocused by remember { mutableStateOf(false) }
@@ -620,6 +624,7 @@ private fun RecentlyDownloadedCard(
 				overflow = TextOverflow.Ellipsis,
 			)
 		}
+		ForLine(forLabel(forNames, item.forName))
 	}
 
 }
@@ -641,7 +646,7 @@ private fun waitedFor(iso: String?): String {
 }
 
 @Composable
-private fun SearchingRow(searching: List<ActivitySearching>, onOpen: (ActivitySearching) -> Unit) {
+private fun SearchingRow(searching: List<ActivitySearching>, forNames: Boolean, onOpen: (ActivitySearching) -> Unit) {
 	Column(modifier = Modifier.focusGroup()) {
 		Text(
 			text = "Searching",
@@ -656,7 +661,7 @@ private fun SearchingRow(searching: List<ActivitySearching>, onOpen: (ActivitySe
 			horizontalArrangement = Arrangement.spacedBy(16.dp),
 		) {
 			itemsIndexed(searching, key = { index, it -> "$index:${it.mediaType}:${it.tmdbId}:${it.tvdbId}" }) { _, item ->
-				SearchingCard(item) { onOpen(item) }
+				SearchingCard(item, forNames) { onOpen(item) }
 			}
 		}
 	}
@@ -664,7 +669,7 @@ private fun SearchingRow(searching: List<ActivitySearching>, onOpen: (ActivitySe
 
 /** A requested title the arrs are still looking for a release of. */
 @Composable
-private fun SearchingCard(item: ActivitySearching, onClick: () -> Unit) {
+private fun SearchingCard(item: ActivitySearching, forNames: Boolean, onClick: () -> Unit) {
 	var isFocused by remember { mutableStateOf(false) }
 	val waited = remember(item.waitingSince) { waitedFor(item.waitingSince) }
 
@@ -753,7 +758,7 @@ private fun SearchingCard(item: ActivitySearching, onClick: () -> Unit) {
 		}
 
 		val sub = listOf(item.episode, item.year).firstOrNull { it.isNotBlank() }.orEmpty()
-		val requester = item.requestedBy?.takeIf { it.isNotBlank() }
+		val requester = forLabel(forNames, item.forName, item.requestedBy)
 		val line = listOfNotNull(sub.takeIf { it.isNotBlank() }, requester).joinToString(" \u00b7 ")
 		if (line.isNotBlank()) {
 			Text(
@@ -803,7 +808,7 @@ private fun airDay(iso: String?): String = try {
 }
 
 @Composable
-private fun ComingUpRow(items: List<ActivityComingUp>) {
+private fun ComingUpRow(items: List<ActivityComingUp>, forNames: Boolean) {
 	Column(modifier = Modifier.focusGroup()) {
 		Text(
 			text = "Coming up this week",
@@ -817,14 +822,14 @@ private fun ComingUpRow(items: List<ActivityComingUp>) {
 			horizontalArrangement = Arrangement.spacedBy(16.dp),
 		) {
 			itemsIndexed(items, key = { index, it -> "$index:${it.tmdbId}:${it.episode}" }) { _, item ->
-				ComingUpCard(item)
+				ComingUpCard(item, forNames)
 			}
 		}
 	}
 }
 
 @Composable
-private fun ComingUpCard(item: ActivityComingUp) {
+private fun ComingUpCard(item: ActivityComingUp, forNames: Boolean) {
 	var isFocused by remember { mutableStateOf(false) }
 	val day = remember(item.airDateUtc) { airDay(item.airDateUtc) }
 	Column(
@@ -870,11 +875,12 @@ private fun ComingUpCard(item: ActivityComingUp) {
 			maxLines = 1,
 			overflow = TextOverflow.Ellipsis,
 		)
+		ForLine(forLabel(forNames, item.forName))
 	}
 }
 
 @Composable
-private fun UnreleasedRow(unreleased: List<ActivityUnreleased>) {
+private fun UnreleasedRow(unreleased: List<ActivityUnreleased>, forNames: Boolean) {
 	Column(modifier = Modifier.focusGroup()) {
 		Text(
 			text = "Upcoming Releases",
@@ -889,14 +895,14 @@ private fun UnreleasedRow(unreleased: List<ActivityUnreleased>) {
 			horizontalArrangement = Arrangement.spacedBy(16.dp),
 		) {
 			itemsIndexed(unreleased, key = { index, it -> "$index:${it.tmdbId}:${it.title}" }) { _, item ->
-				UnreleasedCard(item)
+				UnreleasedCard(item, forNames)
 			}
 		}
 	}
 }
 
 @Composable
-private fun UnreleasedCard(item: ActivityUnreleased) {
+private fun UnreleasedCard(item: ActivityUnreleased, forNames: Boolean) {
 	var isFocused by remember { mutableStateOf(false) }
 
 	val countdown = remember(item.releaseDate) {
@@ -1018,9 +1024,31 @@ private fun UnreleasedCard(item: ActivityUnreleased) {
 				color = Color.White.copy(alpha = 0.5f),
 			)
 		}
+		ForLine(forLabel(forNames, item.forName))
 	}
 }
 
+/** A card's "for <name>" line, in the style of its other small lines; nothing without a label. */
+@Composable
+private fun ForLine(label: String?) {
+	if (label == null) return
+	Text(
+		text = label,
+		fontSize = 11.sp,
+		color = Color.White.copy(alpha = 0.5f),
+		maxLines = 1,
+		overflow = TextOverflow.Ellipsis,
+	)
+}
+
+/**
+ * Who a card is for: "for <name>" when the server names other people's items
+ * ([ActivityResponse.forNames]) and this one has a `for`; nothing for the viewer's own. An older
+ * server names nobody: then the requester it sends (Searching only) shows as before.
+ */
+internal fun forLabel(forNames: Boolean, forName: String?, requestedBy: String? = null): String? =
+	if (forNames) forName?.takeIf { it.isNotBlank() }?.let { "for $it" }
+	else requestedBy?.takeIf { it.isNotBlank() }
 
 /**
  * Search again / stop looking / remove for a title still in "Searching" — what

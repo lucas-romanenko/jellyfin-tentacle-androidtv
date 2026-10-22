@@ -10,6 +10,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.launchIn
@@ -19,8 +20,10 @@ import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.auth.repository.ServerRepository
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.data.model.DataRefreshService
+import org.jellyfin.androidtv.data.repository.ActivityPoller
 import org.jellyfin.androidtv.data.repository.HomeChange
 import org.jellyfin.androidtv.data.repository.HomeVersionTracker
+import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.data.repository.homePushFrom
 import org.jellyfin.androidtv.data.syncplay.SyncPlayManager
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
@@ -47,6 +50,7 @@ import org.jellyfin.sdk.model.api.MediaType
 import org.jellyfin.sdk.model.api.PlayMessage
 import org.jellyfin.sdk.model.api.PlaystateCommand
 import org.jellyfin.sdk.model.api.PlaystateMessage
+import org.jellyfin.sdk.model.api.RefreshProgressMessage
 import org.jellyfin.sdk.model.api.SyncPlayCommandMessage
 import org.jellyfin.sdk.model.api.SyncPlayGroupUpdateMessage
 import org.jellyfin.sdk.model.extensions.get
@@ -77,6 +81,8 @@ class SocketHandler(
 	private val serverRepository: ServerRepository,
 	private val sessionRepository: SessionRepository,
 	private val homeVersionTracker: HomeVersionTracker,
+	private val activityPoller: ActivityPoller,
+	private val tentacleRepository: TentacleRepository,
 ) {
 	// The socket was connected once and then lost: its next Connected is a reconnect.
 	@Volatile
@@ -144,8 +150,19 @@ class SocketHandler(
 	}
 
 	private fun subscribeJellyfin(coroutineScope: CoroutineScope) = api.webSocket.apply {
+		// Tentacle's notifications, fetched at once when it says they changed. Conflated: a burst
+		// of pushes while one fetch runs makes one more fetch, not one each.
+		val notificationFetches = Channel<Unit>(Channel.CONFLATED)
+		coroutineScope.launch {
+			while (isActive) {
+				notificationFetches.receive()
+				tentacleRepository.pollNotifications()
+			}
+		}
+
 		// A push sent while the socket was down is lost (H3): Home and the navbar check the
-		// home version again once it is back. The SDK reconnects by itself while subscribed.
+		// home version again once it is back, and Tentacle's activity and notifications are
+		// asked for at once. The SDK reconnects by itself while subscribed.
 		state
 			.onEach { state ->
 				when (state) {
@@ -153,6 +170,8 @@ class SocketHandler(
 						if (socketLost) {
 							Timber.i("WebSocket reconnected")
 							homeVersionTracker.onReconnected()
+							activityPoller.pollNow()
+							notificationFetches.trySend(Unit)
 						}
 						socketLost = false
 						socketConnectedOnce = true
@@ -176,6 +195,28 @@ class SocketHandler(
 					Timber.w(e, "WS: LibraryChanged subscription error")
 				}
 				Timber.w("WS: LibraryChanged subscription ended — resubscribing in 5s")
+				delay(5.seconds)
+			}
+		}
+
+		// Tentacle's push: its requests, activity or notifications changed (Jellyfin's own
+		// RefreshProgress, for library scans, carries a real item id and is ignored). The polls
+		// stay as the fallback for a push that never comes. Resubscribes like LibraryChanged.
+		coroutineScope.launch {
+			while (isActive) {
+				try {
+					subscribe<RefreshProgressMessage>().collect { message ->
+						val topics = tentaclePushTopics(message.data) ?: return@collect
+						Timber.d("Tentacle push: %s", topics)
+						if ("activity" in topics || "requests" in topics) activityPoller.pollNow()
+						if ("notifications" in topics) notificationFetches.trySend(Unit)
+					}
+				} catch (e: CancellationException) {
+					throw e
+				} catch (e: Exception) {
+					Timber.w(e, "WS: RefreshProgress subscription error")
+				}
+				Timber.w("WS: RefreshProgress subscription ended — resubscribing in 5s")
 				delay(5.seconds)
 			}
 		}
@@ -483,4 +524,14 @@ class SocketHandler(
 		val data = message.data ?: return
 		syncPlayManager.onGroupUpdate(data)
 	}
+}
+
+/**
+ * The topics of a Tentacle push (requests, activity, notifications), or null when the
+ * RefreshProgress is not Tentacle's. The plugin sends ItemId "tentacle" and the changed topics
+ * comma-separated in "Tentacle".
+ */
+internal fun tentaclePushTopics(data: Map<String, String>?): Set<String>? {
+	if (data == null || data["ItemId"] != "tentacle") return null
+	return data["Tentacle"].orEmpty().split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
 }

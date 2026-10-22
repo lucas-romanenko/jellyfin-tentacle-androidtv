@@ -662,11 +662,18 @@ private fun NotificationToast(
 	}
 }
 
-/** The toast's heading: what the message is about. Without a kind (older servers) it's a download. */
-internal fun notificationHeading(notification: TentacleNotification): String = when (notification.kind) {
-	"request" -> "Request"
-	"problem" -> notification.title.ifBlank { "Problem" }
-	else -> "Ready to Watch"
+/**
+ * The toast's heading: what the message is about, and whose it is when it's someone else's
+ * ("Request · for Abbie"). Without a kind (older servers) it's a download.
+ */
+internal fun notificationHeading(notification: TentacleNotification): String {
+	val what = when (notification.kind) {
+		"request" -> "Request"
+		"problem" -> notification.title.ifBlank { "Problem" }
+		else -> "Ready to Watch"
+	}
+	val forName = notification.forName?.takeIf { it.isNotBlank() } ?: return what
+	return "$what \u00b7 for $forName"
 }
 
 internal const val NOTIFICATION_POLL_MS = 15_000L

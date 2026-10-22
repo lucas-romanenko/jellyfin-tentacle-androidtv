@@ -1797,6 +1797,12 @@ data class ActivityResponse(
 	/** Set (with [message]) when the plugin could not ask Tentacle. */
 	val error: String? = null,
 	val message: String? = null,
+	/**
+	 * The server names whose items are someone else's ("for" on each). Older servers send none:
+	 * then only Searching shows its `requested_by`.
+	 */
+	@SerialName("for_names")
+	val forNames: Boolean = false,
 )
 
 @Serializable
@@ -1897,6 +1903,9 @@ data class ActivitySearching(
 	val episodesOnDisk: Int = 0,
 	/** The last release check: why it hasn't downloaded (null until one ran). */
 	val check: ReleaseCheckLine? = null,
+	/** Whose it is, when it's someone else's and [ActivityResponse.forNames] is set. */
+	@SerialName("for")
+	val forName: String? = null,
 )
 
 @Serializable
@@ -1927,6 +1936,9 @@ data class ActivityComingUp(
 	val airDateUtc: String? = null,
 	@SerialName("poster_path")
 	val posterPath: String? = null,
+	/** Whose it is, when it's someone else's and [ActivityResponse.forNames] is set. */
+	@SerialName("for")
+	val forName: String? = null,
 )
 
 /** Radarr/Sonarr's interactive search, summed up — and the releases to pick from. */
@@ -1975,6 +1987,9 @@ data class ActivityRecentlyDownloaded(
 	val hoursRemaining: Int = 24,
 	@SerialName("jellyfin_item_id")
 	val jellyfinItemId: String = "",
+	/** Whose it is, when it's someone else's and [ActivityResponse.forNames] is set. */
+	@SerialName("for")
+	val forName: String? = null,
 )
 
 @Serializable
@@ -1995,6 +2010,9 @@ data class ActivityDownload(
 	val eta: String = "",
 	val quality: String = "",
 	val episode: String = "",
+	/** Whose it is, when it's someone else's and [ActivityResponse.forNames] is set. */
+	@SerialName("for")
+	val forName: String? = null,
 )
 
 @Serializable
@@ -2011,6 +2029,9 @@ data class ActivityUnreleased(
 	@SerialName("release_date")
 	val releaseDate: String = "",
 	val status: String = "",
+	/** Whose it is, when it's someone else's and [ActivityResponse.forNames] is set. */
+	@SerialName("for")
+	val forName: String? = null,
 )
 
 // --- Seasons & Episodes ---
@@ -2123,4 +2144,7 @@ data class TentacleNotification(
 	val createdAt: String? = null,
 	/** "download" (ready to watch), "request" or "problem"; servers before 1.12.1 send none. */
 	val kind: String? = null,
+	/** Whose it is, when it's someone else's (an admin following other people's requests). */
+	@SerialName("for")
+	val forName: String? = null,
 )

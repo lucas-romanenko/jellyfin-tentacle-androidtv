@@ -23,4 +23,10 @@ class NotificationPollTests : FunSpec({
 		notificationHeading(TentacleNotification(title = "Dune", kind = "request")) shouldBe "Request"
 		notificationHeading(TentacleNotification(title = "Live TV is down", kind = "problem")) shouldBe "Live TV is down"
 	}
+
+	test("someone else's notification says whose it is") {
+		notificationHeading(TentacleNotification(title = "Dune", kind = "download", forName = "Abbie")) shouldBe "Ready to Watch \u00b7 for Abbie"
+		notificationHeading(TentacleNotification(title = "Dune", kind = "request", forName = "Abbie")) shouldBe "Request \u00b7 for Abbie"
+		notificationHeading(TentacleNotification(title = "Dune", kind = "request", forName = "")) shouldBe "Request"
+	}
 })

@@ -108,6 +108,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     private boolean mRestLoading = false;
     // All shown from the list read last time: read it again once the first screen is up
     private boolean mRelistAfterPaint = false;
+    // When load() started, for the GuideTiming lines (0: the first screen of this load is logged)
+    private long mLoadStartMs = 0;
     // After Favorites / All, focus stays on the toggle instead of jumping into the grid
     private boolean mKeepHeaderFocus = false;
 
@@ -280,6 +282,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         mPartialList = false;
         mRestLoading = false;
         mRelistAfterPaint = false;
+        if (mLoadStartMs == 0) mLoadStartMs = android.os.SystemClock.uptimeMillis();
         mCurrentGuideStart = GuideModel.guideStartFor(LocalDateTime.now());
         fillTimeLine(mCurrentGuideStart, getGuideHours());
         mSpinner.setVisibility(View.VISIBLE);
@@ -837,6 +840,11 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             }
             mKeepHeaderFocus = false;
 
+            if (mLoadStartMs != 0) {
+                timing("first screen, " + mView + ", " + displayedChannels + " rows" + (mPartialList ? " (first page)" : ""));
+                mLoadStartMs = 0;
+            }
+
             // The first screen is up: now the rest of All, or a fresh read of the stored list
             if (mPartialList && !mRestLoading) loadRestOfChannels(mLoadGeneration);
             if (mRelistAfterPaint) {
@@ -864,7 +872,16 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         });
     }
 
+    /**
+     * Guide load milestones in logcat (tag `GuideTiming`, ms since the load began), in every build:
+     * android.util.Log, as the release build's Timber drops info lines. `adb logcat -s GuideTiming`.
+     */
+    private void timing(String what) {
+        android.util.Log.i("GuideTiming", what + " +" + (android.os.SystemClock.uptimeMillis() - mLoadStartMs) + " ms");
+    }
+
     private void onRestOfChannels(List<BaseItemDto> all) {
+        android.util.Log.i("GuideTiming", "whole All list in, " + all.size() + " channels");
         List<BaseItemDto> page = mAllChannels;
         mPartialList = false;
         mAllCount = all.size();

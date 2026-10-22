@@ -5,6 +5,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.preference.LiveTvPreferences
@@ -21,6 +22,8 @@ import org.jellyfin.sdk.model.api.MediaType
 import org.jellyfin.sdk.model.api.SortOrder
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
 import org.koin.android.ext.android.inject
+import org.koin.java.KoinJavaComponent
+import org.jellyfin.androidtv.auth.repository.SessionRepository
 import timber.log.Timber
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -56,17 +59,77 @@ fun loadLiveTvChannels(fragment: Fragment, callback: (channels: Collection<BaseI
 }
 
 /** Every channel this person can see, in the guide's order (the All view; one request). */
-suspend fun fetchAllGuideChannels(api: ApiClient, liveTvPreferences: LiveTvPreferences): List<BaseItemDto> {
+suspend fun fetchAllGuideChannels(api: ApiClient, liveTvPreferences: LiveTvPreferences): List<BaseItemDto> =
+	fetchGuideChannelPage(api, liveTvPreferences, startIndex = null, limit = null).channels
+
+/** One page of the All view's channels, in the same order as [fetchAllGuideChannels], and how many there are in all. */
+class GuideChannelPage(val channels: List<BaseItemDto>, val total: Int?)
+
+suspend fun fetchGuideChannelPage(
+	api: ApiClient,
+	liveTvPreferences: LiveTvPreferences,
+	startIndex: Int?,
+	limit: Int?,
+): GuideChannelPage {
 	val sortDatePlayed = liveTvPreferences[LiveTvPreferences.channelOrder] == ItemSortBy.DATE_PLAYED.serialName
 	return withContext(Dispatchers.IO) {
-		api.liveTvApi.getLiveTvChannels(
+		val result = api.liveTvApi.getLiveTvChannels(
+			startIndex = startIndex,
+			limit = limit,
 			addCurrentProgram = true,
 			enableFavoriteSorting = liveTvPreferences[LiveTvPreferences.favsAtTop],
 			sortBy = if (sortDatePlayed) setOf(ItemSortBy.DATE_PLAYED) else setOf(ItemSortBy.SORT_NAME),
 			sortOrder = if (sortDatePlayed) SortOrder.DESCENDING else SortOrder.ASCENDING,
-		).content.items
+		).content
+		GuideChannelPage(result.items, result.totalRecordCount)
 	}
 }
+
+/** How many favourite channels this person has (one cheap count, not the list). */
+suspend fun fetchFavoriteChannelCount(api: ApiClient): Int? = withContext(Dispatchers.IO) {
+	api.liveTvApi.getLiveTvChannels(
+		isFavorite = true,
+		limit = 1,
+		addCurrentProgram = false,
+		enableImages = false,
+		enableUserData = false,
+	).content.totalRecordCount
+}
+
+/**
+ * The All view's first screen: its first [pageSize] channels, how many channels there are and how
+ * many are favourites (three small requests at once), so the guide shows before the whole list
+ * (1,700 channels, a megabyte to read on a TV) has come. Null when it failed.
+ */
+fun loadFirstGuidePage(
+	fragment: Fragment,
+	pageSize: Int,
+	callback: (page: List<BaseItemDto>?, allCount: Int?, favoriteCount: Int?) -> Unit,
+) {
+	val liveTvPreferences by fragment.inject<LiveTvPreferences>()
+	val api by fragment.inject<ApiClient>()
+
+	fragment.lifecycleScope.launch {
+		val counts = async { runCatching { fetchFavoriteChannelCount(api) }.getOrNullUnlessCancelled() }
+		val page = runCatching { fetchGuideChannelPage(api, liveTvPreferences, startIndex = 0, limit = pageSize) }.getOrNullUnlessCancelled()
+		callback(page?.channels, page?.total, counts.await())
+	}
+}
+
+/** The whole All list, read after the first screen shows (cancelled with the guide). Null when it failed. */
+fun loadAllGuideChannels(fragment: Fragment, callback: (channels: List<BaseItemDto>?) -> Unit) {
+	val liveTvPreferences by fragment.inject<LiveTvPreferences>()
+	val api by fragment.inject<ApiClient>()
+
+	fragment.lifecycleScope.launch {
+		runCatching { fetchAllGuideChannels(api, liveTvPreferences) }
+			.let { callback(it.getOrNullUnlessCancelled()) }
+	}
+}
+
+/** Who is signed in: the stored channel list is theirs only. */
+fun currentLiveTvUserId(): UUID? =
+	KoinJavaComponent.get<SessionRepository>(SessionRepository::class.java).currentSession.value?.userId
 
 /** This person's favourite channels only, in the guide's order (the Favorites view). */
 suspend fun fetchFavoriteGuideChannels(api: ApiClient, liveTvPreferences: LiveTvPreferences): List<BaseItemDto> {

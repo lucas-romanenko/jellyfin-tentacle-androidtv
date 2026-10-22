@@ -103,6 +103,11 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     private List<LocalDate> mGuideDays = new ArrayList<>();
     // A load started before the last toggle answers into nothing
     private int mLoadGeneration = 0;
+    // All shows its first page before the whole list has come (mAllChannels is that page until then)
+    private boolean mPartialList = false;
+    private boolean mRestLoading = false;
+    // All shown from the list read last time: read it again once the first screen is up
+    private boolean mRelistAfterPaint = false;
     // After Favorites / All, focus stays on the toggle instead of jumping into the grid
     private boolean mKeepHeaderFocus = false;
 
@@ -272,6 +277,9 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     private void load() {
         final int generation = ++mLoadGeneration;
         mProgramsLoading = false;
+        mPartialList = false;
+        mRestLoading = false;
+        mRelistAfterPaint = false;
         mCurrentGuideStart = GuideModel.guideStartFor(LocalDateTime.now());
         fillTimeLine(mCurrentGuideStart, getGuideHours());
         mSpinner.setVisibility(View.VISIBLE);
@@ -303,7 +311,29 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
                 onChannelsLoaded(channels, GuideModel.indexOfOrZero(ids, TvManager.getLastLiveTvChannel()), generation);
                 return null;
             });
+        } else if (TvManager.getCachedAllChannels() != null) {
+            // Shown at once from the list read last time (also by the player); read again after
+            List<BaseItemDto> all = TvManager.getCachedAllChannels();
+            mAllCount = all.size();
+            mFavoriteCount = countFavorites(all);
+            mRelistAfterPaint = true;
+            onChannelsLoaded(all, TvManager.lastChannelIndex(all), generation);
+        } else if (!mFilters.any()) {
+            // The first page first (1,700 channels take seconds to read on a TV), the rest after it shows
+            TvManagerHelperKt.loadFirstGuidePage(this, pageSize, (page, allCount, favoriteCount) -> {
+                if (!isAdded() || generation != mLoadGeneration) return null;
+                if (page == null) {
+                    onChannelsFailed();
+                    return null;
+                }
+                if (allCount != null) mAllCount = allCount;
+                if (favoriteCount != null) mFavoriteCount = favoriteCount;
+                mPartialList = allCount == null || allCount > page.size();
+                onChannelsLoaded(page, TvManager.lastChannelIndex(page), generation);
+                return null;
+            });
         } else {
+            // Filters look through every channel: the whole list first
             TvManager.loadAllChannels(this, ndx -> {
                 if (!isAdded() || generation != mLoadGeneration) return null;
                 if (ndx < 0 || TvManager.getAllChannels() == null) {
@@ -408,7 +438,9 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
 
     /** A channel's favourite changed (heart in the popup, or holding OK on its name): new counts. */
     public void onFavoritesChanged() {
-        if (mView == GuideView.ALL && TvManager.getAllChannels() != null) {
+        if (mView == GuideView.ALL && mPartialList) {
+            // The whole list (on its way) brings the count
+        } else if (mView == GuideView.ALL && TvManager.getAllChannels() != null) {
             mFavoriteCount = countFavorites(TvManager.getAllChannels());
         } else if (mView == GuideView.FAVORITES && mAllChannels != null) {
             mFavoriteCount = countFavorites(mAllChannels);
@@ -804,13 +836,62 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
                 firstFocusView.requestFocus();
             }
             mKeepHeaderFocus = false;
+
+            // The first screen is up: now the rest of All, or a fresh read of the stored list
+            if (mPartialList && !mRestLoading) loadRestOfChannels(mLoadGeneration);
+            if (mRelistAfterPaint) {
+                mRelistAfterPaint = false;
+                if (mLiveUpdates != null) mLiveUpdates.relist();
+            }
+        }
+    }
+
+    /** The whole All list, read after its first page shows; the page's rows stay, paging reaches the rest. */
+    private void loadRestOfChannels(final int generation) {
+        mRestLoading = true;
+        TvManagerHelperKt.loadAllGuideChannels(this, channels -> {
+            if (!isAdded() || generation != mLoadGeneration || !mPartialList) return null;
+            mRestLoading = false;
+            if (channels == null) {
+                // Try again in a while; the first page stays meanwhile
+                mHandler.postDelayed(() -> {
+                    if (isAdded() && generation == mLoadGeneration && mPartialList && !mRestLoading) loadRestOfChannels(generation);
+                }, 5_000);
+                return null;
+            }
+            onRestOfChannels(TvManager.setLiveChannels(false, channels));
+            return null;
+        });
+    }
+
+    private void onRestOfChannels(List<BaseItemDto> all) {
+        List<BaseItemDto> page = mAllChannels;
+        mPartialList = false;
+        mAllCount = all.size();
+        mFavoriteCount = countFavorites(all);
+        mAllChannels = all;
+        updateToggle();
+        if (all.isEmpty()) {
+            showNoChannels(false);
+            return;
+        }
+        boolean busy = mProgramsLoading || (mDisplayProgramsTask != null && mDisplayProgramsTask.getStatus() != AsyncTask.Status.FINISHED);
+        if (!busy && GuideModel.isFirstPageOf(idsOf(page), idsOf(all))) {
+            // The rows shown are the list's first rows: only the paging row for the rest comes
+            mCurrentDisplayChannelEndNdx = Math.min(mCurrentDisplayChannelEndNdx, all.size() - 1);
+            addBottomPagingRow();
+            updateChannelStatus(shownChannelIds().size());
+        } else {
+            // The channels changed between the two reads: this page anew from the whole list
+            displayChannels(0, pageSize);
         }
     }
 
     /** "Showing 75 of 1,700 channels". */
     private void updateChannelStatus(int displayed) {
         java.text.NumberFormat numbers = java.text.NumberFormat.getIntegerInstance();
-        mChannelStatus.setText(getString(R.string.msg_guide_channels_count, numbers.format(displayed), numbers.format(mAllChannels.size())));
+        int total = mPartialList && mAllCount >= 0 ? mAllCount : mAllChannels.size();
+        mChannelStatus.setText(getString(R.string.msg_guide_channels_count, numbers.format(displayed), numbers.format(total)));
     }
 
     /** The paging row for the channels above this page, first in both columns (none on the first page). */
@@ -847,7 +928,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
 
     /** The guide shows its channels and isn't loading: a live change may edit the rows. */
     boolean isLiveReady() {
-        return isAdded() && getView() != null && mView != null && mAllChannels != null
+        return isAdded() && getView() != null && mView != null && mAllChannels != null && !mPartialList
                 && mSpinner.getVisibility() != View.VISIBLE
                 && !mProgramsLoading
                 && (mDisplayProgramsTask == null || mDisplayProgramsTask.getStatus() == AsyncTask.Status.FINISHED);

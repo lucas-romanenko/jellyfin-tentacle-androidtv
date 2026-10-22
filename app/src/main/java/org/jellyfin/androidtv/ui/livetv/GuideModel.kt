@@ -285,3 +285,10 @@ fun liveTvVersionFrom(collectionFolders: List<String>?): Long? =
 	collectionFolders?.firstNotNullOfOrNull { entry ->
 		entry.takeIf { it.startsWith(LIVE_TV_VERSION_MARKER) }?.removePrefix(LIVE_TV_VERSION_MARKER)?.toLongOrNull()
 	}
+
+/**
+ * The All view's first page ([pageIds], read on its own) is still the start of the whole list
+ * ([allIds], read after it), so its rows can stay as they are.
+ */
+fun isFirstPageOf(pageIds: List<UUID>, allIds: List<UUID>): Boolean =
+	pageIds.size <= allIds.size && allIds.subList(0, pageIds.size) == pageIds

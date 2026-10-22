@@ -863,7 +863,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             addRows(firstChannels, firstRows);
             mSpinner.setVisibility(View.GONE);
             updateNowLine();
-            if (firstFocusView != null && !mKeepHeaderFocus) {
+            // Back from a channel, focus goes once the place is back (restorePlace), not here first
+            if (firstFocusView != null && !mKeepHeaderFocus && pendingPlace() == null) {
                 firstFocusView.requestFocus();
                 focusedEarly = firstFocusView;
             }

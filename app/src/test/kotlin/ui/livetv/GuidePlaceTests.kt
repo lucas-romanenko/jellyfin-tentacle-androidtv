@@ -63,11 +63,15 @@ class GuidePlaceTests : FunSpec({
 	test("the rows: the top one as far past its top as before; the focused one always in view") {
 		// rows 100 px, 600 px of guide; the top row at 3,600, focus three rows below: as left
 		placeScrollY(topRowTop = 3600, topOffset = 20, focusRowTop = 3900, rowHeight = 100, viewHeight = 600) shouldBe 3620
+		// Channel Up to the row just below the screen: one row further, not more
+		placeScrollY(topRowTop = 3600, topOffset = 20, focusRowTop = 4200, rowHeight = 100, viewHeight = 600) shouldBe 3700
+		// Channel Down to the row just above: that row at the top
+		placeScrollY(topRowTop = 3600, topOffset = 20, focusRowTop = 3500, rowHeight = 100, viewHeight = 600) shouldBe 3500
 		// focus far below (Channel Up a lot): it in the middle
 		placeScrollY(topRowTop = 3600, topOffset = 20, focusRowTop = 6000, rowHeight = 100, viewHeight = 600) shouldBe 5750
-		// the top row went: from the top, the focused one in the middle when it is below the screen
+		// the top row went: from the top, the focused one shown
 		placeScrollY(topRowTop = null, topOffset = 20, focusRowTop = 400, rowHeight = 100, viewHeight = 600) shouldBe 0
-		placeScrollY(topRowTop = null, topOffset = 20, focusRowTop = 900, rowHeight = 100, viewHeight = 600) shouldBe 650
+		placeScrollY(topRowTop = null, topOffset = 20, focusRowTop = 900, rowHeight = 100, viewHeight = 600) shouldBe 400
 		placeScrollY(topRowTop = null, topOffset = 0, focusRowTop = null, rowHeight = 100, viewHeight = 600) shouldBe 0
 	}
 })

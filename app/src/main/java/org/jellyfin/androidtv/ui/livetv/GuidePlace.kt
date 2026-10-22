@@ -65,13 +65,18 @@ fun placePageStart(ids: List<UUID>, place: GuidePlace, focusId: UUID?, pageSize:
 
 /**
  * The vertical scroll: the row that was at the top, as far past its top as before; when the
- * channel to focus is then not fully in view, that channel in the middle instead. Row tops are
- * null when the row isn't on this page.
+ * channel to focus is then not fully in view, moved just enough to show it (Channel Up to the
+ * next channel moves the rows one row at most), or that channel in the middle when it is far
+ * away. Row tops are null when the row isn't on this page.
  */
 fun placeScrollY(topRowTop: Int?, topOffset: Int, focusRowTop: Int?, rowHeight: Int, viewHeight: Int): Int {
-	var y = if (topRowTop != null) (topRowTop + topOffset).coerceAtLeast(0) else 0
-	if (focusRowTop != null && (focusRowTop < y || focusRowTop + rowHeight > y + viewHeight)) {
-		y = (focusRowTop - (viewHeight - rowHeight) / 2).coerceAtLeast(0)
+	val y = if (topRowTop != null) (topRowTop + topOffset).coerceAtLeast(0) else 0
+	if (focusRowTop == null) return y
+	return when {
+		focusRowTop + rowHeight <= y - viewHeight || focusRowTop >= y + 2 * viewHeight ->
+			(focusRowTop - (viewHeight - rowHeight) / 2).coerceAtLeast(0)
+		focusRowTop < y -> focusRowTop
+		focusRowTop + rowHeight > y + viewHeight -> focusRowTop + rowHeight - viewHeight
+		else -> y
 	}
-	return y
 }

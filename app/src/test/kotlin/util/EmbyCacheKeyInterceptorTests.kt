@@ -2,17 +2,12 @@ package util
 
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import org.jellyfin.androidtv.util.EmbyCacheKeyInterceptor
+import org.jellyfin.androidtv.util.imageCacheKey
 
 class EmbyCacheKeyInterceptorTests : FunSpec({
 
-	val interceptor = EmbyCacheKeyInterceptor()
-
-	fun stripApiKey(url: String): String {
-		val method = EmbyCacheKeyInterceptor::class.java.getDeclaredMethod("stripApiKey", String::class.java)
-		method.isAccessible = true
-		return method.invoke(interceptor, url) as String
-	}
+	// The interceptor's key, also read by AsyncImageView for its memory cache lookup
+	fun stripApiKey(url: String): String = imageCacheKey(url)
 
 	test("strips api_key as only query parameter") {
 		stripApiKey("http://emby:8096/Items/123/Images/Primary?api_key=token123") shouldBe

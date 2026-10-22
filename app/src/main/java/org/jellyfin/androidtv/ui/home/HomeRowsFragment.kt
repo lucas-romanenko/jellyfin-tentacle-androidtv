@@ -120,6 +120,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val themeMusicPlayer by inject<ThemeMusicPlayer>()
 	private val tentacleRepository by inject<TentacleRepository>()
 	private val homeVersionTracker by inject<HomeVersionTracker>()
+	private val imageLoader by inject<coil3.ImageLoader>()
 
 	private val helper by lazy { HomeFragmentHelper(requireContext(), userRepository) }
 
@@ -1142,6 +1143,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		val reusedRows = tentacleRowData.any { it.playlistId in shownItems }
 		val tentacleMap = tentacleRowData.associateBy { it.playlistId }
 
+		// A row changing shape gets new cards: their pictures first, so it goes up with them
+		// instead of empty frames for half a second
+		if (reusedRows) warmReshapedRows(tentacleRowData)
+
 		// Build new rows list
 		val newRows = mutableListOf<HomeFragmentRow>()
 		val homesections = userSettingPreferences.activeHomesections
@@ -1279,11 +1284,15 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// is changed in place (a crossfade) instead of removed and inserted, which left its place
 			// blank for a moment while the focus was on it.
 			fun playlistOf(row: Row): String? = (row as? ListRow)?.adapter?.let { oldIdByAdapter[it] ?: freshIdByAdapter[it] }
+			// A row rebuilt for its new shape starts at its first card, and the focus went there:
+			// it goes back to the card of the same item
+			val focused = focusedCard(::playlistOf)
 			rowsAdapter.replaceAll(
 				fullList,
 				areItemsTheSame = { old, new -> old === new || playlistOf(old)?.let { it == playlistOf(new) } == true },
 				areContentsTheSame = { old, new -> old === new },
 			)
+			if (focused != null) keepFocusedCard(focused, fullList, ::playlistOf)
 
 			// The fresh rows were built into tempAdapter, so their loaders still point at it: an
 			// empty answer (nothing to continue watching, no next up) removed the row from
@@ -1310,6 +1319,26 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		// place, with the layout already on screen. Structure unchanged, so no second rebuild
 		// with kept cards.
 		if (reusedRows) refreshTentacleRowsInPlace(sectionsResponse)
+	}
+
+	/**
+	 * The rows of [rows] whose card shape (poster or wide) changes in this rebuild: the pictures
+	 * of their cards on screen in the new shape, fetched into the memory cache before they go up.
+	 */
+	private suspend fun warmReshapedRows(rows: List<TentacleRowData>) {
+		val ctx = context ?: return
+		val urls = withContext(Dispatchers.Main) {
+			if (!isAdded) return@withContext emptyList()
+			val focused = focusedCard { null }
+			rows.flatMap { data ->
+				val shown = tentacleRowAdapters[data.playlistId] ?: return@flatMap emptyList()
+				val presenter = HomeFragmentTentacleRow.presenterFor(data.wide, sharedCardPresenter)
+				if (presenter === shown.cardPresenter) return@flatMap emptyList()
+				val focusedHere = focused?.takeIf { it.row.adapter === shown }?.index
+				cardImageUrls(ctx, presenter, shown, cardsToWarm(shown.size(), focusedHere))
+			}
+		}
+		warmCardImages(ctx, imageLoader, urls)
 	}
 
 	/** One home refresh (through [homeRefresher], or the first load's revalidation). */

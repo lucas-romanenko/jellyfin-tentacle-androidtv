@@ -23,6 +23,7 @@ import android.widget.TextView
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.core.view.OneShotPreDrawListener
 import androidx.leanback.widget.Presenter
 import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeLifecycleOwner
@@ -166,6 +167,37 @@ class CardPresenter @JvmOverloads constructor(
 		viewHolder.unbind()
 	}
 
+	/**
+	 * The picture a card of this presenter loads for [item], the URL [CardViewHolder.bind] asks
+	 * for: a row changing shape fetches its new cards' pictures before it goes up.
+	 */
+	fun imageUrl(context: Context, item: BaseRowItem): String? {
+		val displayConfig = item.getDisplayConfig(imageType, uniformAspect)
+		val jellyfinImage = displayConfig.image ?: return null
+		val (widthPx, heightPx) = cardSizePx(item, cardAspectRatio(displayConfig), context.resources.displayMetrics.density)
+		return jellyfinImage.getUrl(resolveApi(item), maxWidth = widthPx, maxHeight = heightPx)
+	}
+
+	private fun cardAspectRatio(displayConfig: BaseRowItemDisplayConfig): Float =
+		displayConfig.aspectRatio.takeIf { it >= 0.1f }
+			?: displayConfig.image?.aspectRatio?.takeIf { it >= 0.1f } ?: 1f
+
+	/** A card's image size in pixels. */
+	private fun cardSizePx(item: BaseRowItem, aspectRatio: Float, density: Float): Pair<Int, Int> {
+		val posterSize = userPreferences[UserPreferences.posterSize]
+		val size = cardSizeDp(aspectRatio, item.staticHeight, staticHeight, posterSize.height, posterSize.landscapeHeight)
+		return (size.width * density).roundToInt() to (size.height * density).roundToInt()
+	}
+
+	private fun resolveApi(item: BaseRowItem): ApiClient = when {
+		item.baseItem != null -> apiClientFactory.getApiClientForItemOrFallback(item.baseItem, api)
+		item is ChapterItemInfoBaseRowItem && item.serverId != null -> {
+			val serverUuid = UUIDUtils.parseUUID(item.serverId)
+			if (serverUuid != null) apiClientFactory.getApiClientForServer(serverUuid) ?: api else api
+		}
+		else -> api
+	}
+
 	private inner class CardViewHolder(
 		private val container: FocusAwareCardContainer,
 	) : ViewHolder(container) {
@@ -298,12 +330,8 @@ class CardPresenter @JvmOverloads constructor(
 			this.item = item
 			val displayConfig = item.getDisplayConfig(imageType, uniformAspect)
 			val jellyfinImage = displayConfig.image
-			val aspectRatio = displayConfig.aspectRatio.takeIf { it >= 0.1f }
-				?: jellyfinImage?.aspectRatio?.takeIf { it >= 0.1f } ?: 1f
-			val posterSize = userPreferences[UserPreferences.posterSize]
-			val size = cardSizeDp(aspectRatio, item.staticHeight, staticHeight, posterSize.height, posterSize.landscapeHeight)
-			val widthPx = dp(size.width)
-			val heightPx = dp(size.height)
+			val aspectRatio = cardAspectRatio(displayConfig)
+			val (widthPx, heightPx) = cardSizePx(item, aspectRatio, density)
 
 			frame.layoutParams = frame.layoutParams.apply {
 				width = widthPx
@@ -369,15 +397,6 @@ class CardPresenter @JvmOverloads constructor(
 				width = if (gridImage != null) MATCH else (widthPx * 0.4f).roundToInt()
 				height = if (gridImage != null) MATCH else (heightPx * 0.4f).roundToInt()
 			}
-		}
-
-		private fun resolveApi(item: BaseRowItem): ApiClient = when {
-			item.baseItem != null -> apiClientFactory.getApiClientForItemOrFallback(item.baseItem, api)
-			item is ChapterItemInfoBaseRowItem && item.serverId != null -> {
-				val serverUuid = UUIDUtils.parseUUID(item.serverId)
-				if (serverUuid != null) apiClientFactory.getApiClientForServer(serverUuid) ?: api else api
-			}
-			else -> api
 		}
 
 		private fun bindOverlay(baseItem: BaseItemDto?, footerTitle: String?) {
@@ -478,10 +497,19 @@ class CardPresenter @JvmOverloads constructor(
 			// marquee and rewind it. Switched to END first, the marquee was never stopped and kept
 			// its offset, and the next focus showed the title cut at the start ("erial Killer
 			// Connec"). This also restarts it from the first letter when a focused card is bound again.
+			val ellipsize = if (focused) TextUtils.TruncateAt.MARQUEE else TextUtils.TruncateAt.END
+			val switched = title.ellipsize != ellipsize
 			for (text in arrayOf(title, subtitle, footer)) {
 				text.isSelected = false
-				text.ellipsize = if (focused) TextUtils.TruncateAt.MARQUEE else TextUtils.TruncateAt.END
+				text.ellipsize = ellipsize
 				text.isSelected = focused
+			}
+			// Switched in the middle of a layout (a card bound again and focused while its row is
+			// rebuilt for a new shape), the text kept the scroll of the other ellipsize and showed
+			// cut at both ends ("erial Killer Conne"): from the first letter once laid out, and so is a
+			// focused card bound again.
+			if (switched || focused) OneShotPreDrawListener.add(container) {
+				for (text in arrayOf(title, subtitle, footer)) text.scrollToTextStart()
 			}
 		}
 

@@ -74,12 +74,30 @@ private fun createStreamInfo(
 				liveStreamId = source.liveStreamId,
 			)
 		}
+	} else if (options.enableDirectPlay && playsLiveStreamFile(source.isInfiniteStream, source.liveStreamId, source.container)) {
+		useDirectPlay()
 	} else if (options.enableDirectStream && source.supportsDirectStream) {
 		useTranscodingUrl(PlayMethod.DIRECT_STREAM)
 	} else if (source.supportsTranscoding) {
 		useTranscodingUrl(PlayMethod.TRANSCODE)
 	}
 }
+
+/**
+ * Live TV plays the channel's stream the way the server already buffers it from the tuner
+ * (`/Videos/{id}/stream.ts?static=true&LiveStreamId=…`) when the TV can take it as it is.
+ *
+ * Jellyfin never offers direct play for a tuner with a stream limit, and on the Sony it turned
+ * direct stream off too, so it answered with its HLS remux: ffmpeg into 3 s segments, 3-4 s
+ * before the first picture, and on a channel switch up to 5 s more while Jellyfin waited for
+ * that ffmpeg to quit. The tuner's file is the same MPEG-TS with the same codecs and starts at
+ * once. A failure (a codec the TV can't play) falls back to the remux: the retry turns direct
+ * play off.
+ */
+fun playsLiveStreamFile(infinite: Boolean?, liveStreamId: String?, container: String?): Boolean =
+	infinite == true && !liveStreamId.isNullOrEmpty() && container?.lowercase() in LIVE_STREAM_FILE_CONTAINERS
+
+private val LIVE_STREAM_FILE_CONTAINERS = setOf("ts", "mpegts")
 
 class PlaybackManager(
 	private val api: ApiClient,

@@ -986,7 +986,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                     break;
             }
         } else {
-            Utils.showToast(mFragment.getContext(), mFragment.getString(R.string.msg_cannot_play));
+            // A live channel the provider can't serve right now fails here (the tuner didn't open)
+            Utils.showToast(mFragment.getContext(), mFragment.getString(isLiveTv ? R.string.msg_live_channel_unavailable : R.string.msg_cannot_play));
         }
         if (mFragment != null) mFragment.closePlayer();
     }

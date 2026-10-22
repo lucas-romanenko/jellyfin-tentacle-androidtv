@@ -29,11 +29,11 @@ class KeptCardFocusTests : FunSpec({
 	}
 
 	test("pictures fetched ahead: the cards around the focused one") {
-		cardsToWarm(size = 20, focused = 4) shouldBe 2 until 12
-		cardsToWarm(size = 20, focused = null) shouldBe 0 until 10
-		cardsToWarm(size = 20, focused = 1) shouldBe 0 until 10
-		cardsToWarm(size = 20, focused = 18) shouldBe 16 until 20
-		cardsToWarm(size = 3, focused = 2) shouldBe 0 until 3
+		cardsToWarm(size = 20, focused = 4) shouldBe (2 until 12)
+		cardsToWarm(size = 20, focused = null) shouldBe (0 until 10)
+		cardsToWarm(size = 20, focused = 1) shouldBe (0 until 10)
+		cardsToWarm(size = 20, focused = 18) shouldBe (16 until 20)
+		cardsToWarm(size = 3, focused = 2) shouldBe (0 until 3)
 		cardsToWarm(size = 0, focused = 0) shouldBe IntRange.EMPTY
 	}
 })

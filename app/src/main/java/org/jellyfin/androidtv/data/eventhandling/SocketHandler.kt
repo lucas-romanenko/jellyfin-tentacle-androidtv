@@ -531,7 +531,7 @@ class SocketHandler(
  * RefreshProgress is not Tentacle's. The plugin sends ItemId "tentacle" and the changed topics
  * comma-separated in "Tentacle".
  */
-internal fun tentaclePushTopics(data: Map<String, String>?): Set<String>? {
+internal fun tentaclePushTopics(data: Map<String, String?>?): Set<String>? {
 	if (data == null || data["ItemId"] != "tentacle") return null
 	return data["Tentacle"].orEmpty().split(',').map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
 }

@@ -118,18 +118,20 @@ fun guideToggleLabel(label: String, count: Int?): CharSequence {
 
 fun LiveTvGuideFragment.refreshSelectedProgram() {
 	val api by inject<ApiClient>()
+	val id = mSelectedProgram?.id ?: return
 
 	lifecycleScope.launch {
 		runCatching {
 			val item = withContext(Dispatchers.IO) {
-				api.userLibraryApi.getItem(mSelectedProgram.id).content
+				api.userLibraryApi.getItem(id).content
 			}
-			mSelectedProgram = item
+			// Focus moved on meanwhile: a slower answer for an earlier programme must not replace it
+			if (mSelectedProgram?.id == id) mSelectedProgram = item
 		}.onFailure { error ->
 			Timber.e(error, "Unable to get program details")
 		}
 
-		detailUpdateInternal();
+		if (mSelectedProgram?.id == id) detailUpdateInternal()
 	}
 }
 

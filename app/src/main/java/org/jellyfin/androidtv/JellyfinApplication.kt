@@ -70,11 +70,20 @@ class JellyfinApplication : Application(), SingletonImageLoader.Factory {
 		return imageLoader
 	}
 	/**
+	 * Whether [onSessionStart] ran in this process: the launcher icon may then go straight back
+	 * to the running app (StartupActivity).
+	 */
+	@Volatile
+	var sessionStarted = false
+		private set
+
+	/**
 	 * Called from the StartupActivity when the user session is started. Starts its work in the
 	 * background and returns at once: Home doesn't wait for any of it (awaiting it held the
 	 * handover to Home for about a second on a TV).
 	 */
 	fun onSessionStart() {
+		sessionStarted = true
 		ProcessLifecycleOwner.get().lifecycleScope.launch(Dispatchers.IO) { startSessionWork() }
 	}
 

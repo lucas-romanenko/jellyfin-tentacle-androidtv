@@ -474,7 +474,12 @@ class CardPresenter @JvmOverloads constructor(
 				frame.foreground = null
 			}
 			// Finite marquee on the focused card only: an endless one redraws every frame.
+			// Unselect first, while the text is still a marquee: only then does TextView stop the
+			// marquee and rewind it. Switched to END first, the marquee was never stopped and kept
+			// its offset, and the next focus showed the title cut at the start ("erial Killer
+			// Connec"). This also restarts it from the first letter when a focused card is bound again.
 			for (text in arrayOf(title, subtitle, footer)) {
+				text.isSelected = false
 				text.ellipsize = if (focused) TextUtils.TruncateAt.MARQUEE else TextUtils.TruncateAt.END
 				text.isSelected = focused
 			}

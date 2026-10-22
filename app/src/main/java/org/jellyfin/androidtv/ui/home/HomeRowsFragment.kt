@@ -928,6 +928,30 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		}, 100) // Small delay to let the fragment fully resume
 	}
 
+	/**
+	 * Home is on screen again with the view it had (DestinationFragmentView hid it while a
+	 * screen opened from it was on top): no selection event comes, so put the focus back on the
+	 * selected card and its background, which the other screen replaced. Main thread.
+	 */
+	fun onShownAgain() {
+		val grid = verticalGridView ?: return
+		if (!grid.hasFocus()) grid.requestFocus()
+		val item = currentItem
+		val baseItem = item?.baseItem
+		when {
+			baseItem != null -> {
+				val rowAdapter = currentRow?.adapter as? ItemRowAdapter
+				if (rowAdapter?.queryType == QueryType.Views) backgroundService.setBackgroundFromLibrary(baseItem.id, BlurContext.BROWSING)
+				else backgroundService.setBackground(baseItem, BlurContext.BROWSING)
+			}
+			// The hero has its own backdrop; its carousel goes on if the focus is back on it
+			selectedPosition in 0 until adapter.size() && adapter[selectedPosition] is MediaBarRow -> {
+				if (grid.hasFocus() && !mediaBarViewModel.isFocused.value) mediaBarViewModel.setFocused(true)
+			}
+			else -> backgroundService.clearBackgrounds()
+		}
+	}
+
 	override fun onPause() {
 		super.onPause()
 		

@@ -25,6 +25,7 @@
     <string name="continue_listening">Continue listening</string>
     <string name="lbl_next_up">Next up</string>
     <string name="lbl_on_now">On now</string>
+    <string name="lbl_tentacle_on_now">On Now</string>
     <string name="lbl_views">Views</string>
     <string name="lbl_by_letter">By letter</string>
     <string name="lbl_suggested">Suggested</string>

@@ -159,6 +159,14 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 	// Track Tentacle playlist rows for in-place refresh (playlistId → ItemRowAdapter)
 	private val tentacleRowAdapters = mutableMapOf<String, ItemRowAdapter>()
+	// The On Now row's adapter (ON_NOW_ROW_KEY), refilled on every home refresh
+	private val onNowAdapters = mutableMapOf<String, ItemRowAdapter>()
+	// This home has an On Now row (shown or, with nothing on, left out)
+	@Volatile private var onNowInHome = false
+	// The last build left On Now out because nothing was on (not just "not added yet")
+	@Volatile private var onNowLeftOut = false
+	// The last in-place rebuild kept the On Now row on screen
+	private var onNowReused = false
 	// Empty answers in a row per Tentacle row (see TentacleRowRefresh).
 	private val emptyRowAnswers = mutableMapOf<String, Int>()
 	// The last answer kept as "shrank too far to believe", per playlist: the same answer
@@ -329,6 +337,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						}
 						val cachedMergeCw = cachedSections.mergeContinueWatching
 						val cachedHasResume = sections.any { it.type == "builtin" && (it.sectionId == "resume" || it.sectionId == "resumevideo") }
+						resetOnNow()
 						for (section in sections) {
 							when (section.type) {
 								"row" -> {
@@ -432,6 +441,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						// Render sections in dashboard order
 						val mergeCw = sectionsResponse.mergeContinueWatching
 						val hasResumeRow = tentacleSections.any { it.type == "builtin" && (it.sectionId == "resume" || it.sectionId == "resumevideo") }
+						resetOnNow()
 						for (section in tentacleSections) {
 							if (!isActive) return@launch
 							when (section.type) {
@@ -618,6 +628,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 							.collect {
 								Timber.w("WS: UserDataChangedMessage received")
 								refreshRows(force = false, delayed = true)
+								// A channel starred or unstarred anywhere (Tentacle's My Channels,
+								// the guide, another device) reaches On Now at once
+								refreshOnNow()
 							}
 					} catch (e: kotlinx.coroutines.CancellationException) {
 						throw e
@@ -626,6 +639,16 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					}
 					Timber.w("WS: userdata subscription ended — resubscribing in 5s")
 					delay(5.seconds)
+				}
+			}
+		}
+
+		// On Now while Home is showing: programmes end, time left moves on
+		lifecycleScope.launch {
+			lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+				while (isActive) {
+					delay(ON_NOW_REFRESH)
+					refreshOnNow()
 				}
 			}
 		}
@@ -1103,6 +1126,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		val cachedViews = try { userViewsRepository.views.first() } catch (_: Exception) { null }
 
 		val hasResumeRow = newSections.any { it.type == "builtin" && (it.sectionId == "resume" || it.sectionId == "resumevideo") }
+		resetOnNow()
 		for (section in newSections) {
 			when (section.type) {
 				"row" -> {
@@ -1153,6 +1177,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			// Build fresh rows into a temp adapter (also populates tentacleRowAdapters)
 			tentacleRowAdapters.clear()
+			onNowReused = false
 			val presenterSelector = rowsAdapter.presenterSelector ?: return@withContext
 			val ctx = context ?: return@withContext
 			val tempAdapter = MutableObjectAdapter<Row>(presenterSelector)
@@ -1198,6 +1223,13 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						if (freshId != null && existingAdapter != null) {
 							tentacleRowAdapters[freshId] = existingAdapter
 						}
+						// On Now kept on screen: its refills must reach the row shown, not the
+						// fresh copy built for the comparison
+						if (existingAdapter != null && freshAdapter != null && onNowAdapters[ON_NOW_ROW_KEY] === freshAdapter) {
+							onNowAdapters[ON_NOW_ROW_KEY] = existingAdapter
+							onNowReused = true
+							Timber.w("On Now row kept on screen by the rebuild")
+						}
 						newContentRows.add(existingRow)
 					}
 				} else {
@@ -1240,6 +1272,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			trackStockRows()
 			resyncSelectedItem()
 		}
+		// The kept On Now row shows what the rebuild just read
+		if (onNowReused) refreshOnNow()
 
 		// Update tracked section keys
 		currentTentacleSectionKeys = newKeys
@@ -1283,6 +1317,55 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				}
 			}
 			HomeAnswerAction.KEEP -> Timber.d("Tentacle home: no answer, keeping the rows")
+		}
+		refreshOnNow()
+	}
+
+	/** Rows about to be built: On Now is in this home only if its section comes up. */
+	private fun resetOnNow() {
+		onNowInHome = false
+		onNowLeftOut = false
+		onNowAdapters.clear()
+	}
+
+	/** On Now again (programmes end, time left moves on); the row leaves when nothing is on. */
+	private suspend fun refreshOnNow() {
+		if (!onNowInHome) return
+		val rowAdapter = onNowAdapters[ON_NOW_ROW_KEY]
+		val user = userRepository.currentUser.value ?: return
+		val items = try {
+			withContext(Dispatchers.IO) { loadOnNow(api, user.id) }
+		} catch (e: kotlinx.coroutines.CancellationException) {
+			throw e
+		} catch (e: Exception) {
+			Timber.w(e, "On Now refresh failed, keeping the row")
+			return
+		}
+		withContext(Dispatchers.Main) {
+			if (!isAdded || onNowAdapters[ON_NOW_ROW_KEY] !== rowAdapter) return@withContext
+			if (rowAdapter == null) {
+				// Left out (nothing was on, no favourites) and now there is something: build
+				// Home again so the row takes its place, as a user switch does. Only then:
+				// mid-rebuild the row exists but isn't registered yet.
+				Timber.w("On Now refill: no row shown (left out: $onNowLeftOut), ${items.size} cards now")
+				if (onNowLeftOut && items.isNotEmpty() && isResumed && !isStateSaved) {
+					Timber.i("On Now has channels now, rebuilding Home")
+					parentFragmentManager.beginTransaction()
+						.replace(R.id.rowsFragment, HomeRowsFragment())
+						.commitNow()
+				}
+				return@withContext
+			}
+			Timber.w("On Now refill: ${items.size} cards")
+			if (items.isNotEmpty()) {
+				rowAdapter.replaceStaticItems(items)
+				return@withContext
+			}
+			val rowsAdapter = adapter as? MutableObjectAdapter<Row> ?: return@withContext
+			val listRow = (0 until rowsAdapter.size()).mapNotNull { rowsAdapter[it] as? ListRow }.firstOrNull { it.adapter === rowAdapter }
+			if (listRow != null) rowsAdapter.remove(listRow)
+			onNowAdapters.remove(ON_NOW_ROW_KEY)
+			currentRows = currentRows.filterNot { it is HomeFragmentTentacleRow && ON_NOW_ROW_KEY in it.playlistIds }.toMutableList()
 		}
 	}
 
@@ -1361,6 +1444,25 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			"livetv" -> if (includeLiveTvRows) {
 				rows.add(liveTVRow)
 				rows.add(helper.loadOnNow())
+			}
+			// Tentacle's own: what's on now on the person's favourite channels; no row when
+			// there are none, nothing is on or they have no Live TV
+			ON_NOW_SECTION_ID -> {
+				onNowInHome = true
+				val user = userRepository.currentUser.value
+				if (user != null && user.policy?.enableLiveTvAccess != false) {
+					val items = runCatching { withContext(Dispatchers.IO) { loadOnNow(api, user.id) } }
+						.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; Timber.w(it, "On Now unavailable") }
+						.getOrDefault(emptyList())
+					onNowLeftOut = items.isEmpty()
+					Timber.w("On Now: ${items.size} cards for this build")
+					if (items.isNotEmpty()) {
+						rows.add(HomeFragmentTentacleRow(
+							listOf(TentacleRowData(getString(R.string.lbl_tentacle_on_now), ON_NOW_ROW_KEY, items, wide = true)),
+							onNowAdapters,
+						))
+					}
+				}
 			}
 		}
 	}

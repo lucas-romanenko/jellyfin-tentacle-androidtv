@@ -122,7 +122,7 @@ val appModule = module {
 
 	single { HomeVersionTracker() }
 	single { org.jellyfin.androidtv.data.repository.ActivityPoller(get()) }
-	single { SocketHandler(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), ProcessLifecycleOwner.get().lifecycle, get(), get(), get(), get()) }
+	single { SocketHandler(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), ProcessLifecycleOwner.get().lifecycle, get(), get(), get(), get(), get(), get()) }
 
 	// Coil (images)
 	single {

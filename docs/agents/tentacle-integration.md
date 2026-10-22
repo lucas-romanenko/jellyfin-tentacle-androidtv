@@ -138,7 +138,16 @@ The code wins where they differ.
   download badge): every 3 s while the tab is open, 10 s while something
   downloads, else 30 s, backing off after failures; arr
   actions (search, grab, stop missing, remove) go through
-  `/TentacleDiscover/Arr*`.
+  `/TentacleDiscover/Arr*`. With `for_names` in the answer, someone else's
+  item (its `for`) shows "for <name>" on every card (`forLabel`); without it
+  (older servers) only Searching shows `requested_by`.
+- **Live push**: the plugin sends a `RefreshProgress` with
+  `ItemId: "tentacle"` and `Tentacle: "requests,activity,notifications"` (the
+  topics that changed). `SocketHandler` (`tentaclePushTopics`) polls the
+  `ActivityPoller` at once for requests/activity and fetches notifications at
+  once for notifications, and does both when the WebSocket reconnects. Every
+  other `RefreshProgress` (Jellyfin's library scans) is ignored; the polls
+  stay as the fallback.
 - **Navbar** (`ui/shared/toolbar/Navbar.kt`, `NavbarActiveButton`: User,
   Home, Library, Search, Discover, Activity, None): which buttons show and in
   what order comes from the Tentacle dashboard (`/TentacleHome/Toolbar`),
@@ -161,8 +170,9 @@ The code wins where they differ.
   back to a Jellyfin delete; only an item without one is deleted through
   Jellyfin directly (#69).
 - **Download notifications**: `pollNotifications()` fills
-  `pendingNotifications` (a StateFlow), which `HomeFragment` shows as toasts;
-  `dismissNotification(id)`.
+  `pendingNotifications` (a StateFlow), which `HomeFragment` shows as toasts
+  (its heading adds "for <name>" from the notification's `for`);
+  `dismissNotification(id)`. Home polls every 15 s while shown, plus the push.
 - **Preferences** (`preference/UserSettingPreferences.kt`): media bar
   `mediaBarEnabled`, `mediaBarSourceType` (`"plugin"` = the Tentacle hero
   playlist only, no random fallback), `mediaBarContentType`,

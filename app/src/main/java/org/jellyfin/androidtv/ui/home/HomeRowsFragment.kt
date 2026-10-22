@@ -163,6 +163,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val onNowAdapters = mutableMapOf<String, ItemRowAdapter>()
 	// This home has an On Now row (shown or, with nothing on, left out)
 	@Volatile private var onNowInHome = false
+	// The last build left On Now out because nothing was on (not just "not added yet")
+	@Volatile private var onNowLeftOut = false
 	// The last in-place rebuild kept the On Now row on screen
 	private var onNowReused = false
 	// Empty answers in a row per Tentacle row (see TentacleRowRefresh).
@@ -1321,6 +1323,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	/** Rows about to be built: On Now is in this home only if its section comes up. */
 	private fun resetOnNow() {
 		onNowInHome = false
+		onNowLeftOut = false
 		onNowAdapters.clear()
 	}
 
@@ -1341,8 +1344,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			if (!isAdded || onNowAdapters[ON_NOW_ROW_KEY] !== rowAdapter) return@withContext
 			if (rowAdapter == null) {
 				// Left out (nothing was on, no favourites) and now there is something: build
-				// Home again so the row takes its place, as a user switch does
-				if (items.isNotEmpty() && isResumed && !isStateSaved) {
+				// Home again so the row takes its place, as a user switch does. Only then:
+				// mid-rebuild the row exists but isn't registered yet.
+				if (onNowLeftOut && items.isNotEmpty() && isResumed && !isStateSaved) {
 					Timber.i("On Now has channels now, rebuilding Home")
 					parentFragmentManager.beginTransaction()
 						.replace(R.id.rowsFragment, HomeRowsFragment())
@@ -1447,6 +1451,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					val items = runCatching { loadOnNow(api, user.id) }
 						.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; Timber.w(it, "On Now unavailable") }
 						.getOrDefault(emptyList())
+					onNowLeftOut = items.isEmpty()
 					if (items.isNotEmpty()) {
 						rows.add(HomeFragmentTentacleRow(
 							listOf(TentacleRowData(getString(R.string.lbl_tentacle_on_now), ON_NOW_ROW_KEY, items, wide = true)),

@@ -90,13 +90,12 @@ class SearchFragment : Fragment() {
 			val navbarPosition = rememberNavbarPosition()
 			val isSidebar = navbarPosition == NavbarPosition.LEFT
 
-			// TMDB search results
-			val tmdbResults by viewModel.tmdbResultsFlow.collectAsState()
-			val isTmdbSearching by viewModel.isTmdbSearching.collectAsState()
+			// TMDB search results: the last good ones stay on screen while a newer search runs or fails
+			val discover by viewModel.discoverState.collectAsState()
+			val tmdbResults = discover.items
 			// Jellyfin results: Live TV channels (OK tunes) and library items
 			val channelResults by viewModel.channelResultsFlow.collectAsState()
 			val libraryResults by viewModel.libraryResultsFlow.collectAsState()
-			val tmdbUnavailable by tentacleRepository.discoverUnavailable.collectAsState()
 			var selectedItem by remember { mutableStateOf<DiscoverItem?>(null) }
 			val scope = rememberCoroutineScope()
 
@@ -176,11 +175,12 @@ class SearchFragment : Fragment() {
 						)
 					}
 
-					// The TMDB search could not reach Tentacle — say so rather than
-					// leaving only the library results, as if nothing had matched.
-					if (query.text.isNotBlank() && !isTmdbSearching && tmdbResults.isEmpty() && tmdbUnavailable != null) {
+					// The TMDB search could not reach Tentacle and there are no earlier results to
+					// keep — say so rather than leaving only the library results, as if nothing had matched.
+					val discoverMessage = discover.message
+					if (query.text.isNotBlank() && discoverMessage != null) {
 						Text(
-							text = tmdbUnavailable.orEmpty(),
+							text = discoverMessage,
 							fontSize = 14.sp,
 							color = Color.White.copy(alpha = 0.5f),
 							modifier = Modifier.padding(start = 48.dp, top = 8.dp),
@@ -192,7 +192,7 @@ class SearchFragment : Fragment() {
 					// of the first row shown.
 					val showChannels = channelResults.isNotEmpty()
 					val showLibrary = libraryResults.isNotEmpty()
-					val showDiscover = tmdbResults.isNotEmpty() || isTmdbSearching
+					val showDiscover = discover.showRow
 					val openItem: (BaseItemDto) -> Unit = { item ->
 						itemLauncher.launch(BaseItemDtoBaseRowItem(item), null, requireContext())
 					}
@@ -229,7 +229,7 @@ class SearchFragment : Fragment() {
 									.padding(top = 8.dp),
 							) {
 								if (showChannels || showLibrary) SearchRowTitle(stringResource(R.string.lbl_add_media))
-								if (isTmdbSearching) {
+								if (tmdbResults.isEmpty()) {
 									Text(
 										text = "Searching...",
 										fontSize = 14.sp,

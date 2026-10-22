@@ -152,6 +152,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        android.util.Log.i("GuideTiming", "guide created at " + android.os.SystemClock.uptimeMillis());
         mLiveUpdates = new GuideLiveUpdates(this);
         mLiveUpdates.start();
     }
@@ -282,7 +283,10 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         mPartialList = false;
         mRestLoading = false;
         mRelistAfterPaint = false;
-        if (mLoadStartMs == 0) mLoadStartMs = android.os.SystemClock.uptimeMillis();
+        if (mLoadStartMs == 0) {
+            mLoadStartMs = android.os.SystemClock.uptimeMillis();
+            android.util.Log.i("GuideTiming", "load at " + mLoadStartMs);
+        }
         mCurrentGuideStart = GuideModel.guideStartFor(LocalDateTime.now());
         fillTimeLine(mCurrentGuideStart, getGuideHours());
         mSpinner.setVisibility(View.VISIBLE);
@@ -293,6 +297,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             TvManagerHelperKt.loadGuideView(this, view -> {
                 if (!isAdded() || generation != mLoadGeneration) return null;
                 mView = view;
+                timing("view known: " + view);
                 load();
                 return null;
             });
@@ -360,6 +365,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
 
     private void onChannelsLoaded(List<BaseItemDto> channels, int lastNdx, int generation) {
         if (mDisplayProgramsTask != null) mDisplayProgramsTask.cancel(true);
+        timing("channels in: " + channels.size());
         mAllChannels = channels;
         updateToggle();
 
@@ -733,12 +739,14 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         final int generation = mLoadGeneration;
         final int token = ++mProgramsToken;
         mProgramsLoading = true;
+        timing("programmes asked: " + ids.length + " channels");
         TvManager.getProgramsAsync(this, ids, mCurrentGuideStart, mCurrentGuideEnd, new EmptyResponse(getLifecycle()) {
             @Override
             public void onResponse() {
                 if (token == mProgramsToken) mProgramsLoading = false;
                 if (!isActive() || generation != mLoadGeneration) return;
                 Timber.d("*** Programs response");
+                timing("programmes in");
                 if (mDisplayProgramsTask != null) mDisplayProgramsTask.cancel(true);
                 mDisplayProgramsTask = new DisplayProgramsTask();
                 mDisplayProgramsTask.execute(mCurrentDisplayChannelStartNdx, mCurrentDisplayChannelEndNdx);
@@ -774,6 +782,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             boolean first = true;
 
             Timber.d("*** About to iterate programs");
+            timing("rows: building");
             LinearLayout prevRow = null;
             for (int i = start; i <= end; i++) {
                 if (isCancelled()) return null;
@@ -807,6 +816,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         @Override
         protected void onPostExecute(Void aVoid) {
             Timber.d("*** Display programs post execute");
+            timing("rows built: " + rows.size());
             if (getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) {
                 Context context = requireContext();
                 for (int i = 0; i < rows.size(); i++) {
@@ -842,7 +852,19 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
 
             if (mLoadStartMs != 0) {
                 timing("first screen, " + mView + ", " + displayedChannels + " rows" + (mPartialList ? " (first page)" : ""));
+                // and when it is on screen: the next frame after this layout
+                final long start = mLoadStartMs;
                 mLoadStartMs = 0;
+                mProgramRows.getViewTreeObserver().addOnDrawListener(new android.view.ViewTreeObserver.OnDrawListener() {
+                    boolean logged = false;
+                    @Override
+                    public void onDraw() {
+                        if (logged) return;
+                        logged = true;
+                        android.util.Log.i("GuideTiming", "first screen drawn +" + (android.os.SystemClock.uptimeMillis() - start) + " ms");
+                        mProgramRows.post(() -> mProgramRows.getViewTreeObserver().removeOnDrawListener(this));
+                    }
+                });
             }
 
             // The first screen is up: now the rest of All, or a fresh read of the stored list
@@ -877,6 +899,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
      * android.util.Log, as the release build's Timber drops info lines. `adb logcat -s GuideTiming`.
      */
     private void timing(String what) {
+        if (mLoadStartMs == 0) return;
         android.util.Log.i("GuideTiming", what + " +" + (android.os.SystemClock.uptimeMillis() - mLoadStartMs) + " ms");
     }
 

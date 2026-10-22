@@ -93,6 +93,18 @@ fun LiveTvGuideFragment.setupGuideLinks(binding: LiveTvGuideBinding) {
 	binding.scheduleButton.setOnClickListener { navigationRepository.navigate(Destinations.liveTvSchedule) }
 	binding.seriesButton.isVisible = canManage
 	binding.seriesButton.setOnClickListener { navigationRepository.navigate(Destinations.liveTvSeriesRecordings) }
+	// Icons only, so the header keeps room for every day; the focused one shows its name
+	for ((button, label) in listOf(
+		binding.recordingsButton to R.string.lbl_recordings,
+		binding.scheduleButton to R.string.lbl_schedule,
+		binding.seriesButton to R.string.lbl_series,
+	)) {
+		button.compoundDrawablePadding = 0
+		button.setOnFocusChangeListener { _, focused ->
+			button.text = if (focused) getString(label) else null
+			button.compoundDrawablePadding = if (focused) button.resources.getDimensionPixelSize(R.dimen.guide_chip_icon_gap) else 0
+		}
+	}
 }
 
 /** "Favorites  3" / "All  5,669": the count a little smaller than the label. */

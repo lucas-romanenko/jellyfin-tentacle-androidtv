@@ -57,7 +57,7 @@
         <item name="android:background">@drawable/guide_chip_bg</item>
         <item name="android:textColor">@color/guide_chip_text</item>
         <item name="android:drawableTint">@color/guide_chip_text</item>
-        <item name="android:drawablePadding">6dp</item>
+        <item name="android:drawablePadding">@dimen/guide_chip_icon_gap</item>
         <item name="android:textSize">14sp</item>
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:gravity">center</item>

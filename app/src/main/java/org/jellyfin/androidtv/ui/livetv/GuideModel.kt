@@ -103,6 +103,18 @@ fun formatTimeRange(start: LocalDateTime, end: LocalDateTime, formatter: DateTim
 	return "$from – $to"
 }
 
+/** "S2 E5 · The Title", or what of it is known; null when nothing is. */
+fun episodeText(season: Int?, episode: Int?, title: String?, seasonLabel: (Int) -> String, episodeLabel: (Int) -> String): String? {
+	val number = listOfNotNull(
+		season?.takeIf { it > 0 }?.let(seasonLabel),
+		episode?.let(episodeLabel),
+	).joinToString(" ")
+	return detailLine(number, title).ifEmpty { null }
+}
+
+/** The focused programme's line under its title: time · channel · episode, skipping what's missing. */
+fun detailLine(vararg parts: String?): String = parts.filterNot { it.isNullOrBlank() }.joinToString("  ·  ")
+
 /** How far [now] is through a programme, 0..1; -1 when it isn't on now. */
 fun programProgress(start: LocalDateTime?, end: LocalDateTime?, now: LocalDateTime): Float {
 	if (start == null || end == null || !end.isAfter(start)) return -1f

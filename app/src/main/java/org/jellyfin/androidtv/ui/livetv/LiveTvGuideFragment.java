@@ -41,6 +41,7 @@ import org.jellyfin.androidtv.ui.playback.PlaybackLauncher;
 import org.jellyfin.androidtv.util.CoroutineUtils;
 import org.jellyfin.androidtv.util.DateTimeExtensionsKt;
 import org.jellyfin.androidtv.util.ImageHelper;
+import org.jellyfin.androidtv.ui.browsing.composable.inforow.BaseItemInfoRowView;
 import org.jellyfin.androidtv.util.InfoLayoutHelper;
 import org.jellyfin.androidtv.util.PlaybackHelper;
 import org.jellyfin.androidtv.util.TextUtilsKt;
@@ -1294,7 +1295,19 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         mNowLine.setVisibility(View.VISIBLE);
         mNowPill.setText(DateTimeExtensionsKt.getTimeFormatter(requireContext()).format(now));
         mNowPill.setVisibility(View.VISIBLE);
-        mNowPill.post(() -> mNowPill.setTranslationX(Math.max(0f, x - mNowPill.getWidth() / 2f)));
+        mNowPill.post(() -> {
+            float left = Math.max(0f, x - mNowPill.getWidth() / 2f);
+            mNowPill.setTranslationX(left);
+            // A half-hour label the pill covers steps aside, so the two never print over each other
+            float gap = Utils.convertDpToPixel(requireContext(), 4);
+            for (int i = 0; i < mTimeline.getChildCount(); i++) {
+                if (!(mTimeline.getChildAt(i) instanceof TextView)) continue;
+                TextView label = (TextView) mTimeline.getChildAt(i);
+                float start = label.getLeft() + label.getPaddingLeft();
+                float end = start + label.getPaint().measureText(label.getText().toString());
+                label.setAlpha(end + gap > left && start - gap < left + mNowPill.getWidth() ? 0f : 1f);
+            }
+        });
     }
 
     /** Every minute: the now line moves, and programmes that started or ended change highlight. */
@@ -1335,14 +1348,18 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         boolean noData = mSelectedProgram.getType() == org.jellyfin.sdk.model.api.BaseItemKind.FOLDER;
         if (!noData && mSelectedProgram.getStartDate() != null && mSelectedProgram.getEndDate() != null) {
             String range = GuideModel.formatTimeRange(mSelectedProgram.getStartDate(), mSelectedProgram.getEndDate(), DateTimeExtensionsKt.getTimeFormatter(requireContext()));
-            String channel = mSelectedProgram.getChannelName();
-            mProgramTime.setText(channel != null && !channel.isEmpty() ? range + "  ·  " + channel : range);
+            String episode = GuideModel.episodeText(mSelectedProgram.getParentIndexNumber(), mSelectedProgram.getIndexNumber(), mSelectedProgram.getEpisodeTitle(),
+                    n -> getString(R.string.lbl_season_number, n), n -> getString(R.string.lbl_episode_number, n));
+            mProgramTime.setText(GuideModel.detailLine(range, mSelectedProgram.getChannelName(), episode));
         } else {
             mProgramTime.setText("");
         }
 
-        //info row
+        // Info row: only the badges (New, Repeat, Live, rating); time, channel and episode are on the line above
         InfoLayoutHelper.addInfoRow(requireContext(), mSelectedProgram, mInfoRow, false);
+        for (int i = 0; i < mInfoRow.getChildCount(); i++) {
+            if (mInfoRow.getChildAt(i) instanceof BaseItemInfoRowView) ((BaseItemInfoRowView) mInfoRow.getChildAt(i)).setProgramSubText(false);
+        }
 
         mDisplayDate.setText(TimeUtils.getFriendlyDate(requireContext(), mSelectedProgram.getStartDate()));
         String url = imageHelper.getValue().getPrimaryImageUrl(mSelectedProgram, null, ImageHelper.MAX_PRIMARY_IMAGE_HEIGHT);

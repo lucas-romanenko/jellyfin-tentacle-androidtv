@@ -132,6 +132,15 @@ class GuideModelTests : FunSpec({
 			formatTimeRange(now.withHour(14).withMinute(0), now.withHour(16).withMinute(30), DateTimeFormatter.ofPattern("HH:mm")) shouldBe "14:00 – 16:30"
 		}
 
+		test("the detail line: time, channel and episode, without gaps for what's missing") {
+			val s = { n: Int -> "S$n" }
+			val e = { n: Int -> "E$n" }
+			detailLine("9:00 – 11:00 AM", "AMC", episodeText(2, 5, "Pilot", s, e)) shouldBe "9:00 – 11:00 AM  ·  AMC  ·  S2 E5  ·  Pilot"
+			detailLine("9:00 – 11:00 AM", "AMC", episodeText(null, null, null, s, e)) shouldBe "9:00 – 11:00 AM  ·  AMC"
+			detailLine("9:00 – 11:00 AM", "", episodeText(0, 3, null, s, e)) shouldBe "9:00 – 11:00 AM  ·  E3"
+			episodeText(null, null, " ", s, e) shouldBe null
+		}
+
 		test("the grid starts at the last whole or half hour, so now is inside it") {
 			guideStartFor(now) shouldBe LocalDateTime.of(2026, 10, 21, 14, 30)
 			guideStartFor(now.withMinute(10)) shouldBe LocalDateTime.of(2026, 10, 21, 14, 0)

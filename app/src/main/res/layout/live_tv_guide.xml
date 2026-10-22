@@ -54,26 +54,33 @@
                 tools:text="All 5,669" />
         </LinearLayout>
 
-        <!-- Today … the last day with guide data; hidden when only today has data -->
-        <LinearLayout
-            android:id="@+id/days"
-            android:layout_width="wrap_content"
+        <!-- Today … the last day with guide data (hidden when only today has data). Takes the
+             room left, so a long guide's days scroll instead of pushing the buttons off screen. -->
+        <HorizontalScrollView
+            android:layout_width="0dp"
             android:layout_height="32dp"
             android:layout_marginStart="16dp"
-            android:orientation="horizontal" />
+            android:layout_marginEnd="8dp"
+            android:layout_weight="1"
+            android:fadingEdgeLength="24dp"
+            android:requiresFadingEdge="horizontal"
+            android:scrollbars="none">
 
-        <Space
-            android:layout_width="0dp"
-            android:layout_height="1dp"
-            android:layout_weight="1" />
+            <LinearLayout
+                android:id="@+id/days"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
 
+        <!-- Icons; the name shows while focused (setupGuideLinks) -->
         <TextView
             android:id="@+id/recordingsButton"
             style="@style/GuideChip"
             android:layout_width="wrap_content"
             android:layout_height="32dp"
-            android:drawableStart="@drawable/guide_ic_record"
-            android:text="@string/lbl_recordings" />
+            android:contentDescription="@string/lbl_recordings"
+            android:drawableStart="@drawable/guide_ic_record" />
 
         <TextView
             android:id="@+id/scheduleButton"
@@ -81,8 +88,8 @@
             android:layout_width="wrap_content"
             android:layout_height="32dp"
             android:layout_marginStart="8dp"
-            android:drawableStart="@drawable/guide_ic_tv_timer"
-            android:text="@string/lbl_schedule" />
+            android:contentDescription="@string/lbl_schedule"
+            android:drawableStart="@drawable/guide_ic_tv_timer" />
 
         <TextView
             android:id="@+id/seriesButton"
@@ -90,8 +97,8 @@
             android:layout_width="wrap_content"
             android:layout_height="32dp"
             android:layout_marginStart="8dp"
-            android:drawableStart="@drawable/guide_ic_record_series"
-            android:text="@string/lbl_series" />
+            android:contentDescription="@string/lbl_series"
+            android:drawableStart="@drawable/guide_ic_record_series" />
 
         <org.jellyfin.androidtv.ui.ClockUserView
             android:id="@+id/clock"

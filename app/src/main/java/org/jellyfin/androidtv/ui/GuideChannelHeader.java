@@ -96,6 +96,8 @@ public class GuideChannelHeader extends RelativeLayout {
     protected void onFocusChanged(boolean gainFocus, int direction, Rect previouslyFocusedRect) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect);
 
+        // On the purple focus the muted number would hardly show: white while focused
+        ((TextView) findViewById(R.id.channelNumber)).setTextColor(ContextCompat.getColor(mContext, gainFocus ? R.color.white : R.color.guide_text_muted));
         if (gainFocus) {
             setBackground(ContextCompat.getDrawable(mContext, R.drawable.guide_channel_focused_bg));
 

@@ -150,6 +150,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     private ObservableScrollView mProgramVScroller;
     // Programmes of a page are on their way (paging, a new day): the rows are about to be replaced
     private boolean mProgramsLoading = false;
+    // A built page's rows are going on screen a few per frame (DisplayProgramsTask.addRowsInFrames)
+    private boolean mRowsAdding = false;
     private int mProgramsToken = 0;
     private ObservableHorizontalScrollView mProgramHScroller;
     // Where the guide was when it was left (onPause): the next load comes back there
@@ -418,6 +420,10 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
 
     /** No channel in this view: Favorites says how to add one and offers All. */
     private void showNoChannels(boolean focusShowAll) {
+        // A page still going on screen stops (its rows would land under the empty message)
+        if (mDisplayProgramsTask != null) mDisplayProgramsTask.cancel(true);
+        mDisplayProgramsTask = null;
+        mRowsAdding = false;
         if (mView == GuideView.FAVORITES) {
             // One plain line on how to add one, and the way to All (focus there before the rows go)
             mEmptyFavorites.setVisibility(View.VISIBLE);
@@ -751,6 +757,9 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     }
 
     private void loadProgramData() {
+        // A page still going on screen stops here: its rows are about to be replaced
+        if (mDisplayProgramsTask != null) mDisplayProgramsTask.cancel(true);
+        mRowsAdding = false;
         mProgramRows.removeAllViews();
         mChannels.removeAllViews();
         mChannelStatus.setText("");
@@ -802,6 +811,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         @Override
         protected void onPreExecute() {
             Timber.d("*** Display programs pre-execute");
+            mRowsAdding = false;
             mChannels.removeAllViews();
             mProgramRows.removeAllViews();
             displayedChannels = 0;
@@ -895,10 +905,36 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         protected void onPostExecute(Void aVoid) {
             Timber.d("*** Display programs post execute");
             timing("rows built: " + rows.size());
-            if (getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) {
-                addRows(rowChannels, rows);
+            if (!getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) {
+                onRowsAdded();
+                return;
             }
+            // The rest of the page a screenful per frame: all of it at once (up to 75 rows, over a
+            // thousand programme cells inflated, measured and laid out) was one 1.4 s frame on the
+            // Sony the first time the guide opened after start, while the code still ran interpreted.
+            mRowsAdding = true;
+            addRowsInFrames();
+        }
 
+        /** Adds the next screenful of rows, then the next one at the next frame, until the page is up. */
+        private void addRowsInFrames() {
+            // A newer page (paging, a reload, the view switched) or the guide gone: this one stops
+            if (mDisplayProgramsTask != this || isCancelled() || !isAdded() || getView() == null) {
+                if (mDisplayProgramsTask == this) mRowsAdding = false;
+                return;
+            }
+            int end = GuideModel.guideRowBatchEnd(added, rows.size(), firstBatch);
+            addRows(rowChannels.subList(0, end), rows.subList(0, end));
+            if (end < rows.size()) {
+                mProgramRows.postOnAnimation(this::addRowsInFrames);
+                return;
+            }
+            mRowsAdding = false;
+            onRowsAdded();
+        }
+
+        /** The whole page is on screen: paging rows, status, focus, then the rest of All. */
+        private void onRowsAdded() {
             addBottomPagingRow();
 
             updateChannelStatus(displayedChannels);
@@ -909,11 +945,17 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
 
             mSpinner.setVisibility(View.GONE);
             updateNowLine();
-            if (firstFocusView != null && !mKeepHeaderFocus && firstFocusView != focusedEarly) {
-                firstFocusView.requestFocus();
+            // Left for a channel while the rows went up: the place kept on leaving stays for the way back
+            if (isResumed()) {
+                if (firstFocusView != null && !mKeepHeaderFocus && firstFocusView != focusedEarly) {
+                    firstFocusView.requestFocus();
+                }
+                if (pendingPlace() != null) restorePlace();
+                // Something always has focus once the rows are up (after restorePlace's own post)
+                final View fallback = firstFocusView;
+                mProgramRows.post(() -> ensureFocus(fallback));
             }
             mKeepHeaderFocus = false;
-            if (pendingPlace() != null) restorePlace();
 
             onFirstScreen(displayedChannels);
             timing("whole page on screen: " + displayedChannels + " rows");
@@ -927,6 +969,21 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
                 if (mLiveUpdates != null) mLiveUpdates.relist();
             }
         }
+    }
+
+    /** Focus on [fallback] (the page's first or last-watched channel) when nothing in the guide has it. */
+    private void ensureFocus(@Nullable View fallback) {
+        if (!isResumed() || fallback == null || !fallback.isAttachedToWindow()) return;
+        View focus = requireActivity().getCurrentFocus();
+        if (focus == null || !focus.isShown() || !isDescendant(getView(), focus)) fallback.requestFocus();
+    }
+
+    private static boolean isDescendant(@Nullable View root, View view) {
+        if (root == null) return false;
+        for (android.view.ViewParent p = view.getParent(); p != null; p = p.getParent()) {
+            if (p == root) return true;
+        }
+        return false;
     }
 
     /** The whole All list, read after its first page shows; the page's rows stay, paging reaches the rest. */
@@ -986,14 +1043,20 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             showNoChannels(false);
             return;
         }
-        boolean busy = mProgramsLoading || (mDisplayProgramsTask != null && mDisplayProgramsTask.getStatus() != AsyncTask.Status.FINISHED);
+        boolean busy = mProgramsLoading || mRowsAdding || (mDisplayProgramsTask != null && mDisplayProgramsTask.getStatus() != AsyncTask.Status.FINISHED);
         if (!busy && GuideModel.isFirstPageOf(idsOf(page), idsOf(all))) {
             // The rows shown are the list's first rows: only the paging row for the rest comes
             mCurrentDisplayChannelEndNdx = Math.min(mCurrentDisplayChannelEndNdx, all.size() - 1);
             addBottomPagingRow();
             updateChannelStatus(shownChannelIds().size());
         } else {
-            // The channels changed between the two reads: this page anew from the whole list
+            // The channels changed between the two reads: this page anew from the whole list,
+            // focus kept on the channel it is on (or where it is, outside the rows)
+            View focus = getActivity() != null ? getActivity().getCurrentFocus() : null;
+            boolean inRows = focus != null && isInGrid(focus);
+            UUID refocus = GuideModel.guideRefocusChannel(inRows, mSelectedProgram != null ? mSelectedProgram.getChannelId() : null);
+            if (refocus != null) mFirstFocusChannelId = refocus;
+            mKeepHeaderFocus = focus != null && !inRows;
             displayChannels(0, pageSize);
         }
     }
@@ -1042,6 +1105,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         return isAdded() && getView() != null && mView != null && mAllChannels != null && !mPartialList
                 && mSpinner.getVisibility() != View.VISIBLE
                 && !mProgramsLoading
+                && !mRowsAdding
                 && (mDisplayProgramsTask == null || mDisplayProgramsTask.getStatus() == AsyncTask.Status.FINISHED);
     }
 

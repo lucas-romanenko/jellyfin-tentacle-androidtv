@@ -292,3 +292,19 @@ fun liveTvVersionFrom(collectionFolders: List<String>?): Long? =
  */
 fun isFirstPageOf(pageIds: List<UUID>, allIds: List<UUID>): Boolean =
 	pageIds.size <= allIds.size && allIds.subList(0, pageIds.size) == pageIds
+
+/**
+ * Where the next batch of a page's rows ends when they go on screen a few per frame: [perFrame]
+ * more after the [added] already there, never past [total]. Adding a whole page (75 rows, over a
+ * thousand programme cells) in one frame held the screen for 1.4 s on a TV the first time.
+ */
+fun guideRowBatchEnd(added: Int, total: Int, perFrame: Int): Int =
+	minOf(total, maxOf(added, 0) + maxOf(perFrame, 1))
+
+/**
+ * The channel to focus when the rows are built again under the person (the whole All list came
+ * and differs from its first page): the channel focused now when focus is in the rows, else none,
+ * so focus elsewhere (the Favorites / All toggle, a day) stays where it is.
+ */
+fun guideRefocusChannel(focusInRows: Boolean, focusedChannel: UUID?): UUID? =
+	if (focusInRows) focusedChannel else null

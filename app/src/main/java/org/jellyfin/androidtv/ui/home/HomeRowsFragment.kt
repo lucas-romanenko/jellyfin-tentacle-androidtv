@@ -163,6 +163,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val onNowAdapters = mutableMapOf<String, ItemRowAdapter>()
 	// This home has an On Now row (shown or, with nothing on, left out)
 	@Volatile private var onNowInHome = false
+	// The last in-place rebuild kept the On Now row on screen
+	private var onNowReused = false
 	// Empty answers in a row per Tentacle row (see TentacleRowRefresh).
 	private val emptyRowAnswers = mutableMapOf<String, Int>()
 	// The last answer kept as "shrank too far to believe", per playlist: the same answer
@@ -1173,6 +1175,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 			// Build fresh rows into a temp adapter (also populates tentacleRowAdapters)
 			tentacleRowAdapters.clear()
+			onNowReused = false
 			val presenterSelector = rowsAdapter.presenterSelector ?: return@withContext
 			val ctx = context ?: return@withContext
 			val tempAdapter = MutableObjectAdapter<Row>(presenterSelector)
@@ -1218,6 +1221,12 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 						if (freshId != null && existingAdapter != null) {
 							tentacleRowAdapters[freshId] = existingAdapter
 						}
+						// On Now kept on screen: its refills must reach the row shown, not the
+						// fresh copy built for the comparison
+						if (existingAdapter != null && freshAdapter != null && onNowAdapters[ON_NOW_ROW_KEY] === freshAdapter) {
+							onNowAdapters[ON_NOW_ROW_KEY] = existingAdapter
+							onNowReused = true
+						}
 						newContentRows.add(existingRow)
 					}
 				} else {
@@ -1260,6 +1269,8 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			trackStockRows()
 			resyncSelectedItem()
 		}
+		// The kept On Now row shows what the rebuild just read
+		if (onNowReused) refreshOnNow()
 
 		// Update tracked section keys
 		currentTentacleSectionKeys = newKeys

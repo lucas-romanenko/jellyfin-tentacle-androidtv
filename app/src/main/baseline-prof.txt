@@ -5144,6 +5144,7 @@ HPLorg/jellyfin/androidtv/ui/livetv/LiveTvGuideFragment;->**(**)**
 HPLorg/jellyfin/androidtv/ui/livetv/LiveTvGuideFragment$DisplayProgramsTask;->**(**)**
 HPLorg/jellyfin/androidtv/ui/livetv/LiveTvGuideFragmentHelperKt;->**(**)**
 HPLorg/jellyfin/androidtv/ui/livetv/GuideModel;->**(**)**
+HPLorg/jellyfin/androidtv/ui/livetv/GuideRowPacing;->**(**)**
 HPLorg/jellyfin/androidtv/ui/livetv/GuidePlaces;->**(**)**
 HPLorg/jellyfin/androidtv/ui/livetv/GuideFilters;->**(**)**
 HPLorg/jellyfin/androidtv/ui/livetv/GuideLiveUpdates;->**(**)**

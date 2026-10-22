@@ -157,8 +157,8 @@ class MainActivity : FragmentActivity() {
 			}
 		}
 
-		// New version check (github flavor): on launch, and on coming back after 12 hours
-		UpdatePrompt.autoCheck(this)
+		// The new-version notification was selected (Home runs the automatic check)
+		UpdatePrompt.openIfRequested(this)
 	}
 	
 	private fun setupSyncPlayQueueLauncher() {
@@ -196,8 +196,7 @@ class MainActivity : FragmentActivity() {
 
 		interactionTrackerViewModel.activityPaused = false
 
-		// Coming back after 12 hours checks for a new version again
-		UpdatePrompt.autoCheck(this)
+		UpdatePrompt.openIfRequested(this)
 	}
 
 	private fun validateAuthentication(): Boolean {

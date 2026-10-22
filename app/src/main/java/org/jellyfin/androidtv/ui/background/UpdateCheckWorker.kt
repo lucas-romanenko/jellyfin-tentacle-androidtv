@@ -47,6 +47,8 @@ class UpdateCheckWorker(
 
 			when (val result = updateChecker.checkForUpdate()) {
 				is UpdateCheckResult.Available -> {
+					// Notifications rarely show on TV launchers: Home offers it the next time it shows
+					userPreferences[UserPreferences.updateFoundVersion] = result.info.version
 					val snoozed = isUpdateSnoozed(
 						version = result.info.version,
 						snoozedVersion = userPreferences[UserPreferences.updateSnoozedVersion],
@@ -58,7 +60,10 @@ class UpdateCheckWorker(
 						showUpdateNotification(result.info)
 					}
 				}
-				UpdateCheckResult.UpToDate -> Timber.d("No updates available")
+				UpdateCheckResult.UpToDate -> {
+					userPreferences[UserPreferences.updateFoundVersion] = ""
+					Timber.d("No updates available")
+				}
 				is UpdateCheckResult.Failed -> Timber.w("Update check failed: ${result.reason}")
 			}
 

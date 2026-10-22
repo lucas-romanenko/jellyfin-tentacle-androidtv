@@ -45,8 +45,11 @@ keeps its title and notes; a bare tag gets one with generated notes.
 The github flavor's release build checks
 `api.github.com/repos/lucas-romanenko/jellyfin-tentacle-androidtv/releases/latest`
 (`data/service/UpdateCheckerService.kt`; decisions as pure functions in
-`UpdateLogic.kt`, `UpdateLogicTests`) on launch and when it comes back
-after 12 h, and offers a strictly newer tag (semver: an rc is older than
+`UpdateLogic.kt`, `UpdateLogicTests`) when Home shows and the last check
+the person saw is 6 h old, or at once when the daily `UpdateCheckWorker`
+found a newer version (`isHomeCheckDue`; not per process: WorkManager
+starts the app in the background, and opening it later must still check),
+and offers a strictly newer tag (semver: an rc is older than
 its release) in a dialog (`ui/update/UpdatePrompt.kt`, also Settings →
 About "Check for updates" and the daily notification). It installs the
 `-github-release.apk` asset, never a debug one. So a release must have the

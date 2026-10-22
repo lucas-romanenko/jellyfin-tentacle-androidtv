@@ -96,12 +96,39 @@ class UpdateLogicTests : FunSpec({
 		isUpdateSnoozed("1.22.0", "1.22.0", at, at - day) shouldBe false
 	}
 
-	test("the automatic check runs once per process and again after 12 hours") {
+	test("Home checks when the last check the person saw is 6 hours old, not per process") {
 		val hour = 60L * 60 * 1000
-		isAutoCheckDue(null, 5) shouldBe true
-		isAutoCheckDue(0, 11 * hour) shouldBe false
-		isAutoCheckDue(0, 12 * hour) shouldBe true
-		isAutoCheckDue(10 * hour, 0) shouldBe true
+		val now = 100 * hour
+		fun due(lastSeen: Long, nowMs: Long = now) = isHomeCheckDue("1.23.0", lastSeen, "", false, null, nowMs)
+		// Never checked on screen (a process Android started in the background counts for nothing)
+		due(0) shouldBe true
+		due(now - 5 * hour) shouldBe false
+		due(now - 6 * hour) shouldBe true
+		due(now - 30 * hour) shouldBe true
+		// A clock set back doesn't silence it
+		due(now + hour) shouldBe true
+	}
+
+	test("Home checks at once when the background check found a newer version") {
+		val hour = 60L * 60 * 1000
+		val now = 100 * hour
+		val seenJustNow = now - 60_000
+		isHomeCheckDue("1.23.0", seenJustNow, "1.25.1", foundSnoozed = false, lastFailedMs = null, nowMs = now) shouldBe true
+		// "Later" for that version: the 6-hour rule decides
+		isHomeCheckDue("1.23.0", seenJustNow, "1.25.1", foundSnoozed = true, lastFailedMs = null, nowMs = now) shouldBe false
+		// Already installed (the update went through): nothing found any more
+		isHomeCheckDue("1.25.1", seenJustNow, "1.25.1", foundSnoozed = false, lastFailedMs = null, nowMs = now) shouldBe false
+		isHomeCheckDue("1.25.1", seenJustNow, "1.25.0", foundSnoozed = false, lastFailedMs = null, nowMs = now) shouldBe false
+		isHomeCheckDue("1.23.0", seenJustNow, "", foundSnoozed = false, lastFailedMs = null, nowMs = now) shouldBe false
+	}
+
+	test("after a check without an answer Home waits 15 minutes before asking GitHub again") {
+		val minute = 60L * 1000
+		val now = 1000 * minute
+		isHomeCheckDue("1.23.0", 0, "", false, lastFailedMs = now - 5 * minute, nowMs = now) shouldBe false
+		isHomeCheckDue("1.23.0", 0, "1.25.1", false, lastFailedMs = now - 5 * minute, nowMs = now) shouldBe false
+		isHomeCheckDue("1.23.0", 0, "", false, lastFailedMs = now - 15 * minute, nowMs = now) shouldBe true
+		isHomeCheckDue("1.23.0", 0, "", false, lastFailedMs = now + minute, nowMs = now) shouldBe true
 	}
 
 	test("download percent") {

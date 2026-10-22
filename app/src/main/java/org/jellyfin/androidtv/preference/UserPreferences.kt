@@ -127,10 +127,22 @@ class UserPreferences(context: Context) : SharedPreferenceStore(
 		var updateNotificationsEnabled = booleanPreference("update_notifications_enabled", true)
 
 		/**
-		 * The version "Later" was pressed for, and when (ms): not offered again on launch for 3 days
+		 * The version "Later" was pressed for, and when (ms): not offered again by Home for 3 days
 		 */
 		var updateSnoozedVersion = stringPreference("update_snoozed_version", "")
 		var updateSnoozedAt = longPreference("update_snoozed_at", 0L)
+
+		/**
+		 * When a check last answered while the person had Home on screen (ms, 0 = never): Home
+		 * checks again 6 hours later
+		 */
+		var updateSeenCheckAt = longPreference("update_seen_check_at", 0L)
+
+		/**
+		 * A newer version the background check found that hasn't been offered on screen yet:
+		 * Home offers it the next time it shows
+		 */
+		var updateFoundVersion = stringPreference("update_found_version", "")
 
 		/**
 		 * Enable multi-server library aggregation

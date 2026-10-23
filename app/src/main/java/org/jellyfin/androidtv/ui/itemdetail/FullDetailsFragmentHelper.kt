@@ -18,6 +18,7 @@ import org.jellyfin.androidtv.data.repository.deleteOutcomeMessage
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.playback.PrePlaybackTrackSelector
+import org.jellyfin.androidtv.ui.playback.rethrowIfCancelled
 import org.jellyfin.androidtv.util.TimeUtils
 import org.jellyfin.androidtv.util.Utils
 import org.jellyfin.androidtv.util.appScope
@@ -410,19 +411,38 @@ fun FullDetailsFragment.getLiveTvDefaultTimer(
 	}
 }
 
-fun FullDetailsFragment.cancelLiveTvSeriesTimer(
+/** Cancels one booked programme ([timerId] is a timer's, not a series timer's). */
+fun FullDetailsFragment.cancelLiveTvTimer(
 	timerId: String,
 	callback: () -> Unit,
+) = cancelLiveTv(callback) { liveTvApi.cancelTimer(timerId) }
+
+/**
+ * Cancels a series timer and the programmes it booked. Jellyfin answers 404 when a series timer id
+ * is sent to the one-off timer cancel, so the series kept recording (#195).
+ */
+fun FullDetailsFragment.cancelLiveTvSeriesTimer(
+	seriesTimerId: String,
+	callback: () -> Unit,
+) = cancelLiveTv(callback) { liveTvApi.cancelSeriesTimer(seriesTimerId) }
+
+private fun FullDetailsFragment.cancelLiveTv(
+	callback: () -> Unit,
+	request: suspend ApiClient.() -> Unit,
 ) {
 	val api by inject<ApiClient>()
 
 	lifecycleScope.launch {
 		runCatching {
 			withContext(Dispatchers.IO) {
-				api.liveTvApi.cancelTimer(timerId)
+				api.request()
 			}
 		}.onSuccess {
 			callback()
+		}.onFailure { error ->
+			error.rethrowIfCancelled()
+			Timber.w(error, "Live TV cancel refused")
+			Toast.makeText(requireContext(), R.string.msg_unable_to_cancel, Toast.LENGTH_LONG).show()
 		}
 	}
 }

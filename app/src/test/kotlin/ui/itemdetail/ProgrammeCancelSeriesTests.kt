@@ -133,6 +133,19 @@ class ProgrammeCancelSeriesTests : FunSpec({
 		}
 	}
 
+	test("cancelling one booked programme still cancels its timer") {
+		FakeJellyfin().use { server ->
+			val page = page(server)
+
+			page.fragment.cancelLiveTvTimer(timerId) { page.done = true }
+			page.settle()
+
+			page.uncaught.shouldBeEmpty()
+			server.requests shouldContainExactly listOf("DELETE /LiveTv/Timers/$timerId")
+			page.done shouldBe true
+		}
+	}
+
 	test("a cancel Jellyfin refuses says so instead of closing silently") {
 		FakeJellyfin().use { server ->
 			val page = page(server)

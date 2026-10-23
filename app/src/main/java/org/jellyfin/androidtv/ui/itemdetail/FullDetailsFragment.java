@@ -1021,7 +1021,7 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
                                 return null;
                             });
                         } else {
-                            FullDetailsFragmentHelperKt.cancelLiveTvSeriesTimer(FullDetailsFragment.this, mProgramInfo.getTimerId(), () -> {
+                            FullDetailsFragmentHelperKt.cancelLiveTvTimer(FullDetailsFragment.this, mProgramInfo.getTimerId(), () -> {
                                 setRecTimer(null);
                                 dataRefreshService.getValue().setLastDeletedItemId(mProgramInfo.getId());
                                 Utils.showToast(requireContext(), R.string.msg_recording_cancelled);

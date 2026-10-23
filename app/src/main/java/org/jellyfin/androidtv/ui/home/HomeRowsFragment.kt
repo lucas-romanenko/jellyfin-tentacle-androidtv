@@ -7,6 +7,7 @@ import androidx.core.view.isVisible
 import androidx.leanback.app.RowsSupportFragment
 import androidx.leanback.widget.ClassPresenterSelector
 import androidx.leanback.widget.ListRow
+import androidx.leanback.widget.ListRowPresenter
 import androidx.leanback.widget.OnItemViewClickedListener
 import androidx.leanback.widget.OnItemViewSelectedListener
 import androidx.leanback.widget.Presenter
@@ -1435,28 +1436,41 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				return@postDelayed
 			}
 
-			// Read the actual item at the current position from the adapter,
-			// since currentItem may be stale after a structural rebuild.
+			// Read the actual item the focus is on from the adapter, since currentItem may be
+			// stale after a structural rebuild: the focused card of the selected row, not its
+			// first one (that put another title's backdrop behind the focused card, #14).
 			val pos = selectedPosition
 			val row = if (pos in 0 until adapter.size()) adapter[pos] as? ListRow else null
 			val rowAdapter = row?.adapter as? MutableObjectAdapter<*>
-			val item = if (rowAdapter != null && rowAdapter.size() > 0) {
-				rowAdapter[0] as? BaseRowItem
-			} else null
+			val column = (getRowViewHolder(pos) as? ListRowPresenter.ViewHolder)?.selectedPosition
+			val index = rowAdapter?.let { focusedCardIndex(column, it.size()) }
+			val item = index?.let { rowAdapter?.get(it) as? BaseRowItem }
 
 			if (item != null) {
 				currentItem = item
+				currentRow = row
 				_selectedPositionFlow.value = pos
 				_selectedItemStateFlow.value = SelectedItemState(
 					title = item.getName(requireContext()) ?: "",
 					summary = item.getSummary(requireContext()) ?: "",
 					baseItem = item.baseItem
 				)
-				backgroundService.setBackground(item.baseItem, BlurContext.BROWSING)
+				setBackgroundFor(item, row)
 			}
 
 			suppressSelectionClearing = false
 		}, 500)
+	}
+
+	// The background for a focused card: a library tile shows a random backdrop of its library
+	private fun setBackgroundFor(item: BaseRowItem, row: ListRow?) {
+		val baseItem = item.baseItem
+		val adapter = row?.adapter as? ItemRowAdapter
+		if (adapter?.queryType == QueryType.Views && baseItem != null) {
+			backgroundService.setBackgroundFromLibrary(baseItem.id, BlurContext.BROWSING)
+		} else {
+			backgroundService.setBackground(baseItem, BlurContext.BROWSING)
+		}
 	}
 
 	private suspend fun addBuiltInSection(
@@ -1576,6 +1590,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				// Cancel any pending theme music playback
 				themeMusicPlayer.cancelDelayedPlay()
 
+				// A card's background still waiting for its debounce would land here (#14)
+				backgroundDebouncer.cancel()
+
 				// Don't clear background if we're on the media bar row - it has its own backdrop
 				if (row !is MediaBarRow) {
 					backgroundService.clearBackgrounds()
@@ -1603,15 +1620,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					)
 				}
 
-				backgroundDebouncer.debounce {
-					val baseItem = item.baseItem
-					val adapter = (row as? ListRow)?.adapter as? ItemRowAdapter
-					if (adapter?.queryType == QueryType.Views && baseItem != null) {
-						backgroundService.setBackgroundFromLibrary(baseItem.id, BlurContext.BROWSING)
-					} else {
-						backgroundService.setBackground(baseItem, BlurContext.BROWSING)
-					}
-				}
+				backgroundDebouncer.debounce { setBackgroundFor(item, row as? ListRow) }
 				
 				// Play theme music on focus if enabled (with delay)
 				item.baseItem?.let { baseItem ->

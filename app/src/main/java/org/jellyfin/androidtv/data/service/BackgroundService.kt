@@ -10,9 +10,11 @@ import coil3.ImageLoader
 import coil3.request.ImageRequest
 import coil3.size.Size
 import coil3.toBitmap
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -59,11 +61,21 @@ class BackgroundService(
 	companion object {
 		val SLIDESHOW_DURATION = 30.seconds
 		val TRANSITION_DURATION = 800.milliseconds
+
+		// How long another title's picture may stay while the latest one loads (#14)
+		val STALE_GRACE = 1.seconds
 	}
+
+	// What a request shows: its image urls with their blur, or a library's random backdrop
+	private data class UrlsKey(val urls: Set<String>, val blurContext: BlurContext)
+	private data class LibraryKey(val libraryId: UUID, val blurContext: BlurContext)
 
 	// Async
 	private val scope = MainScope()
 	private var loadBackgroundsJob: Job? = null
+	private var staleFadeJob: Job? = null
+	// Only the latest request's picture goes on screen (#14)
+	private val requests = BackdropRequests()
 	private var updateBackgroundTimerJob: Job? = null
 	private var lastBackgroundTimerUpdate = 0L
 
@@ -162,60 +174,110 @@ class BackgroundService(
 
 		_blurContext.value = blurContext
 
-		loadBackgroundsJob?.cancel()
+		// The same library tile again keeps the random backdrop it got
+		val ticket = startRequest(LibraryKey(libraryId, blurContext)) ?: return
+		val decode = decodeOptions(blurContext)
 		loadBackgroundsJob = scope.launch(Dispatchers.IO) {
-			try {
-				// Try to find an item with a backdrop image
-				val response by api.itemsApi.getItems(
-					parentId = libraryId,
-					recursive = true,
-					sortBy = listOf(ItemSortBy.RANDOM),
-					limit = 1,
-					imageTypes = listOf(ImageType.BACKDROP),
-				)
-				val item = response.items.firstOrNull()
-				if (item != null) {
-					val backdropUrls = (item.itemBackdropImages + item.parentBackdropImages)
-						.take(1)
-						.map { it.getUrl(api, maxWidth = backdropMaxWidth) }
-						.toSet()
-					if (backdropUrls.isNotEmpty()) {
-						loadBackgrounds(backdropUrls)
-						return@launch
-					}
-				}
-
-				// Fallback: fetch any item with a primary image
-				val fallback by api.itemsApi.getItems(
-					parentId = libraryId,
-					recursive = true,
-					sortBy = listOf(ItemSortBy.RANDOM),
-					limit = 1,
-					imageTypes = listOf(ImageType.PRIMARY),
-				)
-				val fallbackItem = fallback.items.firstOrNull()
-				if (fallbackItem != null) {
-					val primaryUrl = api.imageApi.getItemImageUrl(
-						itemId = fallbackItem.id,
-						imageType = ImageType.PRIMARY,
-						maxWidth = backdropMaxWidth,
-					)
-					loadBackgrounds(setOf(primaryUrl))
-					return@launch
-				}
+			val urls = try {
+				randomLibraryBackdrop(libraryId)
+			} catch (e: CancellationException) {
+				throw e
 			} catch (e: Exception) {
 				Timber.w(e, "Failed to fetch random backdrop from library $libraryId")
+				emptySet()
 			}
-			clearBackgrounds()
+			decodeAndPublish(urls, ticket, decode)
 		}
+	}
+
+	// A random item of the library with a backdrop, else one with a primary image (IO)
+	private suspend fun randomLibraryBackdrop(libraryId: UUID): Set<String> {
+		val response by api.itemsApi.getItems(
+			parentId = libraryId,
+			recursive = true,
+			sortBy = listOf(ItemSortBy.RANDOM),
+			limit = 1,
+			imageTypes = listOf(ImageType.BACKDROP),
+		)
+		val item = response.items.firstOrNull()
+		if (item != null) {
+			val backdropUrls = (item.itemBackdropImages + item.parentBackdropImages)
+				.take(1)
+				.map { it.getUrl(api, maxWidth = backdropMaxWidth) }
+				.toSet()
+			if (backdropUrls.isNotEmpty()) return backdropUrls
+		}
+
+		val fallback by api.itemsApi.getItems(
+			parentId = libraryId,
+			recursive = true,
+			sortBy = listOf(ItemSortBy.RANDOM),
+			limit = 1,
+			imageTypes = listOf(ImageType.PRIMARY),
+		)
+		val fallbackItem = fallback.items.firstOrNull() ?: return emptySet()
+		return setOf(
+			api.imageApi.getItemImageUrl(
+				itemId = fallbackItem.id,
+				imageType = ImageType.PRIMARY,
+				maxWidth = backdropMaxWidth,
+			)
+		)
 	}
 
 	private fun loadBackgrounds(backdropUrls: Set<String>) {
 		if (backdropUrls.isEmpty()) return clearBackgrounds()
 
+		val blurContext = _blurContext.value
+		val ticket = startRequest(UrlsKey(backdropUrls, blurContext)) ?: return
+		val decode = decodeOptions(blurContext)
+		loadBackgroundsJob = scope.launch(Dispatchers.IO) {
+			decodeAndPublish(backdropUrls, ticket, decode)
+		}
+	}
+
+	/**
+	 * Makes [key] the latest request (#14): older loads are cancelled and can no longer publish.
+	 * Returns its ticket, or null when there is nothing to load: [key] is on screen already, or
+	 * its load is running. While it loads, a picture of an earlier request fades out after
+	 * [STALE_GRACE] rather than staying behind another title. Main thread.
+	 */
+	private fun startRequest(key: Any): Long? {
 		_enabled.value = true
-		
-		val blurAmount = when (_blurContext.value) {
+		if (requests.isLatestKey(key) && (requests.alreadyShown(key) || loadBackgroundsJob?.isActive == true)) return null
+
+		cancelLoads()
+		val ticket = requests.start(key)
+		if (requests.alreadyShown(key)) {
+			// Back to what is still on screen (focus left a card and came back before the
+			// other one loaded): keep it
+			requests.publish(ticket)
+			return null
+		}
+		if (requests.shownKey != null) {
+			staleFadeJob = scope.launch {
+				delay(STALE_GRACE)
+				if (requests.fadesOut(ticket)) {
+					_backgrounds = emptyList()
+					_currentIndex = 0
+					update()
+				}
+			}
+		}
+		return ticket
+	}
+
+	private fun cancelLoads() {
+		loadBackgroundsJob?.cancel()
+		loadBackgroundsJob = null
+		staleFadeJob?.cancel()
+		staleFadeJob = null
+	}
+
+	private class DecodeOptions(val cpuBlur: Boolean, val blurAmount: Int, val size: Size)
+
+	private fun decodeOptions(blurContext: BlurContext): DecodeOptions {
+		val blurAmount = when (blurContext) {
 			BlurContext.DETAILS -> userSettingPreferences[UserSettingPreferences.detailsBackgroundBlurAmount]
 			BlurContext.BROWSING -> userSettingPreferences[UserSettingPreferences.browsingBackgroundBlurAmount]
 			BlurContext.NONE -> 0
@@ -224,53 +286,62 @@ class BackgroundService(
 		// Blurring on the CPU (legacy devices, and every device while browsing): decode at
 		// quarter size — the heavy blur hides the resolution loss and it cuts decode + blur +
 		// GPU upload cost ~4x, which matters while these loads race D-pad scrolling.
-		val cpuBlur = !usesComposeBlur(_blurContext.value) && blurAmount > 0
-		val decodeSize = if (cpuBlur) Size(480, 270) else Size(960, 540)
+		val cpuBlur = !usesComposeBlur(blurContext) && blurAmount > 0
+		return DecodeOptions(cpuBlur, blurAmount, if (cpuBlur) Size(480, 270) else Size(960, 540))
+	}
 
-		loadBackgroundsJob?.cancel()
-		loadBackgroundsJob = scope.launch(Dispatchers.IO) {
-			// The first picture shows as soon as it is ready; the others (a details screen's
-			// slideshow) follow without holding it back.
-			val loaded = mutableListOf<ImageBitmap>()
-			for (url in backdropUrls) {
-				val bitmap = imageLoader.execute(
-					request = ImageRequest.Builder(context).data(url)
-						// Downscale for background use — full resolution is unnecessary
-						// and significantly slows blur processing on TV hardware
-						.size(decodeSize)
-						.build()
-				).image?.toBitmap() ?: continue
+	// Loads [backdropUrls] for request [ticket] and shows them, as long as it is the latest one.
+	private suspend fun decodeAndPublish(backdropUrls: Set<String>, ticket: Long, decode: DecodeOptions) {
+		// The first picture shows as soon as it is ready; the others (a details screen's
+		// slideshow) follow without holding it back.
+		val loaded = mutableListOf<ImageBitmap>()
+		for (url in backdropUrls) {
+			val bitmap = imageLoader.execute(
+				request = ImageRequest.Builder(context).data(url)
+					// Downscale for background use — full resolution is unnecessary
+					// and significantly slows blur processing on TV hardware
+					.size(decode.size)
+					.build()
+			).image?.toBitmap() ?: continue
 
-				loaded += if (cpuBlur) BitmapBlur.blur(bitmap, blurAmount).asImageBitmap() else bitmap.asImageBitmap()
-				// Published on the main thread, and never by a load a newer one replaced (the blur
-				// can't be cancelled midway).
-				ensureActive()
-				val published = loaded.toList()
-				withContext(Dispatchers.Main) {
-					_backgrounds = published
-					if (published.size == 1) {
-						_currentIndex = 0
-						update()
-					} else if (published.size == 2 && _currentBackground.value === published[0]) {
-						// A second backdrop arrived: start the slideshow. (While the first still
-						// waits for the transition guard, that update starts it.)
-						setTimer()
-					}
-				}
-			}
-			if (loaded.isEmpty()) {
-				ensureActive()
-				withContext(Dispatchers.Main) {
-					_backgrounds = emptyList()
+			currentCoroutineContext().ensureActive()
+			loaded += if (decode.cpuBlur) BitmapBlur.blur(bitmap, decode.blurAmount).asImageBitmap() else bitmap.asImageBitmap()
+			// Published on the main thread, and only while this is the latest request: a newer
+			// one may have started while this decoded or blurred (the blur can't be cancelled
+			// midway).
+			val published = loaded.toList()
+			val shown = withContext(Dispatchers.Main) {
+				if (!requests.publish(ticket)) return@withContext false
+				staleFadeJob?.cancel()
+				_backgrounds = published
+				if (published.size == 1) {
 					_currentIndex = 0
 					update()
+				} else if (published.size == 2 && _currentBackground.value === published[0]) {
+					// A second backdrop arrived: start the slideshow. (While the first still
+					// waits for the transition guard, that update starts it.)
+					setTimer()
 				}
+				true
+			}
+			if (!shown) return
+		}
+		if (loaded.isEmpty()) {
+			// No picture (none, or none loaded): neutral, if this is still the latest request
+			withContext(Dispatchers.Main) {
+				if (!requests.publishNothing(ticket)) return@withContext
+				staleFadeJob?.cancel()
+				_backgrounds = emptyList()
+				_currentIndex = 0
+				update()
 			}
 		}
 	}
 
 	fun clearBackgrounds() {
-		loadBackgroundsJob?.cancel()
+		cancelLoads()
+		// A clear is a request too: it wins over every older load still running
+		requests.publishNothing(requests.start(null))
 
 		// Re-enable backgrounds if disabled
 		_enabled.value = true

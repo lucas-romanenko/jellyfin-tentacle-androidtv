@@ -96,7 +96,14 @@ class LibraryBrowseViewModel(
 
 	var savedScrollIndex: Int = 0
 	var savedScrollOffset: Int = 0
-	var savedFocusedIndex: Int = 0
+	// The focused poster's position, for the counter; kept out of uiState like the focused item.
+	private val _focusedIndex = MutableStateFlow(0)
+	val focusedIndex: StateFlow<Int> = _focusedIndex.asStateFlow()
+	var savedFocusedIndex: Int
+		get() = _focusedIndex.value
+		set(value) {
+			_focusedIndex.value = value
+		}
 	var hasRestoredScroll: Boolean = false
 	private var isInitialized: Boolean = false
 
@@ -509,4 +516,14 @@ class LibraryBrowseViewModel(
 			}
 		}
 	}
+}
+
+/**
+ * The grid's counter: the focused poster's number (from 1) and how many there are, "1 | 14532".
+ * Empty while nothing has loaded; the loaded count stands in when the server sent no total.
+ */
+internal fun libraryCounterText(focusedIndex: Int, loadedItems: Int, totalItems: Int): String {
+	val total = maxOf(totalItems, loadedItems)
+	if (total <= 0) return ""
+	return "${focusedIndex.coerceIn(0, total - 1) + 1} | $total"
 }

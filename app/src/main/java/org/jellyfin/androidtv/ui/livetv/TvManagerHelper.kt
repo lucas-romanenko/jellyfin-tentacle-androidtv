@@ -81,7 +81,7 @@ suspend fun fetchGuideChannelPage(
 			sortBy = if (sortDatePlayed) setOf(ItemSortBy.DATE_PLAYED) else setOf(ItemSortBy.SORT_NAME),
 			sortOrder = if (sortDatePlayed) SortOrder.DESCENDING else SortOrder.ASCENDING,
 		).content
-		GuideChannelPage(result.items, result.totalRecordCount)
+		GuideChannelPage(withoutChannelSeparators(result.items), result.totalRecordCount)
 	}
 }
 
@@ -141,7 +141,7 @@ suspend fun fetchFavoriteGuideChannels(api: ApiClient, liveTvPreferences: LiveTv
 			enableUserData = true,
 			sortBy = if (sortDatePlayed) setOf(ItemSortBy.DATE_PLAYED) else setOf(ItemSortBy.SORT_NAME),
 			sortOrder = if (sortDatePlayed) SortOrder.DESCENDING else SortOrder.ASCENDING,
-		).content.items
+		).content.items.let(::withoutChannelSeparators)
 	}
 }
 

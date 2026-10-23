@@ -68,7 +68,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     public static final int GUIDE_ROW_WIDTH_PER_MIN_DP = 7;
     /** The most channels on one guide page (and per programs request, TvManagerHelper). */
     public static final int PAGE_SIZE = 75;
-    // Rows shown before the rest of a page is built (at least; more when the screen holds more)
+    // Rows in a screenful at least (more when the screen holds more): the most added in one frame
     static final int FIRST_BATCH_MIN = 8;
     public static final int NORMAL_HOURS = 9;
     public static final int FILTERED_HOURS = 4;
@@ -150,6 +150,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     private ObservableScrollView mProgramVScroller;
     // Programmes of a page are on their way (paging, a new day): the rows are about to be replaced
     private boolean mProgramsLoading = false;
+    // A page's rows are going on screen as they are built, a few per frame (DisplayProgramsTask.addRowsInFrame)
+    private boolean mRowsAdding = false;
     private int mProgramsToken = 0;
     private ObservableHorizontalScrollView mProgramHScroller;
     // Where the guide was when it was left (onPause): the next load comes back there
@@ -418,6 +420,10 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
 
     /** No channel in this view: Favorites says how to add one and offers All. */
     private void showNoChannels(boolean focusShowAll) {
+        // A page still going on screen stops (its rows would land under the empty message)
+        if (mDisplayProgramsTask != null) mDisplayProgramsTask.cancel(true);
+        mDisplayProgramsTask = null;
+        mRowsAdding = false;
         if (mView == GuideView.FAVORITES) {
             // One plain line on how to add one, and the way to All (focus there before the rows go)
             mEmptyFavorites.setVisibility(View.VISIBLE);
@@ -567,7 +573,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         if (place != null) mPlace = place;
         if (mDisplayProgramsTask != null && mDisplayProgramsTask.getStatus() != AsyncTask.Status.FINISHED) {
             mDisplayProgramsTask.cancel(true);
-            // Its rows are only added when it finishes: leave the guide empty so onResume reloads it
+            // A page only partly built: leave the guide empty so onResume reloads it
             mChannels.removeAllViews();
             mProgramRows.removeAllViews();
         }
@@ -751,6 +757,9 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     }
 
     private void loadProgramData() {
+        // A page still going on screen stops here: its rows are about to be replaced
+        if (mDisplayProgramsTask != null) mDisplayProgramsTask.cancel(true);
+        mRowsAdding = false;
         mProgramRows.removeAllViews();
         mChannels.removeAllViews();
         mChannelStatus.setText("");
@@ -778,49 +787,72 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         });
     }
 
+    // What one guide row cost on the main thread when last measured (ms; < 0: not yet in this
+    // process). A later open starts with a batch of that size instead of one row.
+    private static double sRowCostMs = -1;
+
     DisplayProgramsTask mDisplayProgramsTask;
     class DisplayProgramsTask extends AsyncTask<Integer, Integer, Void> {
 
         View firstFocusView;
         int displayedChannels = 0;
-        // Built off the main thread, added in two goes: the rows on screen as soon as they are
-        // built (onProgressUpdate), the rest of the page after (onPostExecute). A page is 25-75
-        // rows and a TV shows about 6, so the first screen doesn't wait for the whole page.
-        final List<BaseItemDto> rowChannels = new ArrayList<>();
-        final List<LinearLayout> rows = new ArrayList<>();
-        // How many rows go up first, and how many are on screen already (main thread only)
-        int firstBatch = FIRST_BATCH_MIN;
+        // Each row (its programme cells and its channel header) is built and measured off the main
+        // thread, then goes on screen as soon as it is built, as many per frame as fit the frame
+        // budget by the measured cost per row (GuideRowPacing): one row first when the cost is not
+        // known yet. Eight rows at once, built cold, were one 0.8-1.4 s frame on the Sony the first
+        // time the guide opened after start.
+        // Filled by the background thread up to [built]; the main thread reads below it only.
+        BaseItemDto[] rowChannels = new BaseItemDto[0];
+        LinearLayout[] rows = new LinearLayout[0];
+        GuideChannelHeader[] headers = new GuideChannelHeader[0];
+        volatile int built = 0;
+        volatile boolean buildDone = false;
+        // A screenful (most rows in one frame), and how many are on screen already (main thread only)
+        int screenful = FIRST_BATCH_MIN;
         int added = 0;
-        // Focused with the first rows: not again with the rest (the person may have moved on)
+        // Rows the last frame added; a frame is asked for
+        int lastBatch = 0;
+        boolean frameScheduled = false;
+        // Focused while the rows go up: not again at the end (the person may have moved on)
         View focusedEarly;
-        // The first rows, handed over to the main thread while the rest are built
-        List<BaseItemDto> firstChannels;
-        List<LinearLayout> firstRows;
+        boolean focusChannelFound = false;
+        // Sizes for measuring off the main thread the way the guide will (0: unknown, not measured)
+        int headerWidth = 0;
+        final Context context = requireContext();
         // This page's channel list: a Favorites / All switch mid-way swaps mAllChannels
         final List<BaseItemDto> channels = mAllChannels;
 
         @Override
         protected void onPreExecute() {
             Timber.d("*** Display programs pre-execute");
+            mRowsAdding = false;
             mChannels.removeAllViews();
             mProgramRows.removeAllViews();
             displayedChannels = 0;
             addTopPagingRow();
             // The rows that fit in the guide's window, and one more for the partly shown one
             if (mProgramVScroller != null && mProgramVScroller.getHeight() > 0 && guideRowHeightPx > 0) {
-                firstBatch = Math.max(FIRST_BATCH_MIN, mProgramVScroller.getHeight() / guideRowHeightPx + 1);
+                screenful = Math.max(FIRST_BATCH_MIN, mProgramVScroller.getHeight() / guideRowHeightPx + 1);
             }
+            headerWidth = Math.max(0, mChannels.getWidth() - mChannels.getPaddingLeft() - mChannels.getPaddingRight());
         }
 
         @Override
         protected Void doInBackground(Integer... params) {
             int start = params[0];
             int end = params[1];
-            boolean first = true;
+            int size = Math.max(0, Math.min(end, channels.size() - 1) - start + 1);
+            BaseItemDto[] builtChannels = new BaseItemDto[size];
+            LinearLayout[] builtRows = new LinearLayout[size];
+            GuideChannelHeader[] builtHeaders = new GuideChannelHeader[size];
+            rowChannels = builtChannels;
+            rows = builtRows;
+            headers = builtHeaders;
 
             Timber.d("*** About to iterate programs");
             timing("rows: building");
             LinearLayout prevRow = null;
+            int count = 0;
             for (int i = start; i <= end; i++) {
                 if (isCancelled()) return null;
                 if (i >= channels.size()) break;
@@ -828,11 +860,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
                 List<BaseItemDto> programs = TvManager.getProgramsForChannel(channel.getId(), mFilters);
                 final LinearLayout row = getProgramRow(programs, channel.getId());
                 if (row == null) continue; // no row to show
-
-                if (first) {
-                    first = false;
-                    firstFocusView = row;
-                }
+                GuideChannelHeader header = getChannelHeader(context, channel);
+                premeasure(row, header);
 
                 // set focus parameters if we are not on first row
                 // this makes focus movements more predictable for the grid view
@@ -842,63 +871,145 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
                 }
                 prevRow = row;
 
-                rowChannels.add(channel);
-                rows.add(row);
-
-                displayedChannels++;
-                if (rows.size() == firstBatch && i < end) {
-                    // Copies: the lists keep growing here while the main thread adds these
-                    firstChannels = new ArrayList<>(rowChannels);
-                    firstRows = new ArrayList<>(rows);
-                    publishProgress(rows.size());
-                }
+                builtChannels[count] = channel;
+                builtRows[count] = row;
+                builtHeaders[count] = header;
+                count++;
+                built = count; // after the arrays: the main thread reads below it
+                publishProgress(count);
             }
             return null;
         }
 
-        @Override
-        protected void onProgressUpdate(Integer... values) {
-            if (!getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED) || firstRows == null) return;
-            timing("first rows built: " + firstRows.size());
-            addRows(firstChannels, firstRows);
-            mSpinner.setVisibility(View.GONE);
-            updateNowLine();
-            // Back from a channel, focus goes once the place is back (restorePlace), not here first
-            if (firstFocusView != null && !mKeepHeaderFocus && pendingPlace() == null) {
-                firstFocusView.requestFocus();
-                focusedEarly = firstFocusView;
+        /**
+         * Measures a row and its header while they are not on screen yet, the way the guide will:
+         * the text layouts and the first run of the layout code then happen here instead of in the
+         * frame that shows them (a TextView keeps its layout when measured again at the same width).
+         * Only for speed: anything going wrong leaves the measuring to the main thread.
+         */
+        private void premeasure(LinearLayout row, GuideChannelHeader header) {
+            try {
+                int unspecified = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+                row.measure(unspecified, unspecified);
+                if (headerWidth > 0) header.measure(View.MeasureSpec.makeMeasureSpec(headerWidth, View.MeasureSpec.EXACTLY), unspecified);
+            } catch (RuntimeException e) {
+                Timber.w(e, "Guide row not measured ahead");
             }
-            onFirstScreen(firstRows.size());
         }
 
-        /** Adds [list]'s rows from the first not yet on screen, with their channel names. */
-        private void addRows(List<BaseItemDto> channelList, List<LinearLayout> list) {
-            Context context = requireContext();
-            for (int i = added; i < list.size(); i++) {
-                BaseItemDto channel = channelList.get(i);
-                LinearLayout row = list.get(i);
-                GuideChannelHeader header = getChannelHeader(context, channel);
+        @Override
+        protected void onProgressUpdate(Integer... values) {
+            if (!getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) return;
+            mRowsAdding = true;
+            scheduleFrame();
+        }
+
+        /** Rows are built and not on screen yet: they go up at the next frame. */
+        private void scheduleFrame() {
+            if (frameScheduled) return;
+            frameScheduled = true;
+            mProgramRows.postOnAnimation(this::addRowsInFrame);
+        }
+
+        /** Adds the next rows built, as many as fit a frame, then measures what they cost. */
+        private void addRowsInFrame() {
+            frameScheduled = false;
+            // A newer page (paging, a reload, the view switched) or the guide gone: this one stops
+            if (mDisplayProgramsTask != this || isCancelled() || !isAdded() || getView() == null) {
+                if (mDisplayProgramsTask == this) mRowsAdding = false;
+                return;
+            }
+            int ready = built;
+            if (added < ready) {
+                int perFrame = GuideRowPacing.guideRowsPerFrame(sRowCostMs >= 0 ? sRowCostMs : null,
+                        lastBatch > 0 ? lastBatch : null, GuideRowPacing.GUIDE_ROWS_FRAME_BUDGET_MS, screenful);
+                int end = GuideModel.guideRowBatchEnd(added, ready, perFrame);
+                final int count = end - added;
+                final long began = android.os.SystemClock.uptimeMillis();
+                boolean firstRows = added == 0;
+                addRows(end);
+                if (firstRows) {
+                    timing("first row on screen");
+                    mSpinner.setVisibility(View.GONE);
+                    updateNowLine();
+                }
+                focusEarly();
+                if (firstRows) onFirstScreen(end);
+                lastBatch = count;
+                // This message runs after the frame's layout and draw: their time is the rows' cost
+                mProgramRows.post(() -> {
+                    Double cost = GuideRowPacing.guideRowCost(android.os.SystemClock.uptimeMillis() - began, count);
+                    if (cost != null) sRowCostMs = cost;
+                    if (mDisplayProgramsTask != this || isCancelled()) return;
+                    if (added < built || buildDone) scheduleFrame();
+                });
+                return;
+            }
+            if (buildDone) {
+                mRowsAdding = false;
+                onRowsAdded();
+            }
+            // else: the next row built schedules the next frame (onProgressUpdate)
+        }
+
+        /** Adds the rows from the first not yet on screen up to [end], with their channel names. */
+        private void addRows(int end) {
+            for (int i = added; i < end; i++) {
+                BaseItemDto channel = rowChannels[i];
+                LinearLayout row = rows[i];
+                GuideChannelHeader header = headers[i];
                 mChannels.addView(header);
                 header.loadImage();
                 mProgramRows.addView(row);
+                if (i == 0 && firstFocusView == null) firstFocusView = row;
                 // put focus on the last tuned channel
                 if (channel.getId().equals(mFirstFocusChannelId)) {
                     firstFocusView = focusAtEnd ? row.getChildAt(row.getChildCount()-1) : row;
                     focusAtEnd = false;
                     mFirstFocusChannelId = null;
+                    focusChannelFound = true;
                 }
+                displayedChannels++;
             }
-            added = list.size();
+            added = end;
+        }
+
+        /**
+         * Focus while the rows go up: on the channel last watched as soon as its row is there, else
+         * on the first row once a screenful is (or straight away when there is no channel to look
+         * for). Back from a channel, focus goes once the place is back (restorePlace), not here.
+         */
+        private void focusEarly() {
+            if (focusedEarly != null || firstFocusView == null || mKeepHeaderFocus || pendingPlace() != null) return;
+            if (focusChannelFound || mFirstFocusChannelId == null || added >= screenful) {
+                firstFocusView.requestFocus();
+                focusedEarly = firstFocusView;
+            }
         }
 
         @Override
         protected void onPostExecute(Void aVoid) {
             Timber.d("*** Display programs post execute");
-            timing("rows built: " + rows.size());
-            if (getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) {
-                addRows(rowChannels, rows);
+            timing("rows built: " + built);
+            buildDone = true;
+            if (!getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) {
+                mRowsAdding = false;
+                onRowsAdded();
+                return;
             }
+            // The rows built last (or none at all) still go up through the frames
+            mRowsAdding = true;
+            scheduleFrame();
+        }
 
+        @Override
+        protected void onCancelled(Void aVoid) {
+            // Its rows stop going up (a frame already asked for sees the cancel and adds nothing)
+            if (mDisplayProgramsTask == this) mRowsAdding = false;
+        }
+
+        /** The whole page is on screen: paging rows, status, focus, then the rest of All. */
+        private void onRowsAdded() {
             addBottomPagingRow();
 
             updateChannelStatus(displayedChannels);
@@ -909,11 +1020,17 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
 
             mSpinner.setVisibility(View.GONE);
             updateNowLine();
-            if (firstFocusView != null && !mKeepHeaderFocus && firstFocusView != focusedEarly) {
-                firstFocusView.requestFocus();
+            // Left for a channel while the rows went up: the place kept on leaving stays for the way back
+            if (isResumed()) {
+                if (firstFocusView != null && !mKeepHeaderFocus && firstFocusView != focusedEarly) {
+                    firstFocusView.requestFocus();
+                }
+                if (pendingPlace() != null) restorePlace();
+                // Something always has focus once the rows are up (after restorePlace's own post)
+                final View fallback = firstFocusView;
+                mProgramRows.post(() -> ensureFocus(fallback));
             }
             mKeepHeaderFocus = false;
-            if (pendingPlace() != null) restorePlace();
 
             onFirstScreen(displayedChannels);
             timing("whole page on screen: " + displayedChannels + " rows");
@@ -927,6 +1044,21 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
                 if (mLiveUpdates != null) mLiveUpdates.relist();
             }
         }
+    }
+
+    /** Focus on [fallback] (the page's first or last-watched channel) when nothing in the guide has it. */
+    private void ensureFocus(@Nullable View fallback) {
+        if (!isResumed() || fallback == null || !fallback.isAttachedToWindow()) return;
+        View focus = requireActivity().getCurrentFocus();
+        if (focus == null || !focus.isShown() || !isDescendant(getView(), focus)) fallback.requestFocus();
+    }
+
+    private static boolean isDescendant(@Nullable View root, View view) {
+        if (root == null) return false;
+        for (android.view.ViewParent p = view.getParent(); p != null; p = p.getParent()) {
+            if (p == root) return true;
+        }
+        return false;
     }
 
     /** The whole All list, read after its first page shows; the page's rows stay, paging reaches the rest. */
@@ -986,14 +1118,20 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             showNoChannels(false);
             return;
         }
-        boolean busy = mProgramsLoading || (mDisplayProgramsTask != null && mDisplayProgramsTask.getStatus() != AsyncTask.Status.FINISHED);
+        boolean busy = mProgramsLoading || mRowsAdding || (mDisplayProgramsTask != null && mDisplayProgramsTask.getStatus() != AsyncTask.Status.FINISHED);
         if (!busy && GuideModel.isFirstPageOf(idsOf(page), idsOf(all))) {
             // The rows shown are the list's first rows: only the paging row for the rest comes
             mCurrentDisplayChannelEndNdx = Math.min(mCurrentDisplayChannelEndNdx, all.size() - 1);
             addBottomPagingRow();
             updateChannelStatus(shownChannelIds().size());
         } else {
-            // The channels changed between the two reads: this page anew from the whole list
+            // The channels changed between the two reads: this page anew from the whole list,
+            // focus kept on the channel it is on (or where it is, outside the rows)
+            View focus = getActivity() != null ? getActivity().getCurrentFocus() : null;
+            boolean inRows = focus != null && isInGrid(focus);
+            UUID refocus = GuideModel.guideRefocusChannel(inRows, mSelectedProgram != null ? mSelectedProgram.getChannelId() : null);
+            if (refocus != null) mFirstFocusChannelId = refocus;
+            mKeepHeaderFocus = focus != null && !inRows;
             displayChannels(0, pageSize);
         }
     }
@@ -1042,6 +1180,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         return isAdded() && getView() != null && mView != null && mAllChannels != null && !mPartialList
                 && mSpinner.getVisibility() != View.VISIBLE
                 && !mProgramsLoading
+                && !mRowsAdding
                 && (mDisplayProgramsTask == null || mDisplayProgramsTask.getStatus() == AsyncTask.Status.FINISHED);
     }
 

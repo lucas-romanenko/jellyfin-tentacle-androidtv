@@ -45,6 +45,8 @@ import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.apiclient.itemImages
 import org.jellyfin.androidtv.util.apiclient.parentImages
 import org.jellyfin.androidtv.util.apiclient.seriesPrimaryImage
+import org.jellyfin.androidtv.util.sdk.isTentacleYouTube
+import org.jellyfin.androidtv.util.sdk.youTubeSubtitle
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
@@ -150,7 +152,7 @@ internal fun searchCardTitle(item: BaseItemDto): String = when {
 	else -> item.name.orEmpty()
 }
 
-internal fun searchCardSubtitle(item: BaseItemDto): String = when (item.type) {
+internal fun searchCardSubtitle(item: BaseItemDto): String = if (item.isTentacleYouTube) item.youTubeSubtitle.orEmpty() else when (item.type) {
 	BaseItemKind.TV_CHANNEL -> item.number.orEmpty()
 	BaseItemKind.EPISODE -> listOfNotNull(
 		item.parentIndexNumber?.let { s -> item.indexNumber?.let { e -> "S${s}E${e}" } },

@@ -122,6 +122,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     private LocalDateTime mCurrentProgramStart = null;
     private long mCurrentTranscodeStartTime;
     private boolean isLiveTv = false;
+    private final LiveTuneAttempts liveTunes = new LiveTuneAttempts();
     private boolean directStreamLiveTv;
     private int playbackRetries = 0;
     private long lastPlaybackError = 0;
@@ -921,12 +922,18 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             TvManager.setLastLiveTvChannel(item.getId());
             //internal/exo player
             Timber.i("Using internal player for Live TV");
+            final int tune = liveTunes.start();
             playbackManager.getValue().getVideoStreamInfo(mFragment, internalOptions, position * 10000, new Response<StreamInfo>(mFragment.getLifecycle()) {
                 @Override
                 public void onResponse(StreamInfo response) {
                     if (!isActive()) return;
                     if (mVideoManager == null)
                         return;
+                    if (!liveTunes.isCurrent(tune)) {
+                        // CH+ again while this one opened: the newer channel plays, not this one (#176)
+                        Timber.i("Dropping the answer of an older tune");
+                        return;
+                    }
                     mCurrentOptions = internalOptions;
                     startItem(item, position, response);
                 }
@@ -934,6 +941,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 @Override
                 public void onError(Exception exception) {
                     if (!isActive()) return;
+                    if (!liveTunes.isCurrent(tune)) return;
                     handlePlaybackInfoError(exception);
                 }
             });

@@ -378,10 +378,12 @@ class CardPresenter @JvmOverloads constructor(
 				// items, a row turning wide): drop the old one, or it showed until the new one came.
 				if (boundUrl != null) image.clear()
 				boundUrl = url
+				// A poster fitted on a wide card: its placeholder takes the poster's shape too.
+				val fitted = imageType == ImageType.THUMB && displayConfig.scaleType == ImageView.ScaleType.FIT_CENTER
 				image.load(
 					url = url,
 					blurHash = jellyfinImage.blurHash,
-					aspectRatio = aspectRatio.toDouble(),
+					aspectRatio = ((if (fitted) jellyfinImage.aspectRatio else null) ?: aspectRatio).toDouble(),
 				)
 				return
 			}
@@ -596,14 +598,17 @@ private fun BaseRowItem.getDisplayConfig(imageType: ImageType, uniformAspect: Bo
 			else -> primaryAspectRatio ?: ImageHelper.ASPECT_RATIO_7_9.toFloat()
 		}
 
+		val image = getImage(imageType)
 		val base = BaseRowItemDisplayConfig(
 			aspectRatio = when (imageType) {
 				ImageType.BANNER -> ImageHelper.ASPECT_RATIO_16_9.toFloat()
 				ImageType.THUMB -> ImageHelper.ASPECT_RATIO_16_9.toFloat()
 				else -> defaultAspectRatio
 			},
-			image = getImage(imageType),
+			image = image,
 			iconRes = R.drawable.ic_clapperboard,
+			// A poster on a wide card is shown whole on the card background, not cropped to 16:9.
+			scaleType = if (imageType == ImageType.THUMB && image != null && !fillsWideCard(image)) ImageView.ScaleType.FIT_CENTER else null,
 		)
 
 		when (baseItem?.type) {

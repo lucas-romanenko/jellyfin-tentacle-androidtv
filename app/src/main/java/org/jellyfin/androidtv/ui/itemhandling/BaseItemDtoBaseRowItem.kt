@@ -1,6 +1,7 @@
 package org.jellyfin.androidtv.ui.itemhandling
 
 import android.content.Context
+import org.jellyfin.androidtv.ui.presentation.wideCardImage
 import org.jellyfin.androidtv.util.apiclient.JellyfinImage
 import org.jellyfin.androidtv.util.apiclient.albumPrimaryImage
 import org.jellyfin.androidtv.util.apiclient.itemImages
@@ -124,7 +125,11 @@ open class BaseItemDtoBaseRowItem @JvmOverloads constructor(
 
 		return when (imageType) {
 			BaseRowImageType.BANNER -> baseItem?.itemImages[ImageType.BANNER] ?: primaryImage
-			BaseRowImageType.THUMB -> baseItem?.itemImages[ImageType.THUMB] ?: primaryImage
+			// Wide cards: Thumb, else Backdrop, else Primary (wideCardImage). Live TV keeps its own.
+			BaseRowImageType.THUMB -> when {
+				baseItem != null && baseRowType == BaseRowType.BaseItem -> wideCardImage(baseItem, primaryImage)
+				else -> baseItem?.itemImages[ImageType.THUMB] ?: primaryImage
+			}
 			else -> primaryImage
 		}
 	}

@@ -1,12 +1,15 @@
 package org.jellyfin.androidtv.ui.search
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import org.jellyfin.androidtv.constant.QueryDefaults
 import org.jellyfin.androidtv.data.repository.DiscoverItem
 import org.jellyfin.androidtv.ui.livetv.withoutChannelSeparators
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import timber.log.Timber
+import java.util.UUID
 
 /**
  * The Jellyfin side of the Search tab: Live TV channels and library items (recordings, YouTube-library
@@ -23,7 +26,8 @@ class LibrarySearch(
 		const val CHANNEL_ROW_LIMIT = 30
 
 		val channelKinds = setOf(BaseItemKind.TV_CHANNEL)
-		val libraryKinds = setOf(BaseItemKind.MOVIE, BaseItemKind.SERIES, BaseItemKind.EPISODE, BaseItemKind.VIDEO)
+		val libraryKinds = setOf(BaseItemKind.MOVIE, BaseItemKind.SERIES, BaseItemKind.VIDEO)
+		val episodeKinds = setOf(BaseItemKind.EPISODE)
 	}
 
 	/** Channels matching [query], tunable from the card. Empty on any failure (Live TV off, no access). */
@@ -32,9 +36,31 @@ class LibrarySearch(
 		return rankChannelMatches(query, withoutChannelSeparators(found).filterNot(hideItem)).take(CHANNEL_ROW_LIMIT)
 	}
 
-	/** Library items matching [query]. Empty on any failure. */
-	suspend fun library(query: String): List<BaseItemDto> =
-		fetch("library", query, libraryKinds, QueryDefaults.SEARCH_PAGE_SIZE).filterNot(hideItem)
+	/**
+	 * Library items matching [query]: movies, shows and videos, never single episodes (owned shows
+	 * get their "In Library" badge in Discover). A show whose episodes match is listed once, when
+	 * Discover can't show it ([discoverCantShow]). Empty on any failure.
+	 */
+	suspend fun library(query: String): List<BaseItemDto> = coroutineScope {
+		val titles = async { fetch("library", query, libraryKinds, QueryDefaults.SEARCH_PAGE_SIZE) }
+		val episodes = async { fetch("episode", query, episodeKinds, QueryDefaults.SEARCH_PAGE_SIZE) }
+		val found = titles.await()
+		val seriesIds = episodes.await().mapNotNull { it.seriesId }.distinct() - found.map { it.id }.toSet()
+		val shows = if (seriesIds.isEmpty()) emptyList() else fetchItems(seriesIds).filter(::discoverCantShow)
+		(found + shows).distinctBy { it.id }.filterNot(hideItem)
+	}
+
+	private suspend fun fetchItems(ids: List<UUID>): List<BaseItemDto> = try {
+		searchRepository.items(ids).getOrElse {
+			Timber.w(it, "Search: Jellyfin series lookup failed")
+			emptyList()
+		}
+	} catch (e: CancellationException) {
+		throw e
+	} catch (e: Exception) {
+		Timber.w(e, "Search: Jellyfin series lookup failed")
+		emptyList()
+	}
 
 	private suspend fun fetch(
 		what: String,
@@ -77,6 +103,16 @@ private fun channelMatchTier(q: String, name: String): Int {
 	return 2
 }
 
+private fun BaseItemDto.tmdbId(): String? =
+	providerIds?.entries?.firstOrNull { it.key.equals("Tmdb", ignoreCase = true) }?.value?.takeIf { it.isNotBlank() }
+
+/**
+ * A show Discover (TMDB) can never list: no TMDB id (home videos, anything unmatched), or a Live TV
+ * recording, which Discover doesn't count as owned.
+ */
+internal fun discoverCantShow(series: BaseItemDto): Boolean =
+	series.tmdbId() == null || series.path.orEmpty().replace('\\', '/').contains("/livetv/recordings/", ignoreCase = true)
+
 /**
  * Library items to show in their own row. Movies and series that the Discover results already show
  * as "In Library" cards (same TMDB id) are left out, so an owned title isn't listed twice.
@@ -86,9 +122,9 @@ internal fun libraryRowItems(library: List<BaseItemDto>, discover: List<Discover
 	val ownedSeries = discover.filter { it.inLibrary && it.tmdbId > 0 && it.mediaType != "movie" }.map { it.tmdbId.toString() }.toSet()
 	if (ownedMovies.isEmpty() && ownedSeries.isEmpty()) return library
 	return library.filterNot { item ->
-		val tmdb = item.providerIds?.entries?.firstOrNull { it.key.equals("Tmdb", ignoreCase = true) }?.value
+		val tmdb = item.tmdbId()
 		when {
-			tmdb.isNullOrBlank() -> false
+			tmdb == null -> false
 			item.type == BaseItemKind.MOVIE -> tmdb in ownedMovies
 			item.type == BaseItemKind.SERIES -> tmdb in ownedSeries
 			else -> false

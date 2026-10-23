@@ -20,8 +20,19 @@ class LibrarySearchTests : FunSpec({
 	fun channel(name: String, number: String? = null) =
 		BaseItemDto(id = UUID.randomUUID(), type = BaseItemKind.TV_CHANNEL, name = name, number = number)
 
-	fun item(type: BaseItemKind, name: String, tmdb: String? = null) =
-		BaseItemDto(id = UUID.randomUUID(), type = type, name = name, providerIds = tmdb?.let { mapOf("Tmdb" to it) })
+	fun item(type: BaseItemKind, name: String, tmdb: String? = null, path: String? = null) =
+		BaseItemDto(id = UUID.randomUUID(), type = type, name = name, providerIds = tmdb?.let { mapOf("Tmdb" to it) }, path = path)
+
+	fun episode(name: String, series: BaseItemDto) =
+		BaseItemDto(id = UUID.randomUUID(), type = BaseItemKind.EPISODE, name = name, seriesId = series.id, seriesName = series.name)
+
+	/** Jellyfin with these titles (movies, shows, videos) and episodes; shows are looked up by id. */
+	fun jellyfin(titles: List<BaseItemDto>, episodes: List<BaseItemDto> = emptyList(), shows: List<BaseItemDto> = emptyList()) =
+		mockk<SearchRepository>().also { repo ->
+			coEvery { repo.search(any(), LibrarySearch.libraryKinds, any()) } returns Result.success(titles)
+			coEvery { repo.search(any(), LibrarySearch.episodeKinds, any()) } returns Result.success(episodes)
+			coEvery { repo.items(any()) } answers { Result.success(shows.filter { it.id in firstArg<Collection<UUID>>() }) }
+		}
 
 	test("channels: Jellyfin is asked for TV channels only, with room to rank") {
 		val repo = mockk<SearchRepository>()
@@ -57,19 +68,57 @@ class LibrarySearchTests : FunSpec({
 		row.take(5).map { it.name } shouldBe wordStart.map { it.name }
 	}
 
-	test("library: movies, series, episodes and videos (recordings, YouTube library)") {
-		val repo = mockk<SearchRepository>()
-		coEvery { repo.search(any(), any(), any()) } returns Result.success(listOf(item(BaseItemKind.VIDEO, "QA Tube A")))
+	test("library: movies, series and videos (YouTube library, recordings), episodes asked for separately") {
+		val repo = jellyfin(listOf(item(BaseItemKind.MOVIE, "Maple Leafs Post Game", path = "/data/media/youtube/Toronto Maple Leafs/a.mp4")))
 
-		LibrarySearch(repo).library("qa tube").map { it.name } shouldBe listOf("QA Tube A")
+		LibrarySearch(repo).library("maple leafs").map { it.name } shouldBe listOf("Maple Leafs Post Game")
 
 		coVerify(exactly = 1) {
-			repo.search(
-				"qa tube",
-				setOf(BaseItemKind.MOVIE, BaseItemKind.SERIES, BaseItemKind.EPISODE, BaseItemKind.VIDEO),
-				25,
-			)
+			repo.search("maple leafs", setOf(BaseItemKind.MOVIE, BaseItemKind.SERIES, BaseItemKind.VIDEO), 25)
+			repo.search("maple leafs", setOf(BaseItemKind.EPISODE), 25)
 		}
+		coVerify(exactly = 0) { repo.items(any()) }
+	}
+
+	test("library: no episodes; a show Discover can't list is shown once for its matching episodes") {
+		// "office": Jellyfin finds episodes named "Office …" across many shows. Shows TMDB knows
+		// are left to Discover (searching the show finds it, badged In Library), so they're dropped.
+		val jackass = item(BaseItemKind.SERIES, "Jackass", tmdb = "1795")
+		val homeShow = item(BaseItemKind.SERIES, "Office Tapes", path = "/data/media/tv/Office Tapes")
+		val recorded = item(BaseItemKind.SERIES, "World Report", tmdb = "77", path = "/config/data/livetv/recordings/World Report")
+		val youtube = item(BaseItemKind.MOVIE, "Office tour", path = "/data/media/youtube/Some Channel/b.mp4")
+		val video = item(BaseItemKind.VIDEO, "Office party 2019")
+		val repo = jellyfin(
+			titles = listOf(youtube, video),
+			episodes = listOf(
+				episode("Office Chairs", jackass),
+				episode("Office Day 1", homeShow),
+				episode("Office Day 2", homeShow),
+				episode("Office Move", recorded),
+			),
+			shows = listOf(jackass, homeShow, recorded),
+		)
+
+		val row = LibrarySearch(repo).library("office")
+		row.map { it.name } shouldBe listOf("Office tour", "Office party 2019", "Office Tapes", "World Report")
+		row.none { it.type == BaseItemKind.EPISODE } shouldBe true
+		coVerify(exactly = 1) { repo.items(setOf(jackass.id, homeShow.id, recorded.id).toList()) }
+	}
+
+	test("library: a show found by name isn't added again for its episodes") {
+		val show = item(BaseItemKind.SERIES, "Office Tapes")
+		val repo = jellyfin(titles = listOf(show), episodes = listOf(episode("Office Tapes 1", show)), shows = listOf(show))
+
+		LibrarySearch(repo).library("office tapes") shouldBe listOf(show)
+		coVerify(exactly = 0) { repo.items(any()) }
+	}
+
+	test("library: a failed show lookup still gives the other matches") {
+		val video = item(BaseItemKind.VIDEO, "Office party")
+		val repo = jellyfin(titles = listOf(video), episodes = listOf(episode("Office", item(BaseItemKind.SERIES, "X"))))
+		coEvery { repo.items(any()) } returns Result.failure(IllegalStateException("500"))
+
+		LibrarySearch(repo).library("office") shouldBe listOf(video)
 	}
 
 	test("a failed Jellyfin search gives an empty row, not an error") {
@@ -80,6 +129,7 @@ class LibrarySearchTests : FunSpec({
 
 		val throwing = mockk<SearchRepository>()
 		coEvery { throwing.search(any(), any(), any()) } throws IllegalStateException("offline")
+		coEvery { throwing.items(any()) } throws IllegalStateException("offline")
 		LibrarySearch(throwing).channels("tsn").shouldBeEmpty()
 		LibrarySearch(throwing).library("tsn").shouldBeEmpty()
 	}
@@ -91,19 +141,20 @@ class LibrarySearchTests : FunSpec({
 	}
 
 	test("items parental controls hide are left out") {
-		val repo = mockk<SearchRepository>()
 		val kept = item(BaseItemKind.MOVIE, "Kept")
 		val hidden = item(BaseItemKind.MOVIE, "Hidden")
-		coEvery { repo.search(any(), any(), any()) } returns Result.success(listOf(kept, hidden))
+		val hiddenShow = item(BaseItemKind.SERIES, "Hidden Show")
+		val repo = jellyfin(listOf(kept, hidden), listOf(episode("Pilot", hiddenShow)), listOf(hiddenShow))
+		coEvery { repo.search(any(), LibrarySearch.channelKinds, any()) } returns Result.success(listOf(kept, hidden))
 
-		LibrarySearch(repo) { it.name == "Hidden" }.library("x") shouldBe listOf(kept)
+		LibrarySearch(repo) { it.name.orEmpty().startsWith("Hidden") }.library("x") shouldBe listOf(kept)
 		LibrarySearch(repo) { it.name == "Hidden" }.channels("x") shouldBe listOf(kept)
 	}
 
 	test("owned titles the Discover row already shows aren't listed twice") {
 		val movie = item(BaseItemKind.MOVIE, "Lantern Field", tmdb = "11")
 		val series = item(BaseItemKind.SERIES, "Silent Coast", tmdb = "22")
-		val recording = item(BaseItemKind.EPISODE, "World Report")
+		val recording = item(BaseItemKind.VIDEO, "World Report")
 		val otherMovie = item(BaseItemKind.MOVIE, "Paper Lanterns", tmdb = "33")
 		val sameIdOtherKind = item(BaseItemKind.SERIES, "Lantern Field (TV)", tmdb = "11")
 		val discover = listOf(

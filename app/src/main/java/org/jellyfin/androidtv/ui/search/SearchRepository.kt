@@ -27,6 +27,9 @@ interface SearchRepository {
 		limit: Int = QueryDefaults.SEARCH_PAGE_SIZE,
 	): Result<List<BaseItemDto>>
 
+	/** The items with these [ids] (e.g. the shows of matching episodes). */
+	suspend fun items(ids: Collection<UUID>): Result<List<BaseItemDto>>
+
 	suspend fun searchMultiServer(
 		searchTerm: String,
 		itemTypes: Collection<BaseItemKind>,
@@ -86,6 +89,16 @@ class SearchRepositoryImpl(
 		Result.success(result.items)
 	} catch (e: ApiClientException) {
 		Timber.e(e, "Failed to search for items")
+		Result.failure(e)
+	}
+
+	override suspend fun items(ids: Collection<UUID>): Result<List<BaseItemDto>> = try {
+		val result = apiClient.ioCallContent {
+			itemsApi.getItems(GetItemsRequest(ids = ids, imageTypeLimit = 1, fields = ItemRepository.itemFields, enableTotalRecordCount = false))
+		}
+		Result.success(result.items)
+	} catch (e: ApiClientException) {
+		Timber.e(e, "Failed to get items")
 		Result.failure(e)
 	}
 

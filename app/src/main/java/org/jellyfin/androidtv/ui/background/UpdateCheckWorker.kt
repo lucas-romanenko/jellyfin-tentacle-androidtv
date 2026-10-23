@@ -104,7 +104,7 @@ class UpdateCheckWorker(
 
 		// Build notification
 		val notification = NotificationCompat.Builder(applicationContext, NOTIFICATION_CHANNEL_ID)
-			.setSmallIcon(R.drawable.ic_jellyfin)
+			.setSmallIcon(R.drawable.ic_tentacle)
 			.setContentTitle(applicationContext.getString(R.string.notification_update_available_title))
 			.setContentText(applicationContext.getString(R.string.notification_update_available_text, updateInfo.version))
 			.setStyle(NotificationCompat.BigTextStyle()

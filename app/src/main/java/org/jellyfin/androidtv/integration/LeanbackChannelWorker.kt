@@ -216,7 +216,7 @@ class LeanbackChannelWorker(
 
 		// Update logo
 		if (uri != null) {
-			ResourcesCompat.getDrawable(context.resources, R.mipmap.app_icon, context.theme)?.let {
+			ResourcesCompat.getDrawable(context.resources, R.mipmap.tentacle_launcher, context.theme)?.let {
 				ChannelLogoUtils.storeChannelLogo(
 					context,
 					ContentUris.parseId(uri),

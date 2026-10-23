@@ -88,6 +88,9 @@ internal fun RowsSupportFragment.keepFocusedCard(card: KeptCard, rows: List<Row>
 			if (rowHolder.gridView.selectedPosition == index) return true
 			Timber.i("Home rows replaced: focus kept on card $index (was ${card.index})")
 			rowHolder.gridView.selectedPosition = index
+			// The new row was bound during the rows' own layout, so its grid's layout request never
+			// reaches the rows grid and the kept card was never laid out (Sony, 23 Oct): ask it too
+			grid.requestLayout()
 			// This frame still shows the first card: skip it, the next one has the kept card
 			return false
 		}

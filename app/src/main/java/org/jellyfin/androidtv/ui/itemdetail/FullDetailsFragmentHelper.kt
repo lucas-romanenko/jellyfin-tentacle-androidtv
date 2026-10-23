@@ -15,6 +15,7 @@ import org.jellyfin.androidtv.data.repository.DeleteOutcome
 import org.jellyfin.androidtv.data.repository.ItemMutationRepository
 import org.jellyfin.androidtv.data.repository.ItemRepository
 import org.jellyfin.androidtv.data.repository.deleteOutcomeMessage
+import org.jellyfin.androidtv.ui.asTimerInfoDto
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.playback.PrePlaybackTrackSelector
@@ -394,10 +395,14 @@ fun FullDetailsFragment.createLiveTvSeriesTimer(
 	}
 }
 
-/** Record on a programme's details page: books what Jellyfin's default timer for the programme says. */
+/**
+ * Record on a programme's details page books this one programme, as the guide popup and the player
+ * do: Jellyfin's defaults are a series timer (any time, every day, matched by series id or title),
+ * so they go in as a one-off timer, never to /LiveTv/SeriesTimers (#194).
+ */
 internal suspend fun LiveTvApi.recordProgramme(programId: UUID) {
 	val defaults by getDefaultTimer(programId.toString())
-	createSeriesTimer(defaults)
+	createTimer(defaults.asTimerInfoDto())
 }
 
 fun FullDetailsFragment.recordLiveTvProgramme(

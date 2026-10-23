@@ -57,6 +57,8 @@ fun CustomPlaybackOverlayFragment.refreshSelectedProgram() {
 			}
 			mSelectedProgram = item
 		}.onFailure { error ->
+			// The player closed while this ran: it's gone, there is nothing to redraw (#181)
+			error.rethrowIfCancelled()
 			Timber.e(error, "Unable to get program details")
 		}
 

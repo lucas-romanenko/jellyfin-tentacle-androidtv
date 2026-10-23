@@ -18,6 +18,7 @@ import org.jellyfin.androidtv.util.UUIDUtils
 import org.jellyfin.androidtv.util.apiclient.Response
 import org.jellyfin.androidtv.ui.playback.segment.youtubeVideoId
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.client.exception.ApiClientException
 import org.jellyfin.sdk.api.client.extensions.instantMixApi
 import org.jellyfin.sdk.api.client.extensions.itemsApi
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
@@ -322,9 +323,16 @@ class SdkPlaybackHelper(
 				userPreferences[UserPreferences.resumeSubtractDuration].toIntOrNull()?.seconds
 					?: Duration.ZERO
 
-			val item = withContext(Dispatchers.IO) {
-				val response by api.userLibraryApi.getItem(itemId)
-				response
+			val item = try {
+				withContext(Dispatchers.IO) {
+					val response by api.userLibraryApi.getItem(itemId)
+					response
+				}
+			} catch (err: ApiClientException) {
+				// Server restarting, a timeout, an id the server no longer has: say so, don't crash (#179)
+				Timber.w(err, "Could not load item %s to play", itemId)
+				Toast.makeText(context, R.string.msg_cannot_play, Toast.LENGTH_LONG).show()
+				return@launch
 			}
 
 			val pos = item.userData?.playbackPositionTicks?.ticks?.minus(resumeSubtractDuration) ?: Duration.ZERO
@@ -349,11 +357,20 @@ class SdkPlaybackHelper(
 				userPreferences[UserPreferences.resumeSubtractDuration].toIntOrNull()?.seconds
 					?: Duration.ZERO
 
-			val items = withContext(Dispatchers.IO) {
-				val response by api.itemsApi.getItems(
-					ids = itemIds,
-				)
-				response.items
+			val items = try {
+				withContext(Dispatchers.IO) {
+					val response by api.itemsApi.getItems(
+						ids = itemIds,
+					)
+					response.items
+				}
+			} catch (err: ApiClientException) {
+				Timber.w(err, "Could not load items %s to play", itemIds)
+				emptyList()
+			}
+			if (items.isEmpty()) {
+				Toast.makeText(context, R.string.msg_cannot_play, Toast.LENGTH_LONG).show()
+				return@launch
 			}
 
 			val pos = position?.ticks ?: items[0].userData?.playbackPositionTicks?.ticks?.minus(

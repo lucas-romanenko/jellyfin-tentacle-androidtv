@@ -1,9 +1,11 @@
 package org.jellyfin.androidtv.ui.itemhandling;
 
 import android.content.Context;
+import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 
+import org.jellyfin.androidtv.R;
 import org.jellyfin.androidtv.auth.repository.SessionRepository;
 import org.jellyfin.androidtv.constant.LiveTvOption;
 import org.jellyfin.androidtv.constant.QueryType;
@@ -116,6 +118,9 @@ public class ItemLauncher {
                             Timber.d("playing audio queue item");
                             mediaManager.getValue().playFrom(((AudioQueueBaseRowItem) rowItem).getQueueEntry());
                         } else if (adapter instanceof ItemRowAdapter && ((ItemRowAdapter)adapter).getQueryType() == QueryType.Search) {
+                            playbackLauncher.getValue().launch(context, Arrays.asList(rowItem.getBaseItem()));
+                        } else if (adapter == null) {
+                            // No row to queue from (the Music library's rows and the other Compose screens): play this song (#183)
                             playbackLauncher.getValue().launch(context, Arrays.asList(rowItem.getBaseItem()));
                         } else {
                             Timber.d("playing audio item");
@@ -254,6 +259,12 @@ public class ItemLauncher {
 
             case LiveTvProgram:
                 BaseItemDto program = rowItem.getBaseItem();
+                if (program.getChannelId() == null) {
+                    // A timer whose programme is no longer in the guide: Jellyfin sends no ProgramInfo,
+                    // and the stand-in card has no channel to open (#178)
+                    Toast.makeText(context, R.string.no_program_data, Toast.LENGTH_SHORT).show();
+                    break;
+                }
                 switch (rowItem.getSelectAction()) {
 
                     case ShowDetails:

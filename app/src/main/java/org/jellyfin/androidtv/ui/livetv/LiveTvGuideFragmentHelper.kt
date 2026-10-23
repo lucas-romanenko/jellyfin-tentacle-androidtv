@@ -23,6 +23,7 @@ import org.jellyfin.androidtv.databinding.LiveTvGuideBinding
 import org.jellyfin.androidtv.ui.GuideChannelHeader
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.navigation.ProvideRouter
+import org.jellyfin.androidtv.ui.playback.rethrowIfCancelled
 import org.jellyfin.androidtv.ui.settings.Routes
 import org.jellyfin.androidtv.ui.settings.composable.SettingsDialog
 import org.jellyfin.androidtv.ui.settings.composable.SettingsRouterContent
@@ -128,6 +129,8 @@ fun LiveTvGuideFragment.refreshSelectedProgram() {
 			// Focus moved on meanwhile: a slower answer for an earlier programme must not replace it
 			if (mSelectedProgram?.id == id) mSelectedProgram = item
 		}.onFailure { error ->
+			// The guide closed while this ran: it's gone, there is nothing to redraw (#181)
+			error.rethrowIfCancelled()
 			Timber.e(error, "Unable to get program details")
 		}
 

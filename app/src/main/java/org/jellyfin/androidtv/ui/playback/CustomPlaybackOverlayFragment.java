@@ -255,6 +255,8 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     public void onDestroyView() {
         super.onDestroyView();
 
+        // A guide page still being built would add its rows to a fragment that is gone (#182)
+        if (mDisplayProgramsTask != null) mDisplayProgramsTask.cancel(true);
         binding = null;
         // To fix race condition in hide timer
         mIsVisible = false;
@@ -1009,6 +1011,8 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
                 prevRow = row;
 
                 requireActivity().runOnUiThread(() -> {
+                    // Posted before the player closed, run after: the fragment is gone (#182)
+                    if (isCancelled()) return;
                     GuideChannelHeader header = getChannelHeader(requireContext(), channel);
                     tvGuideBinding.channels.addView(header);
                     header.loadImage();

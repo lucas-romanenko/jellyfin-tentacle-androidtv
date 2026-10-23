@@ -1,6 +1,13 @@
 package org.jellyfin.androidtv.ui.browsing.v2
 
 import android.os.Bundle
+import org.jellyfin.androidtv.data.eventhandling.RecordingChanges
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.delay
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -99,6 +106,15 @@ class ScheduleBrowseFragment : Fragment() {
 	override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
 		super.onViewCreated(view, savedInstanceState)
 		viewModel.initialize(requireContext())
+		// A recording set or cancelled anywhere (Tentacle's teams and rules too): read again in place.
+		viewLifecycleOwner.lifecycleScope.launch {
+			viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+				RecordingChanges.changes.collectLatest {
+					delay(800)
+					viewModel.refresh(requireContext())
+				}
+			}
+		}
 	}
 
 	@Composable

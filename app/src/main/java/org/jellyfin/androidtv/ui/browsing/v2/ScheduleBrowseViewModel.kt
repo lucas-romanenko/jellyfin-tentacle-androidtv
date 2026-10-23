@@ -49,6 +49,9 @@ class ScheduleBrowseViewModel(
 		loadSchedule(context)
 	}
 
+	/** Read again without the loading state (a recording changed): the cards stay where they are. */
+	fun refresh(context: Context) = loadSchedule(context)
+
 	fun setFocusedItem(item: BaseItemDto) {
 		_focusedItem.value = item
 	}

@@ -4,6 +4,13 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.CancellationException
+import org.jellyfin.sdk.model.api.TimerInfoDto
+import org.jellyfin.sdk.model.api.RecordingStatus
+import org.jellyfin.sdk.api.client.extensions.liveTvApi
+import org.jellyfin.androidtv.data.eventhandling.RecordingChanges
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -109,6 +116,23 @@ class GuideLiveUpdates(private val fragment: LiveTvGuideFragment) {
 
 				launch {
 					homeVersionTracker.reconnects.collect { events.trySend(Event.Relist) }
+				}
+
+				// A recording set or cancelled anywhere (this TV, the web, Tentacle's teams and
+				// rules): the record icons on the programmes change in place.
+				launch {
+					RecordingChanges.changes.collectLatest {
+						delay(RECORD_SETTLE)
+						val timers = try {
+							withContext(Dispatchers.IO) { api.liveTvApi.getTimers().content.items }
+						} catch (e: CancellationException) {
+							throw e
+						} catch (e: Exception) {
+							Timber.w(e, "Guide: recordings not read again")
+							return@collectLatest
+						}
+						fragment.applyRecordMarks(guideRecordMarks(timers))
+					}
 				}
 			}
 		}
@@ -220,4 +244,28 @@ class GuideLiveUpdates(private val fragment: LiveTvGuideFragment) {
 	private companion object {
 		val LIBRARY_SETTLE = 1500.milliseconds
 	}
+}
+
+/** How long the guide waits after a recording change before it reads Jellyfin's timers. */
+private val RECORD_SETTLE = 600.milliseconds
+
+/**
+ * Programme id (no dashes, lower case) -> [timer id, series timer id] of the recordings that are
+ * set or running, for the guide's record icons ([LiveTvGuideFragment.applyRecordMarks]).
+ */
+fun guideRecordMarks(timers: List<TimerInfoDto>): Map<String, Array<String?>> = recordMarks(timers.map {
+	RecordTimer(it.id, it.programId, it.status == RecordingStatus.NEW || it.status == RecordingStatus.IN_PROGRESS, it.seriesTimerId)
+})
+
+/** One Jellyfin timer as the guide's record icons need it ([active]: set or recording now). */
+data class RecordTimer(val id: String?, val programId: String?, val active: Boolean, val seriesTimerId: String?)
+
+internal fun recordMarks(timers: List<RecordTimer>): Map<String, Array<String?>> {
+	val out = HashMap<String, Array<String?>>()
+	for (t in timers) {
+		val programId = t.programId?.replace("-", "")?.lowercase() ?: continue
+		if (!t.active) continue
+		out[programId] = arrayOf(t.id, t.seriesTimerId)
+	}
+	return out
 }

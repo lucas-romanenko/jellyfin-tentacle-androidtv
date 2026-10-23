@@ -15,6 +15,7 @@ import org.jellyfin.androidtv.data.repository.DeleteOutcome
 import org.jellyfin.androidtv.data.repository.ItemMutationRepository
 import org.jellyfin.androidtv.data.repository.ItemRepository
 import org.jellyfin.androidtv.data.repository.deleteOutcomeMessage
+import org.jellyfin.androidtv.ui.asTimerInfoDto
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.playback.PrePlaybackTrackSelector
@@ -32,6 +33,7 @@ import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.exception.ApiClientException
 import org.jellyfin.sdk.api.client.extensions.libraryApi
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
+import org.jellyfin.sdk.api.operations.LiveTvApi
 import org.jellyfin.sdk.api.client.extensions.tvShowsApi
 import org.jellyfin.sdk.api.client.extensions.userLibraryApi
 import org.jellyfin.sdk.model.api.BaseItemDto
@@ -386,6 +388,33 @@ fun FullDetailsFragment.createLiveTvSeriesTimer(
 		runCatching {
 			withContext(Dispatchers.IO) {
 				api.liveTvApi.createSeriesTimer(seriesTimer)
+			}
+		}.onSuccess {
+			callback()
+		}
+	}
+}
+
+/**
+ * Record on a programme's details page books this one programme, as the guide popup and the player
+ * do: Jellyfin's defaults are a series timer (any time, every day, matched by series id or title),
+ * so they go in as a one-off timer, never to /LiveTv/SeriesTimers (#194).
+ */
+internal suspend fun LiveTvApi.recordProgramme(programId: UUID) {
+	val defaults by getDefaultTimer(programId.toString())
+	createTimer(defaults.asTimerInfoDto())
+}
+
+fun FullDetailsFragment.recordLiveTvProgramme(
+	id: UUID,
+	callback: () -> Unit,
+) {
+	val api by inject<ApiClient>()
+
+	lifecycleScope.launch {
+		runCatching {
+			withContext(Dispatchers.IO) {
+				api.liveTvApi.recordProgramme(id)
 			}
 		}.onSuccess {
 			callback()

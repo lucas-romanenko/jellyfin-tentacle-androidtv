@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.ui.navigation
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -17,6 +18,14 @@ interface NavigationRepository {
 	 * @see NavigationAction
 	 */
 	val currentAction: SharedFlow<NavigationAction>
+
+	/**
+	 * The activity carried out [action]: it is no longer replayed. [currentAction] keeps the last
+	 * action for a collector that wasn't there yet (MainActivity, after StartupActivity's reset),
+	 * but MainActivity collects only while started: without this, every restart (the TV waking,
+	 * the app back in front) ran the last action again, and the start-up reset built a new Home.
+	 */
+	fun onActionHandled(action: NavigationAction)
 
 	/**
 	 * The current fragment destination.
@@ -80,6 +89,12 @@ class NavigationRepositoryImpl(
 
 	override val currentDestination: Destination.Fragment?
 		get() = fragmentHistory.lastOrNull()
+
+	@OptIn(ExperimentalCoroutinesApi::class)
+	override fun onActionHandled(action: NavigationAction) {
+		// Only when it is still the last one: a newer action must still reach a later collector.
+		if (_currentAction.replayCache.lastOrNull() === action) _currentAction.resetReplayCache()
+	}
 
 	override fun navigate(destination: Destination, replace: Boolean) {
 		Timber.i("Navigating to $destination (via navigate function)")

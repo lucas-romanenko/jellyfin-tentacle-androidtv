@@ -11,21 +11,29 @@ import androidx.activity.OnBackPressedCallback
 import androidx.compose.runtime.mutableStateOf
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
+import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.flowWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.auth.repository.SessionRepositoryState
 import org.jellyfin.androidtv.auth.repository.UserRepository
+import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.data.syncplay.SyncPlayManager
 import org.jellyfin.androidtv.databinding.ActivityMainBinding
 import org.jellyfin.androidtv.integration.LeanbackChannelWorker
@@ -33,14 +41,21 @@ import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.ui.InteractionTrackerViewModel
 import org.jellyfin.androidtv.ui.background.AppBackground
 import org.jellyfin.androidtv.ui.home.HomeTiming
+import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationAction
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
+import org.jellyfin.androidtv.ui.notification.NOTIFICATION_POLL_MS
+import org.jellyfin.androidtv.ui.notification.NotificationToastHost
+import org.jellyfin.androidtv.ui.notification.NotificationToastQueue
+import org.jellyfin.androidtv.ui.notification.nextNotificationPoll
+import org.jellyfin.androidtv.ui.notification.toastCanShow
 import org.jellyfin.androidtv.ui.playback.PlaybackLauncher
 import org.jellyfin.androidtv.ui.playback.ThemeMusicPlayer
 import org.jellyfin.androidtv.ui.screensaver.InAppScreensaver
 import org.jellyfin.androidtv.ui.settings.compat.MainActivitySettings
 import org.jellyfin.androidtv.ui.startup.StartupActivity
 import org.jellyfin.androidtv.ui.update.UpdatePrompt
+import org.jellyfin.androidtv.util.UUIDUtils
 import org.jellyfin.androidtv.util.applyTheme
 import org.jellyfin.androidtv.util.isMediaSessionKeyEvent
 import org.jellyfin.playback.core.PlaybackManager
@@ -59,6 +74,10 @@ class MainActivity : FragmentActivity() {
 	private val syncPlayManager by inject<SyncPlayManager>()
 	private val playbackLauncher by inject<PlaybackLauncher>()
 	private val playbackManager by inject<PlaybackManager>()
+	private val tentacleRepository by inject<TentacleRepository>()
+
+	/** The screen in front (the last content fragment resumed): no toasts on a player. */
+	private val frontScreen = MutableStateFlow<Class<out Fragment>?>(null)
 
 	private lateinit var binding: ActivityMainBinding
 	private val showExitDialog = mutableStateOf(false)
@@ -161,8 +180,65 @@ class MainActivity : FragmentActivity() {
 			}
 		}
 
+		setupNotificationToasts()
+
 		// The new-version notification was selected (Home runs the automatic check)
 		UpdatePrompt.openIfRequested(this)
+	}
+
+	/**
+	 * Tentacle's notifications (requests, ready to watch, problems) as toasts on every screen
+	 * but the players. Pushed through the socket (SocketHandler) and polled here as a fallback.
+	 */
+	private fun setupNotificationToasts() {
+		supportFragmentManager.registerFragmentLifecycleCallbacks(object : FragmentManager.FragmentLifecycleCallbacks() {
+			override fun onFragmentResumed(fm: FragmentManager, f: Fragment) {
+				if (f.id == R.id.container) frontScreen.value = f::class.java
+			}
+		}, false)
+
+		val canShow = combine(lifecycle.currentStateFlow, frontScreen, interactionTrackerViewModel.visible) { state, screen, screensaver ->
+			toastCanShow(state.isAtLeast(Lifecycle.State.RESUMED), screen, screensaver)
+		}.stateIn(lifecycleScope, SharingStarted.Eagerly, false)
+
+		val toasts = NotificationToastQueue(
+			scope = lifecycleScope,
+			pending = tentacleRepository.pendingNotifications,
+			canShow = canShow,
+			onSeen = {
+				tentacleRepository.dismissNotification(it.id)
+				tentacleRepository.consumeNotification(it.id)
+			},
+		)
+		toasts.start()
+
+		binding.notificationToast.setContent {
+			NotificationToastHost(toasts) { notification ->
+				// Tentacle sends Jellyfin's dashless 32-hex id, which java.util.UUID.fromString rejects.
+				notification.jellyfinItemId?.takeIf { it.isNotEmpty() }?.let(UUIDUtils::parseUUID)?.let { itemId ->
+					navigationRepository.navigate(Destinations.itemDetails(itemId))
+				}
+			}
+		}
+
+		// The poll, while a toast could show: at once when it can again (back from a player or
+		// another app), then every 15 s; while the server is not answering, 15 s doubling to
+		// 2 min, back to 15 s with the first answer (#49).
+		lifecycleScope.launch {
+			canShow.collectLatest { ok ->
+				if (!ok) return@collectLatest
+				var wait = NOTIFICATION_POLL_MS
+				while (true) {
+					val answered = try {
+						tentacleRepository.pollNotifications() != null
+					} catch (_: Exception) {
+						false
+					}
+					wait = nextNotificationPoll(wait, answered)
+					delay(wait)
+				}
+			}
+		}
 	}
 	
 	private fun setupSyncPlayQueueLauncher() {

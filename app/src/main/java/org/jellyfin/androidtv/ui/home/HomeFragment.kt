@@ -45,7 +45,6 @@ import org.koin.androidx.viewmodel.ext.android.activityViewModel
 import androidx.media3.datasource.HttpDataSource
 import org.jellyfin.androidtv.ui.settings.compat.SettingsViewModel
 import org.jellyfin.androidtv.data.repository.TentacleRepository
-import org.jellyfin.androidtv.data.repository.TentacleNotification
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.update.UpdatePrompt
@@ -196,13 +195,10 @@ class HomeFragment : Fragment() {
 	override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
 		super.onViewCreated(view, savedInstanceState)
 
-		setupNotificationToast(view)
-		startNotificationPolling()
-
 		// Everything started here lives as long as this view, not the fragment: the fragment
 		// stays on the back stack while an item, Search or Live TV is open and comes back
-		// through onViewCreated. On the fragment's scope every return added another
-		// notification poller and another copy of each collector below (#63).
+		// through onViewCreated. On the fragment's scope every return added another copy
+		// of each collector below (#63). The notification toasts are app-wide (MainActivity).
 
 		settingsViewModel.settingsClosedCounter
 			.flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
@@ -485,83 +481,6 @@ class HomeFragment : Fragment() {
 		return isMediaBarEnabled && (isFocused || (selectedPosition == 0 && hasMediaBar))
 	}
 
-	private fun startNotificationPolling() {
-		viewLifecycleOwner.lifecycleScope.launch {
-			viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-				var wait = NOTIFICATION_POLL_MS
-				while (true) {
-					delay(wait)
-					val answered = try {
-						tentacleRepository.pollNotifications() != null
-					} catch (_: Exception) {
-						false
-					}
-					// While the server is not answering, ask less often (#49): 15 s doubling to
-					// 2 min, back to 15 s with the first answer.
-					wait = nextNotificationPoll(wait, answered)
-				}
-			}
-		}
-	}
-
-	private fun setupNotificationToast(view: View) {
-		val toastView = view.findViewById<ComposeView>(R.id.notificationToast)
-		toastView.setContent {
-			val notifications by tentacleRepository.pendingNotifications.collectAsState()
-			val currentNotif = notifications.firstOrNull()
-
-			var visible by remember { mutableStateOf(false) }
-
-			LaunchedEffect(currentNotif?.id) {
-				if (currentNotif != null) {
-					visible = true
-					delay(8000)
-					visible = false
-					delay(400) // Wait for exit animation
-					tentacleRepository.dismissNotification(currentNotif.id)
-					tentacleRepository.consumeNotification(currentNotif.id)
-				}
-			}
-
-			Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomEnd) {
-				AnimatedVisibility(
-					visible = visible && currentNotif != null,
-					enter = slideInHorizontally { it },
-					exit = slideOutHorizontally { it },
-				) {
-					if (currentNotif != null) {
-						NotificationToast(
-							notification = currentNotif,
-							onDismiss = {
-								visible = false
-								lifecycleScope.launch {
-									delay(400)
-									tentacleRepository.dismissNotification(currentNotif.id)
-									tentacleRepository.consumeNotification(currentNotif.id)
-								}
-							},
-							onClick = {
-								visible = false
-								lifecycleScope.launch {
-									delay(400)
-									tentacleRepository.dismissNotification(currentNotif.id)
-									tentacleRepository.consumeNotification(currentNotif.id)
-									if (!currentNotif.jellyfinItemId.isNullOrEmpty()) {
-										// Tentacle sends Jellyfin's dashless 32-hex id, which
-										// java.util.UUID.fromString rejects.
-										org.jellyfin.androidtv.util.UUIDUtils.parseUUID(currentNotif.jellyfinItemId)?.let { itemUuid ->
-											navigationRepository.navigate(Destinations.itemDetails(itemUuid))
-										}
-									}
-								}
-							},
-						)
-					}
-				}
-			}
-		}
-	}
-
 	override fun onPause() {
 		super.onPause()
 		mediaBarViewModel.stopTrailer()
@@ -612,87 +531,3 @@ class HomeFragment : Fragment() {
 		rowsFragment = null
 	}
 }
-
-@androidx.compose.runtime.Composable
-private fun NotificationToast(
-	notification: TentacleNotification,
-	onDismiss: () -> Unit,
-	onClick: () -> Unit,
-) {
-	Row(
-		modifier = Modifier
-			.padding(24.dp)
-			.widthIn(max = 380.dp)
-			.clip(RoundedCornerShape(12.dp))
-			.background(
-				Brush.horizontalGradient(
-					colors = listOf(Color(0xFF1a1a2e), Color(0xFF16213e))
-				)
-			)
-			.clickable(onClick = onClick)
-			.padding(12.dp),
-		horizontalArrangement = Arrangement.spacedBy(12.dp),
-		verticalAlignment = Alignment.CenterVertically,
-	) {
-		if (!notification.posterPath.isNullOrEmpty()) {
-			AsyncImage(
-				model = "https://image.tmdb.org/t/p/w185${notification.posterPath}",
-				contentDescription = null,
-				modifier = Modifier
-					.size(width = 50.dp, height = 75.dp)
-					.clip(RoundedCornerShape(6.dp)),
-				contentScale = ContentScale.Crop,
-			)
-		}
-
-		Column(
-			modifier = Modifier.weight(1f),
-			verticalArrangement = Arrangement.spacedBy(4.dp),
-		) {
-			Text(
-				text = notificationHeading(notification),
-				color = Color(0xFF8b5cf6),
-				fontSize = 11.sp,
-				fontWeight = FontWeight.Bold,
-				letterSpacing = 0.5.sp,
-			)
-			Text(
-				text = notification.message,
-				color = Color.White,
-				fontSize = 14.sp,
-				maxLines = 2,
-				overflow = TextOverflow.Ellipsis,
-			)
-		}
-
-		Text(
-			text = "\u2715",
-			color = Color.White.copy(alpha = 0.6f),
-			fontSize = 16.sp,
-			modifier = Modifier
-				.clickable(onClick = onDismiss)
-				.padding(4.dp),
-		)
-	}
-}
-
-/**
- * The toast's heading: what the message is about, and whose it is when it's someone else's
- * ("Request · for Abbie"). Without a kind (older servers) it's a download.
- */
-internal fun notificationHeading(notification: TentacleNotification): String {
-	val what = when (notification.kind) {
-		"request" -> "Request"
-		"problem" -> notification.title.ifBlank { "Problem" }
-		else -> "Ready to Watch"
-	}
-	val forName = notification.forName?.takeIf { it.isNotBlank() } ?: return what
-	return "$what \u00b7 for $forName"
-}
-
-internal const val NOTIFICATION_POLL_MS = 15_000L
-internal const val NOTIFICATION_POLL_MAX_MS = 120_000L
-
-/** The next wait of the Home notification poll: normal after an answer, doubling while none comes. */
-internal fun nextNotificationPoll(current: Long, answered: Boolean): Long =
-	if (answered) NOTIFICATION_POLL_MS else (current * 2).coerceAtMost(NOTIFICATION_POLL_MAX_MS)

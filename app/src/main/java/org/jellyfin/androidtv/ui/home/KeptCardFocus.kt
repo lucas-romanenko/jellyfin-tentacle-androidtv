@@ -1,15 +1,12 @@
 package org.jellyfin.androidtv.ui.home
 
 import android.content.Context
+import android.view.ViewTreeObserver
 import androidx.leanback.app.RowsSupportFragment
-import androidx.leanback.widget.ItemBridgeAdapter
 import androidx.leanback.widget.ListRow
 import androidx.leanback.widget.ListRowPresenter
 import androidx.leanback.widget.ObjectAdapter
-import androidx.leanback.widget.OnChildViewHolderSelectedListener
 import androidx.leanback.widget.Row
-import androidx.leanback.widget.RowPresenter
-import androidx.recyclerview.widget.RecyclerView
 import coil3.ImageLoader
 import coil3.request.ImageRequest
 import kotlinx.coroutines.CancellationException
@@ -65,8 +62,9 @@ internal fun RowsSupportFragment.focusedCard(rowKey: (Row) -> String?): KeptCard
  * Home's rows were just replaced ([rows], the rows adapter's new list): put the focus back on
  * [card], in its row (the same row, or the one of the same key) on the card of the same item.
  * A row rebuilt for a new card shape has a new list of cards, which Leanback starts at the
- * first card: the focus jumped there from the card it was on. Done in the layout that shows
- * the new rows, before they are drawn; dropped if that layout has the focus on another row.
+ * first card: the focus jumped there from the card it was on. The row changes in place (same
+ * position), so no row selection event comes: this is done before the first frame that shows
+ * the new row, and dropped if the focus is on another row by then.
  */
 internal fun RowsSupportFragment.keepFocusedCard(card: KeptCard, rows: List<Row>, rowKey: (Row) -> String?) {
 	val grid = verticalGridView ?: return
@@ -75,26 +73,28 @@ internal fun RowsSupportFragment.keepFocusedCard(card: KeptCard, rows: List<Row>
 	val cards = (rows[rowPosition] as? ListRow)?.adapter ?: return
 	val index = keptCardIndex(card.itemKey, card.index, cards.itemKeys()) ?: return
 
-	grid.addOnChildViewHolderSelectedListener(object : OnChildViewHolderSelectedListener() {
-		override fun onChildViewHolderSelectedAndPositioned(
-			parent: RecyclerView,
-			child: RecyclerView.ViewHolder?,
-			position: Int,
-			subposition: Int,
-		) {
-			grid.removeOnChildViewHolderSelectedListener(this)
-			if (position != rowPosition) return
-			val bridged = child as? ItemBridgeAdapter.ViewHolder ?: return
-			val rowHolder = (bridged.presenter as? RowPresenter)?.getRowViewHolder(bridged.viewHolder) as? ListRowPresenter.ViewHolder
-				?: return
-			if (rowHolder.row !== rows[rowPosition]) return
-			if (rowHolder.gridView.selectedPosition != index) {
-				Timber.i("Home rows replaced: focus kept on card $index (was ${card.index})")
-				rowHolder.gridView.selectedPosition = index
+	var frames = 0
+	grid.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+		override fun onPreDraw(): Boolean {
+			fun done(): Boolean {
+				if (grid.viewTreeObserver.isAlive) grid.viewTreeObserver.removeOnPreDrawListener(this)
+				return true
 			}
+			if (!isAdded || grid.selectedPosition != rowPosition || ++frames > KEEP_FOCUS_FRAMES) return done()
+			val rowHolder = getRowViewHolder(rowPosition) as? ListRowPresenter.ViewHolder
+			// The new row isn't bound yet: try again on the next frame
+			if (rowHolder?.row !== rows[rowPosition]) return true
+			done()
+			if (rowHolder.gridView.selectedPosition == index) return true
+			Timber.i("Home rows replaced: focus kept on card $index (was ${card.index})")
+			rowHolder.gridView.selectedPosition = index
+			// This frame still shows the first card: skip it, the next one has the kept card
+			return false
 		}
 	})
 }
+
+private const val KEEP_FOCUS_FRAMES = 10
 
 private fun ObjectAdapter.itemKeys(): List<Any?> = (0 until size()).map { (get(it) as? BaseRowItem)?.itemId }
 

@@ -173,9 +173,13 @@ The code wins where they differ.
   back to a Jellyfin delete; only an item without one is deleted through
   Jellyfin directly (#69).
 - **Download notifications**: `pollNotifications()` fills
-  `pendingNotifications` (a StateFlow), which `HomeFragment` shows as toasts
-  (its heading adds "for <name>" from the notification's `for`);
-  `dismissNotification(id)`. Home polls every 15 s while shown, plus the push.
+  `pendingNotifications` (a StateFlow), which MainActivity shows as toasts
+  on every screen but the players (`ui/notification/NotificationToast.kt`;
+  its heading adds "for <name>" from the notification's `for`). A toast
+  shows only while the app is in front, off a player and with no
+  screensaver; `dismissNotification(id)` only after it was on screen 8 s or
+  the user closed or opened it, never for one nobody saw (it waits and
+  shows later). Polled every 15 s while a toast could show, plus the push.
 - **YouTube videos** (`util/sdk/TentacleYouTube.kt`, `TentacleYouTubeTests`):
   Tentacle writes each one as a Movie (genre `YouTube`, tag `youtube`,
   provider id `youtube`, studio = channel, path

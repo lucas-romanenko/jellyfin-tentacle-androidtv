@@ -1,10 +1,10 @@
-package org.jellyfin.androidtv.ui.home
+package org.jellyfin.androidtv.ui.notification
 
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import org.jellyfin.androidtv.data.repository.TentacleNotification
 
-/** The Home notification poll backs off while the server is down (#49). */
+/** The notification poll backs off while the server is down (#49). */
 class NotificationPollTests : FunSpec({
 	test("no answer doubles the wait, up to two minutes") {
 		nextNotificationPoll(15_000, answered = false) shouldBe 30_000

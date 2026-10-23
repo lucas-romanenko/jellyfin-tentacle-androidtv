@@ -8,7 +8,7 @@ import org.tentacle.server.core.model.ServerType
 fun TextView.setServerTypeIcon(serverType: ServerType, sizeDp: Int = 18, paddingDp: Int = 8) {
 	val density = context.resources.displayMetrics.density
 	val iconRes = when (serverType) {
-		ServerType.JELLYFIN -> R.drawable.ic_jellyfin
+		ServerType.JELLYFIN -> R.drawable.ic_tentacle // Tentacle is a Jellyfin server: its jellyfish, not Jellyfin's mark
 		ServerType.EMBY -> R.drawable.ic_emby
 	}
 	val icon = ContextCompat.getDrawable(context, iconRes)?.apply {

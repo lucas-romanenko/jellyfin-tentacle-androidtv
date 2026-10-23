@@ -1895,11 +1895,8 @@ class ItemDetailsFragment : Fragment() {
 								DetailActionButton(
 									label = stringResource(R.string.lbl_play),
 									icon = ImageVector.vectorResource(R.drawable.ic_play),
-									onClick = {
-										val unwatched = uiState.episodes.firstOrNull { !(it.userData?.played ?: false) }
-										val episode = unwatched ?: uiState.episodes.first()
-										play(episode, 0, false)
-									},
+									// handlePlay, not play(episode, 0): 0:00 erases a half-watched episode's point (#177)
+									onClick = { handlePlay(item, uiState) },
 									modifier = Modifier.focusRequester(playButtonFocusRequester),
 								)
 

@@ -43,6 +43,7 @@ import org.jellyfin.sdk.model.serializer.toUUID
 import org.koin.android.ext.android.inject
 import timber.log.Timber
 import java.time.Instant
+import java.time.LocalDateTime
 import java.util.UUID
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -514,4 +515,20 @@ fun FullDetailsFragment.showSubtitleTrackSelector(
 			Toast.makeText(requireContext(), "Subtitles: Default", Toast.LENGTH_SHORT).show()
 		}
 	}.show()
+}
+
+/**
+ * OK on the Record button of a programme's details page: books the programme, or cancels its
+ * booking ([timerId]).
+ */
+fun programmeRecordClick(
+	timerId: String?,
+	startDate: LocalDateTime?,
+	now: LocalDateTime,
+	book: () -> Unit,
+	confirm: (message: Int, onYes: () -> Unit) -> Unit,
+	cancel: (timerId: String) -> Unit,
+) {
+	if (timerId == null) book()
+	else cancel(timerId)
 }

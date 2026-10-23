@@ -1005,7 +1005,7 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
                 mRecordButton = TextUnderButton.create(requireContext(), R.drawable.ic_record, buttonSize, 4, getString(R.string.lbl_record), new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
-                        if (mProgramInfo.getTimerId() == null) {
+                        FullDetailsFragmentHelperKt.programmeRecordClick(mProgramInfo.getTimerId(), mProgramInfo.getStartDate(), LocalDateTime.now(), () -> {
                             //Create one-off recording with defaults
                             FullDetailsFragmentHelperKt.getLiveTvDefaultTimer(FullDetailsFragment.this, mProgramInfo.getId(), seriesTimer -> {
                                 FullDetailsFragmentHelperKt.createLiveTvSeriesTimer(FullDetailsFragment.this, seriesTimer, () -> {
@@ -1020,14 +1020,24 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
                                 });
                                 return null;
                             });
-                        } else {
-                            FullDetailsFragmentHelperKt.cancelLiveTvSeriesTimer(FullDetailsFragment.this, mProgramInfo.getTimerId(), () -> {
+                            return null;
+                        }, (message, onYes) -> {
+                            new AlertDialog.Builder(requireContext())
+                                    .setTitle(getString(R.string.lbl_cancel_recording))
+                                    .setMessage(getString(message))
+                                    .setNegativeButton(R.string.lbl_no, null)
+                                    .setPositiveButton(R.string.lbl_yes, (dialog, which) -> onYes.invoke())
+                                    .show();
+                            return null;
+                        }, timerId -> {
+                            FullDetailsFragmentHelperKt.cancelLiveTvSeriesTimer(FullDetailsFragment.this, timerId, () -> {
                                 setRecTimer(null);
                                 dataRefreshService.getValue().setLastDeletedItemId(mProgramInfo.getId());
                                 Utils.showToast(requireContext(), R.string.msg_recording_cancelled);
                                 return null;
                             });
-                        }
+                            return null;
+                        });
                     }
                 });
                 mRecordButton.setActivated(mProgramInfo.getTimerId() != null);

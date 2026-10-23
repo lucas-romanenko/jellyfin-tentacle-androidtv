@@ -66,6 +66,8 @@
     <string name="msg_unable_to_create_recording">Unable to create recording</string>
     <string name="msg_recording_cancelled">Recording cancelled</string>
     <string name="msg_unable_to_cancel">Unable to cancel recording</string>
+    <string name="msg_cancel_recording">Cancel this recording?</string>
+    <string name="msg_cancel_recording_in_progress">This programme is recording now. Cancelling stops the recording.</string>
     <string name="lbl_cast_crew">Cast &amp; crew</string>
     <string name="lbl_cast">Cast</string>
     <string name="lbl_additional_parts">Additional parts</string>

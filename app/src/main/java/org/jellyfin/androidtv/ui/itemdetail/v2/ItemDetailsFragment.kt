@@ -132,6 +132,8 @@ import org.jellyfin.androidtv.util.apiclient.seriesPrimaryImage
 import org.jellyfin.androidtv.util.sdk.TrailerUtils.getExternalTrailerIntent
 import org.jellyfin.androidtv.util.sdk.TrailerUtils.hasPlayableTrailers
 import org.jellyfin.androidtv.util.sdk.compat.canResume
+import org.jellyfin.androidtv.util.sdk.isTentacleYouTube
+import org.jellyfin.androidtv.util.sdk.youTubeSubtitle
 import org.jellyfin.sdk.api.client.exception.ApiClientException
 import org.jellyfin.sdk.api.client.extensions.imageApi
 import org.jellyfin.sdk.api.client.extensions.libraryApi
@@ -1185,8 +1187,9 @@ class ItemDetailsFragment : Fragment() {
 				horizontalArrangement = Arrangement.spacedBy(0.dp),
 			) {
 				val metadataItems = buildList<@Composable () -> Unit> {
-					// Year
-					item.productionYear?.let { add { InfoItemText(text = it.toString()) } }
+					// Year; for a Tentacle YouTube video "YouTube · <channel>" (or nothing)
+					if (item.isTentacleYouTube) item.youTubeSubtitle?.let { add { InfoItemText(text = it) } }
+					else item.productionYear?.let { add { InfoItemText(text = it.toString()) } }
 
 					// Runtime + Ends At (movies only)
 					if (!isSeries) {

@@ -27,6 +27,8 @@ import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.UserSettingPreferences
 import org.jellyfin.androidtv.ui.home.HomeTiming
+import org.jellyfin.androidtv.util.sdk.isTentacleYouTube
+import org.jellyfin.androidtv.util.sdk.youTubeSubtitle
 import org.jellyfin.sdk.api.client.ApiClient
 import android.content.Context
 import coil3.ImageLoader
@@ -262,7 +264,8 @@ class MediaBarSlideshowViewModel(
 							sortBy = setOf(org.jellyfin.sdk.model.api.ItemSortBy.RANDOM),
 							limit = itemsPerLibrary,
 							filters = filters,
-							fields = setOf(ItemFields.OVERVIEW, ItemFields.GENRES, ItemFields.PROVIDER_IDS),
+							// Path: a Tentacle YouTube video's channel (youTubeChannel)
+							fields = setOf(ItemFields.OVERVIEW, ItemFields.GENRES, ItemFields.PROVIDER_IDS, ItemFields.PATH),
 							imageTypeLimit = 1,
 							enableImageTypes = setOf(ImageType.BACKDROP, ImageType.LOGO),
 						)
@@ -395,6 +398,8 @@ class MediaBarSlideshowViewModel(
 						tmdbId = item.providerIds?.get("Tmdb"),
 						imdbId = item.providerIds?.get("Imdb"),
 						itemType = item.type ?: BaseItemKind.MOVIE,
+						youTube = item.isTentacleYouTube,
+						youTubeSubtitle = item.youTubeSubtitle,
 					)
 				}
 				if (items.isNotEmpty()) {
@@ -806,6 +811,8 @@ class MediaBarSlideshowViewModel(
 						tmdbId = item.providerIds?.get("Tmdb"),
 						imdbId = item.providerIds?.get("Imdb"),
 						itemType = item.type ?: BaseItemKind.MOVIE,
+						youTube = item.isTentacleYouTube,
+						youTubeSubtitle = item.youTubeSubtitle,
 					)
 				}
 

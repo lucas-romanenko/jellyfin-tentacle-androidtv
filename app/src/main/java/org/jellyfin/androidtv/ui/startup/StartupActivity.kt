@@ -90,6 +90,22 @@ class StartupActivity : FragmentActivity() {
 
 		super.onCreate(savedInstanceState)
 
+		// The launcher's icon while the app runs in the background: the task is already there
+		// (singleTask put this on top of MainActivity in it), so go back to it as it was instead
+		// of the splash and a new Home. A cold start, a deep link, a channel card and "switch
+		// user" still start here: they are the task's root or not the launcher. After the process
+		// was killed the session isn't started yet, so that starts here too.
+		val sessionRunning = (application as? JellyfinApplication)?.sessionStarted == true &&
+			sessionRepository.currentSession.value != null
+		if (resumesRunningTask(intent.action, intent.categories, isTaskRoot, sessionRunning)) {
+			Timber.i("Launcher opened the running app: back to where it was")
+			HomeTiming.mark("StartupActivity: resumed the running app")
+			finish()
+			@Suppress("DEPRECATION")
+			overridePendingTransition(0, 0)
+			return
+		}
+
 		binding = ActivityStartupBinding.inflate(layoutInflater)
 		binding.background.setContent { AppBackground() }
 		binding.screensaver.isVisible = false
@@ -230,3 +246,18 @@ class StartupActivity : FragmentActivity() {
 		if (intent?.getBooleanExtra(UpdateCheckWorker.EXTRA_OPEN_UPDATES, false) == true) UpdatePrompt.openRequested = true
 	}
 }
+
+/**
+ * Whether the launcher's icon reopened the running app: a launcher intent (MAIN with a launcher
+ * category) that put this activity on top of the task's other activities, not at its root, while
+ * this process has a started session.
+ */
+internal fun resumesRunningTask(
+	action: String?,
+	categories: Set<String>?,
+	isTaskRoot: Boolean,
+	sessionRunning: Boolean,
+): Boolean = sessionRunning &&
+	!isTaskRoot &&
+	action == Intent.ACTION_MAIN &&
+	categories.orEmpty().any { it == Intent.CATEGORY_LAUNCHER || it == Intent.CATEGORY_LEANBACK_LAUNCHER }

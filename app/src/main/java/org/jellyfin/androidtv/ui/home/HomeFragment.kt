@@ -368,6 +368,8 @@ class HomeFragment : Fragment() {
 		interactionTrackerViewModel.visible
 			.flowWithLifecycle(viewLifecycleOwner.lifecycle, Lifecycle.State.STARTED)
 			.onEach { screensaverVisible ->
+				// Hidden under another screen (DestinationFragmentView): no hero trailer to restart
+				if (isHidden) return@onEach
 				if (screensaverVisible) {
 					mediaBarViewModel.stopTrailer()
 				} else {
@@ -569,8 +571,20 @@ class HomeFragment : Fragment() {
 		super.onStop()
 		// Home button, another app, the system screensaver: pause the hero's carousel and
 		// trailer lookups until the user is back (a8/04)
-		if (heroPause.onStop(mediaBarViewModel.isFocused.value, leavingByNavigation = isRemoving || isDetached)) {
+		if (heroPause.onStop(mediaBarViewModel.isFocused.value, leavingByNavigation = isRemoving || isDetached || isHidden)) {
 			mediaBarViewModel.setFocused(false)
+		}
+	}
+
+	override fun onHiddenChanged(hidden: Boolean) {
+		super.onHiddenChanged(hidden)
+		if (hidden) {
+			// Covered by the screen opened from Home, its view kept: the hero lost its focus
+			// with it (a detached view's dispose used to tell the hero so).
+			mediaBarViewModel.setFocused(false)
+		} else {
+			// Back on screen as it was: focus on the card it had, background for it
+			rowsFragment?.onShownAgain()
 		}
 	}
 

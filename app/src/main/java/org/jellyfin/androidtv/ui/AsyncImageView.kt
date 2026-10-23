@@ -12,7 +12,9 @@ import androidx.core.view.doOnAttach
 import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import coil3.ImageLoader
+import coil3.asDrawable
 import coil3.asImage
+import coil3.memory.MemoryCache
 import coil3.request.Disposable
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -25,6 +27,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.util.BlurHashDecoder
+import org.jellyfin.androidtv.util.imageCacheKey
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import kotlin.math.round
@@ -90,6 +93,18 @@ class AsyncImageView @JvmOverloads constructor(
 	) {
 		// Cancel the previous load if still running
 		loadJob?.cancel()
+
+		// Already in the memory cache (a card bound again, a row turning wide whose pictures were
+		// fetched ahead): shown now, before the card's first frame. Through Coil it went to IO
+		// (and decoded the blurhash) first and the card was drawn empty for a frame or more.
+		val cached = if (url != null && !circleCrop) imageLoader.memoryCache?.get(MemoryCache.Key(imageCacheKey(url)))?.image else null
+		if (cached != null) {
+			loadJob = null
+			inFlight?.dispose()
+			inFlight = null
+			setImageDrawable(cached.asDrawable(resources))
+			return
+		}
 
 		loadJob = lifeCycleOwner?.lifecycleScope?.launch(Dispatchers.IO) {
 			var placeholderOrBlurHash = placeholder

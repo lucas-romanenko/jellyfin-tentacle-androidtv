@@ -134,7 +134,11 @@ class MainActivity : FragmentActivity() {
 		navigationRepository.currentAction
 			.flowWithLifecycle(lifecycle, Lifecycle.State.STARTED)
 			.onEach { action ->
+				// A finishing activity (switching user) leaves the action to the next one.
+				if (isFinishing) return@onEach
 				handleNavigationAction(action)
+				// Done: the next start (the TV waking, the app back in front) doesn't run it again.
+				navigationRepository.onActionHandled(action)
 				// Always enable back callback to handle exit confirmation
 				backPressedCallback.isEnabled = true
 				interactionTrackerViewModel.notifyInteraction(canCancel = false, userInitiated = false)
@@ -255,6 +259,8 @@ class MainActivity : FragmentActivity() {
 
 	// Forward key events to fragments
 	private fun Fragment.onKeyEvent(keyCode: Int, event: KeyEvent?): Boolean {
+		// Home stays hidden under the screen opened from it (DestinationFragmentView): not its keys.
+		if (isHidden) return false
 		var result = childFragmentManager.fragments.any { it.onKeyEvent(keyCode, event) }
 		if (!result && this is View.OnKeyListener) result = onKey(currentFocus, keyCode, event)
 		return result

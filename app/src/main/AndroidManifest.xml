@@ -126,11 +126,12 @@
             android:name=".startup.StartupActivity"
             android:targetActivity=".ui.startup.StartupActivity" />
 
-        <!-- Main application -->
+        <!-- Main application. A display change (a TV waking, an HDMI mode switch) keeps the
+             activity: recreated, it built Home again and lost the focused card. -->
         <activity
             android:name=".ui.browsing.MainActivity"
             android:launchMode="singleTask"
-            android:configChanges="keyboard|keyboardHidden|navigation"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|smallestScreenSize|screenLayout"
             android:windowSoftInputMode="adjustNothing" />
 
         <activity android:name=".ui.playback.ExternalPlayerActivity" />

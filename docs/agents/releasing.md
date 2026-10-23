@@ -50,8 +50,8 @@ the person saw is 6 h old, or at once when the daily `UpdateCheckWorker`
 found a newer version (`isHomeCheckDue`; not per process: WorkManager
 starts the app in the background, and opening it later must still check),
 and offers a strictly newer tag (semver: an rc is older than
-its release) in a dialog (`ui/update/UpdatePrompt.kt`, also Settings →
-About "Check for updates" and the daily notification). It installs the
+its release) in a dialog (`ui/update/UpdatePrompt.kt`, also Settings
+"Check for updates" and the daily notification). It installs the
 `-github-release.apk` asset, never a debug one. So a release must have the
 APK attached and be marked latest (not a pre-release), or nobody is
 offered it. Debug builds (`.debug`) never offer releases: they update from

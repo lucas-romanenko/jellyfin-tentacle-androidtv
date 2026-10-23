@@ -169,26 +169,13 @@
         android:textSize="14sp" />
 
     <ImageButton
-        android:id="@+id/optionsButton"
+        android:id="@+id/filterButton"
         style="@style/Button.Icon"
         android:layout_width="28dp"
         android:layout_height="28dp"
         android:layout_alignBottom="@id/programImage"
         android:layout_alignParentEnd="true"
         android:layout_marginEnd="24dp"
-        android:background="@drawable/jellyfin_button"
-        android:padding="4dp"
-        android:scaleType="fitCenter"
-        android:src="@drawable/ic_settings" />
-
-    <ImageButton
-        android:id="@+id/filterButton"
-        style="@style/Button.Icon"
-        android:layout_width="28dp"
-        android:layout_height="28dp"
-        android:layout_alignBottom="@id/programImage"
-        android:layout_marginEnd="8dp"
-        android:layout_toStartOf="@id/optionsButton"
         android:background="@drawable/jellyfin_button"
         android:padding="4dp"
         android:scaleType="fitCenter"
@@ -412,11 +399,6 @@
 
     <androidx.compose.ui.platform.ComposeView
         android:id="@+id/settingsFilters"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
-
-    <androidx.compose.ui.platform.ComposeView
-        android:id="@+id/settingsOptions"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 </RelativeLayout>

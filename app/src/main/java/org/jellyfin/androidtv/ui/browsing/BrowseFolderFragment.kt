@@ -1,9 +1,7 @@
 package org.jellyfin.androidtv.ui.browsing
 
-import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.leanback.app.BrowseSupportFragment
-import androidx.leanback.widget.FocusHighlight
 import androidx.leanback.widget.HeaderItem
 import androidx.leanback.widget.ListRow
 import androidx.leanback.widget.OnItemViewClickedListener
@@ -19,10 +17,10 @@ import kotlinx.serialization.json.Json
 import org.jellyfin.androidtv.constant.Extras
 import org.jellyfin.androidtv.data.service.BackgroundService
 import org.jellyfin.androidtv.data.service.BlurContext
+import org.jellyfin.androidtv.preference.FixedLook
 import org.jellyfin.androidtv.ui.itemhandling.BaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.itemhandling.ItemRowAdapter
-import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.ui.presentation.CardPresenter
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
 import org.jellyfin.androidtv.ui.presentation.PositionableListRowPresenter
@@ -37,13 +35,6 @@ abstract class BrowseFolderFragment : BrowseSupportFragment(), RowLoader {
 
 	private val backgroundService by inject<BackgroundService>()
 	private val itemLauncher by inject<ItemLauncher>()
-	private val userPreferences by inject<UserPreferences>()
-
-	private val preferenceChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-		if (key == UserPreferences.cardFocusExpansion.key && rows.isNotEmpty()) {
-			loadRows(rows)
-		}
-	}
 
 	override fun onCreate(savedInstanceState: Bundle?) {
 		super.onCreate(savedInstanceState)
@@ -84,13 +75,12 @@ abstract class BrowseFolderFragment : BrowseSupportFragment(), RowLoader {
 			}
 		}
 
-		userPreferences.registerChangeListener(preferenceChangeListener)
 	}
 
 	protected abstract suspend fun setupQueries(rowLoader: RowLoader)
 
 	override fun loadRows(rows: MutableList<BrowseRowDef>) {
-		val zoomFactor = if (userPreferences[UserPreferences.cardFocusExpansion]) FocusHighlight.ZOOM_FACTOR_MEDIUM else FocusHighlight.ZOOM_FACTOR_NONE
+		val zoomFactor = FixedLook.CARD_FOCUS_ZOOM
 		val mutableAdapter = MutableObjectAdapter<Row>(PositionableListRowPresenter(focusZoomFactor = zoomFactor)).also {
 			adapter = it
 		}
@@ -118,7 +108,6 @@ abstract class BrowseFolderFragment : BrowseSupportFragment(), RowLoader {
 	}
 
 	override fun onDestroyView() {
-		userPreferences.unregisterChangeListener(preferenceChangeListener)
 		super.onDestroyView()
 	}
 }

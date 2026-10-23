@@ -120,6 +120,9 @@ seasonal effects.
 
 ## Gotchas
 
+- Settings are minimal on purpose ([docs/FEATURES.md](docs/FEATURES.md)): customising
+  happens in Tentacle, the look is fixed (`preference/FixedLook.kt`). Don't add TV-side
+  look or customisation options; a new person-level choice belongs in Tentacle.
 - Tentacle calls use OkHttp directly with `?userId=&api_key=` (the user's
   own Jellyfin token); the plugin checks the token is that user's. Any new
   endpoint must be user-scoped on the plugin side, and admin-only ones

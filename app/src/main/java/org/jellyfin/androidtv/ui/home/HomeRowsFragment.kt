@@ -224,10 +224,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		sharedCardPresenter = CardPresenter(true, org.jellyfin.androidtv.constant.ImageType.POSTER, 150, true)
 
 		// Create a custom row presenter that keeps headers always visible
-		val zoomFactor = if (userPreferences[UserPreferences.cardFocusExpansion])
-			androidx.leanback.widget.FocusHighlight.ZOOM_FACTOR_MEDIUM
-		else
-			androidx.leanback.widget.FocusHighlight.ZOOM_FACTOR_NONE
+		val zoomFactor = org.jellyfin.androidtv.preference.FixedLook.CARD_FOCUS_ZOOM
 		val rowPresenter = PositionableListRowPresenter(requireContext(), focusZoomFactor = zoomFactor).apply {
 			// Enable select effect for rows
 			setSelectEffectEnabled(true)
@@ -565,7 +562,6 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		// Listen for preference changes that require a full rows rebuild
 		val watchedKeys = setOf(
 			UserPreferences.mergeContinueWatchingNextUp.key,
-			UserPreferences.cardFocusExpansion.key,
 		)
 		val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
 			if (key in watchedKeys && isAdded && !isStateSaved) {

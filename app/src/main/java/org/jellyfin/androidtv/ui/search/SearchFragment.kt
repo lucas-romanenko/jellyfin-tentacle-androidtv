@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -32,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -47,6 +49,7 @@ import org.jellyfin.androidtv.data.repository.DiscoverItem
 import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
+import org.jellyfin.androidtv.ui.composable.requestFocusSettled
 import org.jellyfin.androidtv.ui.discover.DiscoverCard
 import org.jellyfin.androidtv.ui.discover.DiscoverDetailDialog
 import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
@@ -86,6 +89,14 @@ class SearchFragment : Fragment() {
 			var query by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
 			val textInputFocusRequester = remember { FocusRequester() }
 			val resultsFocusRequester = remember { FocusRequester() }
+			// The card opened last (a channel, a library item, a Discover title): coming back from the
+			// player or its details page, focus goes back to it, not to the search field.
+			val reopenedCardKey = remember { viewModel.lastOpenedCard }
+			val reopenedCardFocusRequester = remember { FocusRequester() }
+			var reopenedCardFocused by remember { mutableStateOf(false) }
+			val reopenedCardModifier = Modifier
+				.focusRequester(reopenedCardFocusRequester)
+				.onFocusChanged { reopenedCardFocused = it.hasFocus }
 			val speechRecognizerAvailability = rememberSpeechRecognizerAvailability()
 			val navbarPosition = rememberNavbarPosition()
 			val isSidebar = navbarPosition == NavbarPosition.LEFT
@@ -118,6 +129,8 @@ class SearchFragment : Fragment() {
 					query = query.copy(text = extraQuery)
 					viewModel.searchImmediately(extraQuery)
 					resultsFocusRequester.requestFocus()
+				} else if (reopenedCardKey != null && reopenedCardKey in shownSearchCards(channelResults, libraryResults, tmdbResults)) {
+					reopenedCardFocusRequester.requestFocusSettled(isFocused = { reopenedCardFocused })
 				} else {
 					textInputFocusRequester.requestFocus()
 				}
@@ -193,7 +206,8 @@ class SearchFragment : Fragment() {
 					val showChannels = channelResults.isNotEmpty()
 					val showLibrary = libraryResults.isNotEmpty()
 					val showDiscover = discover.showRow
-					val openItem: (BaseItemDto) -> Unit = { item ->
+					val openItem: (String, BaseItemDto) -> Unit = { cardKey, item ->
+						viewModel.lastOpenedCard = cardKey
 						itemLauncher.launch(BaseItemDtoBaseRowItem(item), null, requireContext())
 					}
 
@@ -205,9 +219,12 @@ class SearchFragment : Fragment() {
 						if (showChannels) {
 							SearchJellyfinRow(
 								title = stringResource(R.string.channels),
+								row = SearchCardRow.CHANNELS,
 								items = channelResults,
 								api = api,
 								firstCardModifier = Modifier.focusRequester(resultsFocusRequester),
+								reopenedCardKey = reopenedCardKey,
+								reopenedCardModifier = reopenedCardModifier,
 								onClick = openItem,
 							)
 						}
@@ -215,9 +232,12 @@ class SearchFragment : Fragment() {
 						if (showLibrary) {
 							SearchJellyfinRow(
 								title = stringResource(R.string.search_row_library),
+								row = SearchCardRow.LIBRARY,
 								items = libraryResults,
 								api = api,
 								firstCardModifier = if (!showChannels) Modifier.focusRequester(resultsFocusRequester) else Modifier,
+								reopenedCardKey = reopenedCardKey,
+								reopenedCardModifier = reopenedCardModifier,
 								onClick = openItem,
 							)
 						}
@@ -238,6 +258,11 @@ class SearchFragment : Fragment() {
 									)
 								} else {
 									LazyRow(
+										state = rememberLazyListState(
+											initialFirstVisibleItemIndex = tmdbResults
+												.indexOfFirst { discoverCardKey(it) == reopenedCardKey }
+												.coerceAtLeast(0),
+										),
 										contentPadding = PaddingValues(horizontal = 48.dp),
 										horizontalArrangement = Arrangement.spacedBy(12.dp),
 										modifier = Modifier.fillMaxWidth(),
@@ -250,13 +275,16 @@ class SearchFragment : Fragment() {
 											tmdbResults,
 											key = { index, it -> "$index:${it.mediaType}:${it.tmdbId}:${it.tvdbId}" },
 										) { index, item ->
+											val cardKey = discoverCardKey(item)
 											DiscoverCard(
 												item = item,
 												// The focus hop from the search input targets the first
 												// card directly — requesting focus on the container
 												// Column throws (it isn't focusable) and lands nowhere.
-												modifier = if (index == 0 && !showChannels && !showLibrary) Modifier.focusRequester(resultsFocusRequester) else Modifier,
+												modifier = (if (index == 0 && !showChannels && !showLibrary) Modifier.focusRequester(resultsFocusRequester) else Modifier)
+													.then(if (cardKey == reopenedCardKey) reopenedCardModifier else Modifier),
 												onClick = {
+													viewModel.lastOpenedCard = cardKey
 													if (item.inLibrary) {
 														scope.launch {
 															val itemId = tentacleRepository.resolveOwnedItem(
@@ -311,10 +339,13 @@ class SearchFragment : Fragment() {
 	@Composable
 	private fun SearchJellyfinRow(
 		title: String,
+		row: SearchCardRow,
 		items: List<BaseItemDto>,
 		api: ApiClient,
 		firstCardModifier: Modifier,
-		onClick: (BaseItemDto) -> Unit,
+		reopenedCardKey: String?,
+		reopenedCardModifier: Modifier,
+		onClick: (cardKey: String, item: BaseItemDto) -> Unit,
 	) {
 		Column(
 			modifier = Modifier
@@ -323,16 +354,24 @@ class SearchFragment : Fragment() {
 		) {
 			SearchRowTitle(title)
 			LazyRow(
+				// Back from the card opened last: start the row at it, so it is there to focus.
+				state = rememberLazyListState(
+					initialFirstVisibleItemIndex = items
+						.indexOfFirst { searchCardKey(row, it) == reopenedCardKey }
+						.coerceAtLeast(0),
+				),
 				contentPadding = PaddingValues(horizontal = 48.dp),
 				horizontalArrangement = Arrangement.spacedBy(12.dp),
 				modifier = Modifier.fillMaxWidth(),
 			) {
 				itemsIndexed(items, key = { index, it -> "$index:${it.id}" }) { index, item ->
+					val cardKey = searchCardKey(row, item)
 					SearchItemCard(
 						item = item,
 						api = api,
-						onClick = { onClick(item) },
-						modifier = if (index == 0) firstCardModifier else Modifier,
+						onClick = { onClick(cardKey, item) },
+						modifier = (if (index == 0) firstCardModifier else Modifier)
+							.then(if (cardKey == reopenedCardKey) reopenedCardModifier else Modifier),
 					)
 				}
 			}

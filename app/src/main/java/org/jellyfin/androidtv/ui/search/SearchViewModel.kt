@@ -28,6 +28,9 @@ class SearchViewModel(
 	private var librarySearchJob: Job? = null
 	private var previousQuery: String? = null
 
+	/** The card opened last ([searchCardKey]); Search focuses it again when you come back. */
+	var lastOpenedCard: String? = null
+
 	// Discover (TMDB via Tentacle): the last good results stay while a newer search runs or fails.
 	private val _discoverState = MutableStateFlow(DiscoverSearchState())
 	val discoverState: StateFlow<DiscoverSearchState> = _discoverState.asStateFlow()

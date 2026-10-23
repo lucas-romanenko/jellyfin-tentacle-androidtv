@@ -15,9 +15,11 @@ import org.jellyfin.androidtv.data.repository.DeleteOutcome
 import org.jellyfin.androidtv.data.repository.ItemMutationRepository
 import org.jellyfin.androidtv.data.repository.ItemRepository
 import org.jellyfin.androidtv.data.repository.deleteOutcomeMessage
+import org.jellyfin.androidtv.ui.asTimerInfoDto
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.playback.PrePlaybackTrackSelector
+import org.jellyfin.androidtv.ui.playback.rethrowIfCancelled
 import org.jellyfin.androidtv.util.TimeUtils
 import org.jellyfin.androidtv.util.Utils
 import org.jellyfin.androidtv.util.appScope
@@ -32,6 +34,7 @@ import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.exception.ApiClientException
 import org.jellyfin.sdk.api.client.extensions.libraryApi
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
+import org.jellyfin.sdk.api.operations.LiveTvApi
 import org.jellyfin.sdk.api.client.extensions.tvShowsApi
 import org.jellyfin.sdk.api.client.extensions.userLibraryApi
 import org.jellyfin.sdk.model.api.BaseItemDto
@@ -393,6 +396,33 @@ fun FullDetailsFragment.createLiveTvSeriesTimer(
 	}
 }
 
+/**
+ * Record on a programme's details page books this one programme, as the guide popup and the player
+ * do: Jellyfin's defaults are a series timer (any time, every day, matched by series id or title),
+ * so they go in as a one-off timer, never to /LiveTv/SeriesTimers (#194).
+ */
+internal suspend fun LiveTvApi.recordProgramme(programId: UUID) {
+	val defaults by getDefaultTimer(programId.toString())
+	createTimer(defaults.asTimerInfoDto())
+}
+
+fun FullDetailsFragment.recordLiveTvProgramme(
+	id: UUID,
+	callback: () -> Unit,
+) {
+	val api by inject<ApiClient>()
+
+	lifecycleScope.launch {
+		runCatching {
+			withContext(Dispatchers.IO) {
+				api.liveTvApi.recordProgramme(id)
+			}
+		}.onSuccess {
+			callback()
+		}
+	}
+}
+
 fun FullDetailsFragment.getLiveTvDefaultTimer(
 	id: UUID,
 	callback: (seriesTimer: SeriesTimerInfoDto) -> Unit,
@@ -410,19 +440,38 @@ fun FullDetailsFragment.getLiveTvDefaultTimer(
 	}
 }
 
-fun FullDetailsFragment.cancelLiveTvSeriesTimer(
+/** Cancels one booked programme ([timerId] is a timer's, not a series timer's). */
+fun FullDetailsFragment.cancelLiveTvTimer(
 	timerId: String,
 	callback: () -> Unit,
+) = cancelLiveTv(callback) { liveTvApi.cancelTimer(timerId) }
+
+/**
+ * Cancels a series timer and the programmes it booked. Jellyfin answers 404 when a series timer id
+ * is sent to the one-off timer cancel, so the series kept recording (#195).
+ */
+fun FullDetailsFragment.cancelLiveTvSeriesTimer(
+	seriesTimerId: String,
+	callback: () -> Unit,
+) = cancelLiveTv(callback) { liveTvApi.cancelSeriesTimer(seriesTimerId) }
+
+private fun FullDetailsFragment.cancelLiveTv(
+	callback: () -> Unit,
+	request: suspend ApiClient.() -> Unit,
 ) {
 	val api by inject<ApiClient>()
 
 	lifecycleScope.launch {
 		runCatching {
 			withContext(Dispatchers.IO) {
-				api.liveTvApi.cancelTimer(timerId)
+				api.request()
 			}
 		}.onSuccess {
 			callback()
+		}.onFailure { error ->
+			error.rethrowIfCancelled()
+			Timber.w(error, "Live TV cancel refused")
+			Toast.makeText(requireContext(), R.string.msg_unable_to_cancel, Toast.LENGTH_LONG).show()
 		}
 	}
 }

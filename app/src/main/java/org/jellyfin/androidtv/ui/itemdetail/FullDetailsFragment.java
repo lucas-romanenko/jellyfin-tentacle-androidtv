@@ -1007,21 +1007,18 @@ public class FullDetailsFragment extends Fragment implements RecordingIndicatorV
                     public void onClick(View v) {
                         if (mProgramInfo.getTimerId() == null) {
                             //Create one-off recording with defaults
-                            FullDetailsFragmentHelperKt.getLiveTvDefaultTimer(FullDetailsFragment.this, mProgramInfo.getId(), seriesTimer -> {
-                                FullDetailsFragmentHelperKt.createLiveTvSeriesTimer(FullDetailsFragment.this, seriesTimer, () -> {
-                                    FullDetailsFragmentHelperKt.getLiveTvProgram(FullDetailsFragment.this, mProgramInfo.getId(), program -> {
-                                        mProgramInfo = program;
-                                        setRecSeriesTimer(program.getSeriesTimerId());
-                                        setRecTimer(program.getTimerId());
-                                        Utils.showToast(requireContext(), R.string.msg_set_to_record);
-                                        return null;
-                                    });
+                            FullDetailsFragmentHelperKt.recordLiveTvProgramme(FullDetailsFragment.this, mProgramInfo.getId(), () -> {
+                                FullDetailsFragmentHelperKt.getLiveTvProgram(FullDetailsFragment.this, mProgramInfo.getId(), program -> {
+                                    mProgramInfo = program;
+                                    setRecSeriesTimer(program.getSeriesTimerId());
+                                    setRecTimer(program.getTimerId());
+                                    Utils.showToast(requireContext(), R.string.msg_set_to_record);
                                     return null;
                                 });
                                 return null;
                             });
                         } else {
-                            FullDetailsFragmentHelperKt.cancelLiveTvSeriesTimer(FullDetailsFragment.this, mProgramInfo.getTimerId(), () -> {
+                            FullDetailsFragmentHelperKt.cancelLiveTvTimer(FullDetailsFragment.this, mProgramInfo.getTimerId(), () -> {
                                 setRecTimer(null);
                                 dataRefreshService.getValue().setLastDeletedItemId(mProgramInfo.getId());
                                 Utils.showToast(requireContext(), R.string.msg_recording_cancelled);

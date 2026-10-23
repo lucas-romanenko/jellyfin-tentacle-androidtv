@@ -125,11 +125,8 @@ fun EpisodePickerContent(
 			sonarrData = sonarrJob.await()
 			vodData = vodJob.await()
 
-			// Pre-select episodes that are on disk (hasFile), not just monitored
-			if (mode == EpisodePickerMode.MANAGE && sonarrData.inSonarr) {
-				sonarrData.episodes.filter { it.hasFile }.forEach { ep ->
-					selectedEpisodes["${ep.seasonNumber}:${ep.episodeNumber}"] = true
-				}
+			if (mode == EpisodePickerMode.MANAGE) {
+				manageStartSelection(sonarrData).forEach { selectedEpisodes[it] = true }
 			}
 		}
 
@@ -174,6 +171,7 @@ fun EpisodePickerContent(
 	}
 
 	val selectedCount = selectedEpisodes.count { it.value }
+	val canConfirm = canConfirmEpisodes(mode, sonarrData, selectedCount)
 
 	Column(modifier = Modifier.fillMaxSize()) {
 		// Header
@@ -213,7 +211,7 @@ fun EpisodePickerContent(
 
 				Button(
 					onClick = {
-						if (!isSubmitting && selectedCount > 0) {
+						if (!isSubmitting && canConfirm) {
 							isSubmitting = true
 							submitScope.launch {
 								val selected = selectedEpisodes
@@ -257,12 +255,17 @@ fun EpisodePickerContent(
 						}
 					},
 					colors = ButtonDefaults.colors(
-						containerColor = if (selectedCount > 0) Color(0xFF7C6AE8) else Color(0xFF374151),
+						containerColor = if (canConfirm) Color(0xFF7C6AE8) else Color(0xFF374151),
 						contentColor = Color.White,
 					),
 				) {
 					Text(
-						text = if (isSubmitting) "Saving..." else if (selectedCount > 0) "Confirm ($selectedCount)" else "Select episodes",
+						text = when {
+							isSubmitting -> "Saving..."
+							canConfirm -> "Confirm ($selectedCount)"
+							mode == EpisodePickerMode.MANAGE && !isLoading && !sonarrData.inSonarr -> "Couldn't load Sonarr"
+							else -> "Select episodes"
+						},
 						fontSize = 14.sp,
 					)
 				}
@@ -635,6 +638,22 @@ private fun isEpisodeUnaired(airDate: String?, today: LocalDate): Boolean {
 		false
 	}
 }
+
+/**
+ * Manage Episodes starts from what Sonarr monitors now, plus what is on disk (#180). Confirm
+ * sends the whole monitored set and the server unmonitors every episode of the series left out,
+ * so an upcoming or still-missing episode not ticked here would be unmonitored untouched.
+ */
+internal fun manageStartSelection(sonarr: SonarrEpisodesResponse): List<String> =
+	if (!sonarr.inSonarr) emptyList()
+	else sonarr.episodes.filter { it.monitored || it.hasFile }.map { "${it.seasonNumber}:${it.episodeNumber}" }
+
+/**
+ * Confirm needs a ticked episode, and in Manage Episodes Sonarr's list too: without it (the load
+ * failed) the ticked ones would replace the whole monitored set and unmonitor the rest (#180).
+ */
+internal fun canConfirmEpisodes(mode: EpisodePickerMode, sonarr: SonarrEpisodesResponse, selectedCount: Int): Boolean =
+	selectedCount > 0 && (mode != EpisodePickerMode.MANAGE || sonarr.inSonarr)
 
 /**
  * What adding picked episodes to Sonarr came to: (done, message). A 200 can still carry

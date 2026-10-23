@@ -12,16 +12,17 @@ class EmbyCacheKeyInterceptor : Interceptor {
 
 		if (!url.contains("api_key=")) return chain.proceed()
 
-		val normalized = stripApiKey(url)
+		val normalized = imageCacheKey(url)
 		val newRequest = request.newBuilder()
 			.memoryCacheKey(MemoryCache.Key(normalized))
 			.diskCacheKey(normalized)
 			.build()
 		return chain.withRequest(newRequest).proceed()
 	}
-
-	private fun stripApiKey(url: String): String = url
-		.replace(Regex("&api_key=[^&]*"), "")
-		.replace(Regex("\\?api_key=[^&]*&"), "?")
-		.replace(Regex("\\?api_key=[^&]*$"), "")
 }
+
+/** The cache key of an image URL: the URL, without its api_key (the same picture for every token). */
+fun imageCacheKey(url: String): String = if (!url.contains("api_key=")) url else url
+	.replace(Regex("&api_key=[^&]*"), "")
+	.replace(Regex("\\?api_key=[^&]*&"), "?")
+	.replace(Regex("\\?api_key=[^&]*$"), "")

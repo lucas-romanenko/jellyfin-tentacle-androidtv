@@ -3,6 +3,7 @@ package org.jellyfin.androidtv.ui.search
 import kotlinx.coroutines.CancellationException
 import org.jellyfin.androidtv.constant.QueryDefaults
 import org.jellyfin.androidtv.data.repository.DiscoverItem
+import org.jellyfin.androidtv.ui.livetv.withoutChannelSeparators
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import timber.log.Timber
@@ -28,7 +29,7 @@ class LibrarySearch(
 	/** Channels matching [query], tunable from the card. Empty on any failure (Live TV off, no access). */
 	suspend fun channels(query: String): List<BaseItemDto> {
 		val found = fetch("channels", query, channelKinds, CHANNEL_FETCH_LIMIT)
-		return rankChannelMatches(query, found.filterNot(hideItem)).take(CHANNEL_ROW_LIMIT)
+		return rankChannelMatches(query, withoutChannelSeparators(found).filterNot(hideItem)).take(CHANNEL_ROW_LIMIT)
 	}
 
 	/** Library items matching [query]. Empty on any failure. */

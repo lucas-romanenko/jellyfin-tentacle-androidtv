@@ -65,6 +65,8 @@ import org.jellyfin.androidtv.ui.settings.composable.SettingsColumn
 import org.jellyfin.androidtv.ui.settings.composable.SettingsDialog
 import org.jellyfin.androidtv.util.apiclient.itemImages
 import org.jellyfin.androidtv.util.apiclient.parentImages
+import org.jellyfin.androidtv.util.sdk.isTentacleYouTube
+import org.jellyfin.androidtv.util.sdk.youTubeSubtitle
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
@@ -433,6 +435,7 @@ class FavoritesBrowseFragment : Fragment() {
 	}
 
 	private fun getSubtitle(item: BaseItemDto): String {
+		if (item.isTentacleYouTube) return item.youTubeSubtitle.orEmpty()
 		return when (item.type) {
 			BaseItemKind.MOVIE,
 			BaseItemKind.SERIES -> item.productionYear?.toString() ?: ""

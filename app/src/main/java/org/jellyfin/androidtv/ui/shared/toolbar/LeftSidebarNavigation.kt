@@ -301,7 +301,9 @@ private fun CollapsibleSidebarContent(
 
 	// Get root view to check for rowsFragment (HomeFragment)
 	val rootView = LocalView.current.rootView
-	val isHomeFragment = rootView.findViewById<android.view.View?>(R.id.rowsFragment) != null
+	// Home's own sidebar: Home stays (hidden) in the view tree under the screens opened from it
+	// (DestinationFragmentView), so finding its rows there no longer means Home is on screen.
+	val isHomeFragment = activeButton == NavbarActiveButton.Home
 	val isSearchFragment = activeButton == NavbarActiveButton.Search
 
 	// Show clock in top right based on clockBehavior preference

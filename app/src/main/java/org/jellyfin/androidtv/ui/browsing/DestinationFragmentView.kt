@@ -14,7 +14,9 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentContainerView
 import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentTransaction
+import androidx.lifecycle.Lifecycle
 import org.jellyfin.androidtv.R
+import org.jellyfin.androidtv.ui.home.HomeFragment
 import org.jellyfin.androidtv.ui.navigation.NavigationAction
 import timber.log.Timber
 import java.util.Stack
@@ -166,12 +168,28 @@ class DestinationFragmentView @JvmOverloads constructor(
 			setReorderingAllowed(true)
 			setCustomAnimations(R.anim.fade_in, R.anim.fade_out, R.anim.fade_in, R.anim.fade_out)
 
-			// Detach current fragment
-			fragmentManager.findFragmentByTag(FRAGMENT_TAG_CONTENT)?.let(::detach)
+			// Detach the current fragment, or hide Home while a screen opened from it is on top
+			val current = fragmentManager.findFragmentByTag(FRAGMENT_TAG_CONTENT)
+			if (current != null && current !== fragment) {
+				val staysInHistory = history.any { it.fragment === current }
+				if (keepsViewWhileCovered(current::class.java, staysInHistory)) {
+					hide(current)
+					// Paused, so its RESUMED work (polls, the hero trailer) stops while covered
+					setMaxLifecycle(current, Lifecycle.State.STARTED)
+				} else {
+					detach(current)
+				}
+			}
 
-			// Attach or add next fragment
-			if (fragment.isDetached) attach(fragment)
-			else add(container.id, fragment, FRAGMENT_TAG_CONTENT)
+			// Show, attach or add the next fragment
+			when {
+				fragment.isHidden -> {
+					show(fragment)
+					setMaxLifecycle(fragment, Lifecycle.State.RESUMED)
+				}
+				fragment.isDetached -> attach(fragment)
+				!fragment.isAdded -> add(container.id, fragment, FRAGMENT_TAG_CONTENT)
+			}
 		}
 
 		if (fragmentManager.isDestroyed) {
@@ -208,7 +226,25 @@ class DestinationFragmentView @JvmOverloads constructor(
 		if (savedHistory != null) {
 			history.clear()
 			history.addAll(savedHistory)
-			if (history.isNotEmpty()) activateHistoryEntry(history.last(), fragmentManager.beginTransaction())
+			if (history.isNotEmpty()) {
+				val transaction = fragmentManager.beginTransaction()
+				// A Home kept hidden under the last screen came back with the activity, but the
+				// history makes a new one: drop it, or it lived on unseen.
+				fragmentManager.fragments
+					.filter { it.tag == FRAGMENT_TAG_CONTENT && it.isHidden }
+					.forEach { transaction.remove(it) }
+				activateHistoryEntry(history.last(), transaction)
+			}
 		}
 	}
 }
+
+/**
+ * Whether a fragment covered by the next screen keeps its view (hidden and paused) instead of
+ * being detached, which destroys the view. Home only: building its view again on every Back from
+ * a details page took 1.3 to 1.5 s on a TV (one 800 ms frame), and its rows, focused card and
+ * scroll position live on in the kept view. It catches up with changes made meanwhile when it
+ * resumes (HomeRowsFragment.onResume). A fragment leaving the history is detached as before.
+ */
+internal fun keepsViewWhileCovered(covered: Class<out Fragment>, staysInHistory: Boolean): Boolean =
+	staysInHistory && covered == HomeFragment::class.java

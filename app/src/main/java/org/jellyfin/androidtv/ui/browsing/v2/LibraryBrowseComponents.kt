@@ -66,6 +66,8 @@ import org.jellyfin.androidtv.ui.itemdetail.v2.InfoItemSeparator
 import org.jellyfin.androidtv.ui.itemdetail.v2.InfoItemText
 import org.jellyfin.androidtv.ui.itemdetail.v2.RuntimeInfo
 import org.jellyfin.androidtv.util.TimeUtils
+import org.jellyfin.androidtv.util.sdk.isTentacleYouTube
+import org.jellyfin.androidtv.util.sdk.youTubeSubtitle
 import org.jellyfin.design.Tokens
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
@@ -108,8 +110,11 @@ private fun getTypeBadgeColor(kind: BaseItemKind?): Color = when (kind) {
  */
 fun buildMetadataString(item: BaseItemDto, context: android.content.Context? = null): String {
 	val parts = mutableListOf<String>()
+	// A Tentacle YouTube video: "YouTube · <channel>" (or nothing) instead of its upload year
+	val youTube = item.isTentacleYouTube
+	if (youTube) item.youTubeSubtitle?.let { parts.add(it) }
 	item.communityRating?.let { parts.add("★ ${String.format("%.1f", it)}") }
-	item.productionYear?.let { parts.add(it.toString()) }
+	if (!youTube) item.productionYear?.let { parts.add(it.toString()) }
 	if (item.type == BaseItemKind.SERIES) {
 		item.status?.let { parts.add(it) }
 	}
@@ -193,7 +198,7 @@ fun LibraryPosterCard(
 
 			// Type badge — top-left corner
 			if (showBadge) {
-				val badgeLabel = getTypeBadgeLabel(item.type)
+				val badgeLabel = if (item.isTentacleYouTube) "YOUTUBE" else getTypeBadgeLabel(item.type)
 				if (badgeLabel != null) {
 					Box(
 						modifier = Modifier
@@ -536,7 +541,8 @@ fun FocusedItemHud(
 				verticalAlignment = Alignment.CenterVertically,
 			) {
 				val metadataItems = buildList<@Composable () -> Unit> {
-					item.productionYear?.let { add{ InfoItemText(text = it.toString()) } }
+					if (item.isTentacleYouTube) item.youTubeSubtitle?.let { add { InfoItemText(text = it) } }
+					else item.productionYear?.let { add{ InfoItemText(text = it.toString()) } }
 
 					if (item.type != BaseItemKind.SERIES) {
 						item.runTimeTicks?.let { add { RuntimeInfo(it) } }

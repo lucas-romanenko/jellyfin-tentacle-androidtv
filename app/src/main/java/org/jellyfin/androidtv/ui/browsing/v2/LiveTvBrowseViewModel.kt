@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.data.repository.ItemRepository
+import org.jellyfin.androidtv.ui.livetv.withoutChannelSeparators
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.exception.ApiClientException
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
@@ -126,7 +127,7 @@ class LiveTvBrowseViewModel(
 					isFavorite = true,
 				).content
 			}
-			_uiState.update { it.copy(favoriteChannels = response.items) }
+			_uiState.update { it.copy(favoriteChannels = withoutChannelSeparators(response.items)) }
 		} catch (err: ApiClientException) {
 			Timber.e(err, "Failed to load favorite channels")
 		}
@@ -139,7 +140,7 @@ class LiveTvBrowseViewModel(
 					isFavorite = false,
 				).content
 			}
-			_uiState.update { it.copy(otherChannels = response.items) }
+			_uiState.update { it.copy(otherChannels = withoutChannelSeparators(response.items)) }
 		} catch (err: ApiClientException) {
 			Timber.e(err, "Failed to load other channels")
 		}

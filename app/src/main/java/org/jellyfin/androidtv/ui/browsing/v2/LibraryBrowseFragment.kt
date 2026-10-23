@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
@@ -60,6 +61,7 @@ import org.jellyfin.androidtv.data.service.BlurContext
 import org.jellyfin.androidtv.ui.base.CircularProgressIndicator
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
+import org.jellyfin.androidtv.ui.composable.requestFocusSettled
 import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
 import org.jellyfin.androidtv.ui.navigation.Destinations
@@ -211,9 +213,10 @@ class LibraryBrowseFragment : Fragment() {
 				}
 
 				// ── Status bar ──
-				LibraryStatusBar(
+				LibraryCounterStatusBar(
 					statusText = buildStatusText(uiState),
-					counterText = "${uiState.items.size} | ${uiState.totalItems}",
+					loadedItems = uiState.items.size,
+					totalItems = uiState.totalItems,
 				)
 			}
 
@@ -252,6 +255,16 @@ class LibraryBrowseFragment : Fragment() {
 				}
 			}
 		}
+	}
+
+	/** The status bar, whose counter follows the focus: only this recomposes on a D-pad press. */
+	@Composable
+	private fun LibraryCounterStatusBar(statusText: String, loadedItems: Int, totalItems: Int) {
+		val focusedIndex by viewModel.focusedIndex.collectAsState()
+		LibraryStatusBar(
+			statusText = statusText,
+			counterText = libraryCounterText(focusedIndex, loadedItems, totalItems),
+		)
 	}
 
 	// ──────────────────────────────────────────────
@@ -423,11 +436,19 @@ class LibraryBrowseFragment : Fragment() {
 			imageTypeToCardDimensions(uiState.posterSize, uiState.imageType)
 		}
 
+		var gridHasFocus by remember { mutableStateOf(false) }
+
+		// Focus the first poster when the grid opens, and the poster you opened when you come back
+		// from its details page. One request alone could end on the toolbar's Home button.
 		LaunchedEffect(uiState.items.isNotEmpty()) {
 			if (uiState.items.isNotEmpty()) {
 				snapshotFlow { gridState.layoutInfo.visibleItemsInfo.size }
 					.first { it > 0 }
-				try { focusRequester.requestFocus() } catch (_: Exception) {}
+				val target = focusTargetIndex.coerceIn(0, uiState.items.lastIndex)
+				if (gridState.layoutInfo.visibleItemsInfo.none { it.index == target }) {
+					gridState.scrollToItem(target)
+				}
+				focusRequester.requestFocusSettled(isFocused = { gridHasFocus })
 			}
 		}
 
@@ -543,7 +564,9 @@ class LibraryBrowseFragment : Fragment() {
 				LazyHorizontalGrid(
 					rows = GridCells.Fixed(rowCount),
 					state = gridState,
-					modifier = Modifier.fillMaxSize(),
+					modifier = Modifier
+						.fillMaxSize()
+						.onFocusChanged { gridHasFocus = it.hasFocus },
 					contentPadding = PaddingValues(
 						start = 20.dp,
 						end = 16.dp,
@@ -573,7 +596,9 @@ class LibraryBrowseFragment : Fragment() {
 				LazyVerticalGrid(
 					columns = GridCells.Fixed(columnCount),
 					state = gridState,
-					modifier = Modifier.fillMaxWidth(),
+					modifier = Modifier
+						.fillMaxWidth()
+						.onFocusChanged { gridHasFocus = it.hasFocus },
 					contentPadding = PaddingValues(
 						start = horizontalPadding,
 						end = horizontalPadding,

@@ -7,6 +7,7 @@ import androidx.core.view.isVisible
 import androidx.leanback.app.RowsSupportFragment
 import androidx.leanback.widget.ClassPresenterSelector
 import androidx.leanback.widget.ListRow
+import androidx.leanback.widget.ListRowPresenter
 import androidx.leanback.widget.OnItemViewClickedListener
 import androidx.leanback.widget.OnItemViewSelectedListener
 import androidx.leanback.widget.Presenter
@@ -120,6 +121,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	private val themeMusicPlayer by inject<ThemeMusicPlayer>()
 	private val tentacleRepository by inject<TentacleRepository>()
 	private val homeVersionTracker by inject<HomeVersionTracker>()
+	private val imageLoader by inject<coil3.ImageLoader>()
 
 	private val helper by lazy { HomeFragmentHelper(requireContext(), userRepository) }
 
@@ -928,6 +930,30 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		}, 100) // Small delay to let the fragment fully resume
 	}
 
+	/**
+	 * Home is on screen again with the view it had (DestinationFragmentView hid it while a
+	 * screen opened from it was on top): no selection event comes, so put the focus back on the
+	 * selected card and its background, which the other screen replaced. Main thread.
+	 */
+	fun onShownAgain() {
+		val grid = verticalGridView ?: return
+		if (!grid.hasFocus()) grid.requestFocus()
+		val item = currentItem
+		val baseItem = item?.baseItem
+		when {
+			baseItem != null -> {
+				val rowAdapter = currentRow?.adapter as? ItemRowAdapter
+				if (rowAdapter?.queryType == QueryType.Views) backgroundService.setBackgroundFromLibrary(baseItem.id, BlurContext.BROWSING)
+				else backgroundService.setBackground(baseItem, BlurContext.BROWSING)
+			}
+			// The hero has its own backdrop; its carousel goes on if the focus is back on it
+			selectedPosition in 0 until adapter.size() && adapter[selectedPosition] is MediaBarRow -> {
+				if (grid.hasFocus() && !mediaBarViewModel.isFocused.value) mediaBarViewModel.setFocused(true)
+			}
+			else -> backgroundService.clearBackgrounds()
+		}
+	}
+
 	override fun onPause() {
 		super.onPause()
 		
@@ -1118,6 +1144,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		val reusedRows = tentacleRowData.any { it.playlistId in shownItems }
 		val tentacleMap = tentacleRowData.associateBy { it.playlistId }
 
+		// A row changing shape gets new cards: their pictures first, so it goes up with them
+		// instead of empty frames for half a second
+		if (reusedRows) warmReshapedRows(tentacleRowData)
+
 		// Build new rows list
 		val newRows = mutableListOf<HomeFragmentRow>()
 		val homesections = userSettingPreferences.activeHomesections
@@ -1255,11 +1285,15 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// is changed in place (a crossfade) instead of removed and inserted, which left its place
 			// blank for a moment while the focus was on it.
 			fun playlistOf(row: Row): String? = (row as? ListRow)?.adapter?.let { oldIdByAdapter[it] ?: freshIdByAdapter[it] }
+			// A row rebuilt for its new shape starts at its first card, and the focus went there:
+			// it goes back to the card of the same item
+			val focused = focusedCard(::playlistOf)
 			rowsAdapter.replaceAll(
 				fullList,
 				areItemsTheSame = { old, new -> old === new || playlistOf(old)?.let { it == playlistOf(new) } == true },
 				areContentsTheSame = { old, new -> old === new },
 			)
+			if (focused != null) keepFocusedCard(focused, fullList, ::playlistOf)
 
 			// The fresh rows were built into tempAdapter, so their loaders still point at it: an
 			// empty answer (nothing to continue watching, no next up) removed the row from
@@ -1286,6 +1320,26 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		// place, with the layout already on screen. Structure unchanged, so no second rebuild
 		// with kept cards.
 		if (reusedRows) refreshTentacleRowsInPlace(sectionsResponse)
+	}
+
+	/**
+	 * The rows of [rows] whose card shape (poster or wide) changes in this rebuild: the pictures
+	 * of their cards on screen in the new shape, fetched into the memory cache before they go up.
+	 */
+	private suspend fun warmReshapedRows(rows: List<TentacleRowData>) {
+		val ctx = context ?: return
+		val urls = withContext(Dispatchers.Main) {
+			if (!isAdded) return@withContext emptyList()
+			val focused = focusedCard { null }
+			rows.flatMap { data ->
+				val shown = tentacleRowAdapters[data.playlistId] ?: return@flatMap emptyList()
+				val presenter = HomeFragmentTentacleRow.presenterFor(data.wide, sharedCardPresenter)
+				if (presenter === shown.cardPresenter) return@flatMap emptyList()
+				val focusedHere = focused?.takeIf { it.row.adapter === shown }?.index
+				cardImageUrls(ctx, presenter, shown, cardsToWarm(shown.size(), focusedHere))
+			}
+		}
+		warmCardImages(ctx, imageLoader, urls)
 	}
 
 	/** One home refresh (through [homeRefresher], or the first load's revalidation). */
@@ -1382,28 +1436,41 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				return@postDelayed
 			}
 
-			// Read the actual item at the current position from the adapter,
-			// since currentItem may be stale after a structural rebuild.
+			// Read the actual item the focus is on from the adapter, since currentItem may be
+			// stale after a structural rebuild: the focused card of the selected row, not its
+			// first one (that put another title's backdrop behind the focused card, #14).
 			val pos = selectedPosition
 			val row = if (pos in 0 until adapter.size()) adapter[pos] as? ListRow else null
 			val rowAdapter = row?.adapter as? MutableObjectAdapter<*>
-			val item = if (rowAdapter != null && rowAdapter.size() > 0) {
-				rowAdapter[0] as? BaseRowItem
-			} else null
+			val column = (getRowViewHolder(pos) as? ListRowPresenter.ViewHolder)?.selectedPosition
+			val index = rowAdapter?.let { focusedCardIndex(column, it.size()) }
+			val item = index?.let { rowAdapter?.get(it) as? BaseRowItem }
 
 			if (item != null) {
 				currentItem = item
+				currentRow = row
 				_selectedPositionFlow.value = pos
 				_selectedItemStateFlow.value = SelectedItemState(
 					title = item.getName(requireContext()) ?: "",
 					summary = item.getSummary(requireContext()) ?: "",
 					baseItem = item.baseItem
 				)
-				backgroundService.setBackground(item.baseItem, BlurContext.BROWSING)
+				setBackgroundFor(item, row)
 			}
 
 			suppressSelectionClearing = false
 		}, 500)
+	}
+
+	// The background for a focused card: a library tile shows a random backdrop of its library
+	private fun setBackgroundFor(item: BaseRowItem, row: ListRow?) {
+		val baseItem = item.baseItem
+		val adapter = row?.adapter as? ItemRowAdapter
+		if (adapter?.queryType == QueryType.Views && baseItem != null) {
+			backgroundService.setBackgroundFromLibrary(baseItem.id, BlurContext.BROWSING)
+		} else {
+			backgroundService.setBackground(baseItem, BlurContext.BROWSING)
+		}
 	}
 
 	private suspend fun addBuiltInSection(
@@ -1523,6 +1590,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				// Cancel any pending theme music playback
 				themeMusicPlayer.cancelDelayedPlay()
 
+				// A card's background still waiting for its debounce would land here (#14)
+				backgroundDebouncer.cancel()
+
 				// Don't clear background if we're on the media bar row - it has its own backdrop
 				if (row !is MediaBarRow) {
 					backgroundService.clearBackgrounds()
@@ -1550,15 +1620,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					)
 				}
 
-				backgroundDebouncer.debounce {
-					val baseItem = item.baseItem
-					val adapter = (row as? ListRow)?.adapter as? ItemRowAdapter
-					if (adapter?.queryType == QueryType.Views && baseItem != null) {
-						backgroundService.setBackgroundFromLibrary(baseItem.id, BlurContext.BROWSING)
-					} else {
-						backgroundService.setBackground(baseItem, BlurContext.BROWSING)
-					}
-				}
+				backgroundDebouncer.debounce { setBackgroundFor(item, row as? ListRow) }
 				
 				// Play theme music on focus if enabled (with delay)
 				item.baseItem?.let { baseItem ->

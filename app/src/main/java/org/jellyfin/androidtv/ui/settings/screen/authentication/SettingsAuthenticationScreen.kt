@@ -131,7 +131,7 @@ fun SettingsAuthenticationScreen(launchedFromLogin: Boolean = false) {
 
 		if (launchedFromLogin) item {
 			ListButton(
-				leadingContent = { Icon(painterResource(R.drawable.ic_jellyfin), contentDescription = null) },
+				leadingContent = { Icon(painterResource(R.drawable.ic_tentacle), contentDescription = null) },
 				headingContent = { Text(stringResource(R.string.pref_about_title)) },
 				onClick = { router.push(Routes.ABOUT, mapOf("fromLogin" to "true")) }
 			)

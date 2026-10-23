@@ -430,7 +430,7 @@
                 android:adjustViewBounds="true"
                 android:background="@drawable/shape_card"
                 android:scaleType="centerInside"
-                tools:srcCompat="@drawable/app_banner" />
+                tools:srcCompat="@drawable/tentacle_logo" />
         </FrameLayout>
     </androidx.constraintlayout.widget.ConstraintLayout>
 </RelativeLayout>

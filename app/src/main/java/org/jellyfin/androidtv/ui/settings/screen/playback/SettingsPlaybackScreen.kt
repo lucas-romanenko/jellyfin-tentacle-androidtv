@@ -52,7 +52,7 @@ fun SettingsPlaybackScreen() {
 						externalAppRepository.getCurrentExternalPlayerApp(context)?.loadIcon(context.packageManager)
 					}
 					Image(
-						painter = if (iconDrawable == null) rememberAsyncImagePainter(R.mipmap.app_icon)
+						painter = if (iconDrawable == null) rememberAsyncImagePainter(R.mipmap.tentacle_launcher)
 						else rememberAsyncImagePainter(iconDrawable),
 						contentDescription = null,
 						modifier = Modifier

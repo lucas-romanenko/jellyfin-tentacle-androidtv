@@ -46,7 +46,7 @@ fun SettingsPlaybackPlayerScreen() {
 			ListButton(
 				leadingContent = {
 					Image(
-						painter = rememberAsyncImagePainter(R.mipmap.app_icon),
+						painter = rememberAsyncImagePainter(R.mipmap.tentacle_launcher),
 						contentDescription = null,
 						modifier = Modifier
 							.size(32.dp)

@@ -1,10 +1,14 @@
 package org.jellyfin.androidtv.ui
 
+import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.lifecycle.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.data.repository.ItemMutationRepository
+import org.jellyfin.androidtv.ui.playback.rethrowIfCancelled
 import org.jellyfin.androidtv.util.getActivity
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
@@ -12,6 +16,7 @@ import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.SeriesTimerInfoDto
 import org.jellyfin.sdk.model.api.TimerInfoDto
 import org.koin.android.ext.android.inject
+import timber.log.Timber
 import java.util.UUID
 
 fun BaseItemDto.copyWithTimerId(
@@ -26,6 +31,14 @@ fun BaseItemDto.copyWithSeriesTimerId(
 	seriesTimerId = seriesTimerId,
 )
 
+/** Jellyfin refused or didn't answer a Record or Cancel: say so, or the press looks lost (#197). */
+private fun LiveProgramDetailPopup.showRequestFailure(error: Throwable, @StringRes message: Int) {
+	// The popup closed while this ran: there is nothing to tell (#124 class)
+	error.rethrowIfCancelled()
+	Timber.e(error, "Live TV recording request failed")
+	Toast.makeText(mContext, mContext.getString(message), Toast.LENGTH_LONG).show()
+}
+
 fun LiveProgramDetailPopup.cancelTimer(
 	timerId: String,
 	callback: () -> Unit,
@@ -39,6 +52,8 @@ fun LiveProgramDetailPopup.cancelTimer(
 			}
 		}.onSuccess {
 			callback()
+		}.onFailure { error ->
+			showRequestFailure(error, R.string.msg_unable_to_cancel)
 		}
 	}
 }
@@ -56,6 +71,8 @@ fun LiveProgramDetailPopup.cancelSeriesTimer(
 			}
 		}.onSuccess {
 			callback()
+		}.onFailure { error ->
+			showRequestFailure(error, R.string.msg_unable_to_cancel)
 		}
 	}
 }
@@ -102,6 +119,8 @@ fun LiveProgramDetailPopup.recordProgram(
 			}
 		}.onSuccess { program ->
 			callback(program)
+		}.onFailure { error ->
+			showRequestFailure(error, R.string.msg_unable_to_create_recording)
 		}
 	}
 }
@@ -121,6 +140,8 @@ fun LiveProgramDetailPopup.recordSeries(
 			}
 		}.onSuccess { program ->
 			callback(program)
+		}.onFailure { error ->
+			showRequestFailure(error, R.string.msg_unable_to_create_recording)
 		}
 	}
 }

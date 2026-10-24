@@ -15,6 +15,7 @@ import org.jellyfin.sdk.api.client.exception.ApiClientException
 import org.jellyfin.sdk.api.client.extensions.libraryApi
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
 import org.jellyfin.sdk.api.client.extensions.playStateApi
+import org.jellyfin.sdk.api.client.extensions.userLibraryApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.ImageType
 import org.jellyfin.sdk.model.api.ItemFields
@@ -127,6 +128,17 @@ class RecordingsBrowseViewModel(
 		emptyMap()
 	}
 
+	/**
+	 * [item] read again for its menu: LiveTv/Recordings leaves out CanDelete even when asked, so
+	 * whether this person may delete it comes from the item itself. The listed copy if that fails.
+	 */
+	suspend fun forMenu(item: BaseItemDto): BaseItemDto = try {
+		withContext(Dispatchers.IO) { api.userLibraryApi.getItem(itemId = item.id).content }
+	} catch (err: ApiClientException) {
+		Timber.w(err, "Failed to read ${item.id} for its menu")
+		item
+	}
+
 	/** Mark watched or not watched for this person; the rows read again. */
 	fun setPlayed(item: BaseItemDto, played: Boolean, onDone: (Boolean) -> Unit) {
 		viewModelScope.launch {
@@ -174,8 +186,6 @@ class RecordingsBrowseViewModel(
 			ItemFields.DATE_CREATED,
 			ItemFields.PATH,
 			ItemFields.GENRES,
-			ItemFields.CAN_DELETE,
-			ItemFields.PROVIDER_IDS,
 		)
 	}
 }

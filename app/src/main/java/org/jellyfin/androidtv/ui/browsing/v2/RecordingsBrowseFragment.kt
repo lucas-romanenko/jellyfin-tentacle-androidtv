@@ -42,6 +42,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -179,6 +180,10 @@ class RecordingsBrowseFragment : Fragment() {
 		val format = rememberRecordingFormat()
 		var recordingSheet by remember { mutableStateOf<BaseItemDto?>(null) }
 		var scheduleSheet by remember { mutableStateOf<ScheduleEntry?>(null) }
+		val menuScope = rememberCoroutineScope()
+		val openRecordingMenu: (BaseItemDto) -> Unit = { item ->
+			menuScope.launch { recordingSheet = viewModel.forMenu(item) }
+		}
 
 		// Each part keeps its place while another is shown.
 		val recordedList = rememberLazyListState()
@@ -236,7 +241,7 @@ class RecordingsBrowseFragment : Fragment() {
 						val openShow = uiState.openShow?.let { title -> uiState.groups.shows.firstOrNull { it.title == title } }
 						if (openShow != null) {
 							BackHandler { viewModel.openShow(null) }
-							ShowPage(show = openShow, uiState = uiState, format = format, onMenu = { recordingSheet = it })
+							ShowPage(show = openShow, uiState = uiState, format = format, onMenu = openRecordingMenu)
 						} else {
 							RecordedRows(
 								uiState = uiState,
@@ -249,7 +254,7 @@ class RecordingsBrowseFragment : Fragment() {
 									returnToShow = title
 									viewModel.openShow(title)
 								},
-								onMenu = { recordingSheet = it },
+								onMenu = openRecordingMenu,
 							)
 						}
 					}

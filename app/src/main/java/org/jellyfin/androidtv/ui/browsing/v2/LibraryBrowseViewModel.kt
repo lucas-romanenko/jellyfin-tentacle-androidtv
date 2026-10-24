@@ -31,6 +31,7 @@ import org.jellyfin.sdk.model.api.ItemFilter
 import org.jellyfin.sdk.model.api.ItemSortBy
 import org.jellyfin.sdk.model.api.SeriesStatus
 import org.jellyfin.sdk.model.api.SortOrder
+import org.jellyfin.sdk.model.api.UserItemDataDto
 import timber.log.Timber
 import java.util.UUID
 
@@ -111,6 +112,8 @@ class LibraryBrowseViewModel(
 	private var libraryPreferences: LibraryPreferences? = null
 	private var currentPage = 0
 	private var isLoadingMore = false
+	// Bumped by every reset, so user data that arrives for an older page is dropped.
+	private var loadGeneration = 0
 	private val pageSize = 100
 
 	private var genreFilter: String? = null
@@ -355,6 +358,7 @@ class LibraryBrowseViewModel(
 
 		viewModelScope.launch {
 			if (reset) {
+				loadGeneration++
 				currentPage = 0
 				savedScrollIndex = 0
 				savedScrollOffset = 0
@@ -364,9 +368,15 @@ class LibraryBrowseViewModel(
 				_focusedItem.value = null
 			}
 			isLoadingMore = true
+			val generation = loadGeneration
 
 			try {
 				val state = _uiState.value
+				// A folders library (the DVR's Recordings, home videos) lists plain folders, and
+				// Jellyfin 10.11 fills each folder's user data (its unplayed count) with a query over
+				// the whole library before it sends the page: 1-1.5 s a folder on a big server, empty
+				// folders too (#204). Load the page without it; fillUserData adds it afterwards.
+				val deferUserData = deferLibraryUserData(isGenre, includeType, state.useAutoImageType)
 
 				// Build filters
 				val filters = buildSet {
@@ -479,6 +489,7 @@ class LibraryBrowseViewModel(
 							limit = pageSize,
 							enableTotalRecordCount = true,
 							nameStartsWith = state.startLetter,
+							enableUserData = if (deferUserData) false else null,
 						).content
 					}
 				}
@@ -507,6 +518,10 @@ class LibraryBrowseViewModel(
 					hasMoreItems = currentPage * pageSize < totalItems && newItems.isNotEmpty(),
 				)
 				if (reset) _focusedItem.value = allItems.firstOrNull()
+				// Its own coroutine: loadMore must not wait for the folders' counts.
+				if (deferUserData && annotatedItems.isNotEmpty()) {
+					viewModelScope.launch { fillUserData(annotatedItems, generation) }
+				}
 			} catch (err: Exception) {
 				coroutineContext.ensureActive()
 				Timber.e(err, "Failed to load library items")
@@ -516,7 +531,45 @@ class LibraryBrowseViewModel(
 			}
 		}
 	}
+
+	/**
+	 * Adds the user data a folders-library page was loaded without (see loadItems): the videos'
+	 * first, one quick request, then the folders' (their unplayed counts are the slow part), so
+	 * watched marks show at once and folder badges follow. A failed request leaves the grid as it is.
+	 */
+	private suspend fun fillUserData(page: List<BaseItemDto>, generation: Int) {
+		val (folders, videos) = page.partition { it.isFolder == true }
+		for (batch in listOf(videos, folders)) {
+			if (batch.isEmpty()) continue
+			val userData = try {
+				withContext(Dispatchers.IO) {
+					effectiveApi.itemsApi.getItems(ids = batch.map { it.id }, enableImages = false).content.items
+				}.associate { it.id to it.userData }
+			} catch (err: Exception) {
+				coroutineContext.ensureActive()
+				Timber.w(err, "Failed to load user data for library items")
+				continue
+			}
+			if (generation != loadGeneration) return
+			_uiState.value = _uiState.value.copy(items = withUserData(_uiState.value.items, userData))
+			_focusedItem.value?.let { focused ->
+				userData[focused.id]?.let { _focusedItem.value = focused.copy(userData = it) }
+			}
+		}
+	}
 }
+
+/**
+ * Whether a page is loaded without user data and filled in afterwards: only in a folders library
+ * (the collection type is not movies, TV shows, music or Live TV), whose plain folders make
+ * Jellyfin count every folder's unplayed items before it answers (#204).
+ */
+internal fun deferLibraryUserData(isGenre: Boolean, includeType: String?, useAutoImageType: Boolean) =
+	!isGenre && includeType == null && useAutoImageType
+
+/** [items] with the user data in [userData] (by id) put on them; the others as they were. */
+internal fun withUserData(items: List<BaseItemDto>, userData: Map<UUID, UserItemDataDto?>) =
+	items.map { item -> userData[item.id]?.let { item.copy(userData = it) } ?: item }
 
 /**
  * The grid's counter: the focused poster's number (from 1) and how many there are, "1 | 14532".

@@ -227,10 +227,10 @@ class SocketHandler(
 		}
 
 		// A recording set or cancelled anywhere (this TV, the web, Tentacle's teams and rules).
-		subscribe<TimerCreatedMessage>().onEach { RecordingChanges.changed() }.launchIn(coroutineScope)
-		subscribe<TimerCancelledMessage>().onEach { RecordingChanges.changed() }.launchIn(coroutineScope)
-		subscribe<SeriesTimerCreatedMessage>().onEach { RecordingChanges.changed() }.launchIn(coroutineScope)
-		subscribe<SeriesTimerCancelledMessage>().onEach { RecordingChanges.changed() }.launchIn(coroutineScope)
+		subscribe<TimerCreatedMessage>().onEach { android.util.Log.i("GuideRecord", "socket: TimerCreatedMessage"); RecordingChanges.changed() }.launchIn(coroutineScope)
+		subscribe<TimerCancelledMessage>().onEach { android.util.Log.i("GuideRecord", "socket: TimerCancelledMessage"); RecordingChanges.changed() }.launchIn(coroutineScope)
+		subscribe<SeriesTimerCreatedMessage>().onEach { android.util.Log.i("GuideRecord", "socket: SeriesTimerCreatedMessage"); RecordingChanges.changed() }.launchIn(coroutineScope)
+		subscribe<SeriesTimerCancelledMessage>().onEach { android.util.Log.i("GuideRecord", "socket: SeriesTimerCancelledMessage"); RecordingChanges.changed() }.launchIn(coroutineScope)
 
 		subscribe<PlayMessage>()
 			.onEach { message -> onPlayMessage(message) }

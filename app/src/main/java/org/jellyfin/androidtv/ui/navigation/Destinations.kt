@@ -185,10 +185,11 @@ object Destinations {
 
 	// Live TV
 	val liveTvGuide = fragmentDestination<LiveTvGuideFragment>()
-	// One Recordings screen (#203); each of these opens its Recorded, Scheduled or Series part
-	val liveTvRecordings = recordings(RecordingsTab.RECORDED)
-	val liveTvSchedule = recordings(RecordingsTab.SCHEDULED)
-	val liveTvSeriesRecordings = recordings(RecordingsTab.SERIES)
+	// One Recordings screen (#203); each of these opens its Recorded, Scheduled or Series part.
+	// Built when used: a Bundle with a value can't be made while JVM unit tests load Destinations.
+	val liveTvRecordings get() = recordings(RecordingsTab.RECORDED)
+	val liveTvSchedule get() = recordings(RecordingsTab.SCHEDULED)
+	val liveTvSeriesRecordings get() = recordings(RecordingsTab.SERIES)
 	private fun recordings(tab: RecordingsTab) =
 		fragmentDestination<RecordingsBrowseFragment>(RecordingsBrowseFragment.EXTRA_TAB to tab.name)
 

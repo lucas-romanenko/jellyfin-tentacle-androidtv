@@ -140,6 +140,11 @@ seasonal effects.
   the previous stop report before reopening, or Jellyfin leaves the tuner
   stream open. Retries reset only after playback ran again. Never close
   a live stream id with `LiveStreams/Close`: a recording may share it.
+- Refresh rate (`ui/playback/DisplayModeSwitch.kt`): the player asks for a display mode
+  (`preferredDisplayModeId`) when the TV's "Match content frame rate" is Always. Media3's
+  own `Surface.setFrameRate` is seamless-only, which over HDMI never leaves 60 Hz, so
+  don't rely on it. Every way out of the player gives the mode back (0): `closePlayer`, and
+  Next Up / Still Watching unless they play on. `DisplayModeSwitchTests` covers the choice.
 - Item details Play (`ui/itemdetail/v2/ItemDetailsFragment.kt`, `handlePlay`):
   on a series or season it picks an episode (Next Up, the season's first
   unplayed one, else the first episode) and starts it at its own resume

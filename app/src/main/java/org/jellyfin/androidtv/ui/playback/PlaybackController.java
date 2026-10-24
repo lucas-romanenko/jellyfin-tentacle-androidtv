@@ -6,8 +6,6 @@ import static org.koin.java.KoinJavaComponent.inject;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.os.Handler;
-import android.view.Display;
-import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -26,7 +24,6 @@ import org.jellyfin.androidtv.preference.SystemPreferences;
 import org.jellyfin.androidtv.preference.UserPreferences;
 import org.jellyfin.androidtv.preference.UserSettingPreferences;
 import org.jellyfin.androidtv.preference.constant.NextUpBehavior;
-import org.jellyfin.androidtv.preference.constant.RefreshRateSwitchingBehavior;
 import org.jellyfin.androidtv.preference.constant.StillWatchingBehavior;
 import org.jellyfin.androidtv.preference.constant.ZoomMode;
 import org.jellyfin.androidtv.ui.InteractionTrackerViewModel;
@@ -143,9 +140,6 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     private int serverStartWaits = 0;
     private Runnable mLiveStallWatch;
 
-    private Display.Mode[] mDisplayModes;
-    private RefreshRateSwitchingBehavior refreshRateSwitchingBehavior = RefreshRateSwitchingBehavior.DISABLED;
-
     public PlaybackController(List<BaseItemDto> items, CustomPlaybackOverlayFragment fragment) {
         this(items, fragment, 0);
     }
@@ -161,10 +155,6 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
         interactionTracker = lazyInteractionTracker.getValue();
 
-        refreshRateSwitchingBehavior = userPreferences.getValue().get(UserPreferences.Companion.getRefreshRateSwitchingBehavior());
-        if (refreshRateSwitchingBehavior != RefreshRateSwitchingBehavior.DISABLED)
-            getDisplayModes();
-        
         // Register SyncPlay callback to handle incoming commands
         setupSyncPlayCallback();
     }
@@ -569,98 +559,6 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         return true;
     }
 
-    private void getDisplayModes() {
-        if (mFragment == null)
-            return;
-        Display display = mFragment.requireActivity().getWindowManager().getDefaultDisplay();
-        mDisplayModes = display.getSupportedModes();
-        Timber.i("** Available display refresh rates:");
-        for (Display.Mode mDisplayMode : mDisplayModes) {
-            Timber.i("display mode %s - %dx%d@%f", mDisplayMode.getModeId(), mDisplayMode.getPhysicalWidth(), mDisplayMode.getPhysicalHeight(), mDisplayMode.getRefreshRate());
-        }
-    }
-
-    private Display.Mode findBestDisplayMode(MediaStream videoStream) {
-        if (mFragment == null || mDisplayModes == null || videoStream.getRealFrameRate() == null)
-            return null;
-
-
-        int curWeight = 0;
-        Display.Mode bestMode = null;
-        int sourceRate = Math.round(videoStream.getRealFrameRate() * 100);
-
-        Display.Mode defaultMode = mFragment.requireActivity().getWindowManager().getDefaultDisplay().getMode();
-
-        Timber.d("trying to find display mode for video: %dx%d@%f", videoStream.getWidth(), videoStream.getHeight(), videoStream.getRealFrameRate());
-        for (Display.Mode mode : mDisplayModes) {
-            Timber.d("considering display mode: %s - %dx%d@%f", mode.getModeId(), mode.getPhysicalWidth(), mode.getPhysicalHeight(), mode.getRefreshRate());
-
-            // Skip unwanted display modes
-            if (mode.getPhysicalWidth() < 1280 || mode.getPhysicalHeight() < 720)  // Skip non-HD
-                continue;
-
-            if (mode.getPhysicalWidth() < videoStream.getWidth() || mode.getPhysicalHeight() < videoStream.getHeight())  // Disallow resolution downgrade
-                continue;
-
-            int rate = Math.round(mode.getRefreshRate() * 100);
-            if (rate != sourceRate && rate != sourceRate * 2 && rate != Math.round(sourceRate * 2.5)) // Skip inappropriate rates
-                continue;
-
-            Timber.i("qualifying display mode: %s - %dx%d@%f", mode.getModeId(), mode.getPhysicalWidth(), mode.getPhysicalHeight(), mode.getRefreshRate());
-
-            // if scaling on-device, keep native resolution modes at diff 0 (best score)
-            // for other resolutions when scaling on device, or if scaling on tv, score based on distance from media resolution
-
-            // use -1 as the default so, with SCALE_ON_DEVICE, a mode at native resolution will rank higher than
-            // a mode with equal refresh rate and the same resolution as the media
-            int resolutionDifference = -1;
-            if ((refreshRateSwitchingBehavior == RefreshRateSwitchingBehavior.SCALE_ON_DEVICE &&
-                    !(mode.getPhysicalWidth() == defaultMode.getPhysicalWidth() && mode.getPhysicalHeight() == defaultMode.getPhysicalHeight())) ||
-
-                    refreshRateSwitchingBehavior == RefreshRateSwitchingBehavior.SCALE_ON_TV) {
-
-                resolutionDifference = Math.abs(mode.getPhysicalWidth() - videoStream.getWidth());
-            }
-            int refreshRateDifference = rate - sourceRate;
-
-            // use 100,000 to account for refresh rates 120Hz+ (at 120Hz rate == 12,000)
-            int weight = 100000 - refreshRateDifference + 100000 - resolutionDifference;
-
-            if (weight > curWeight) {
-                Timber.d("preferring mode: %s - %dx%d@%f", mode.getModeId(), mode.getPhysicalWidth(), mode.getPhysicalHeight(), mode.getRefreshRate());
-                curWeight = weight;
-                bestMode = mode;
-            }
-        }
-
-        return bestMode;
-    }
-
-    private void setRefreshRate(MediaStream videoStream) {
-        if (videoStream == null || mFragment == null) {
-            Timber.e("Null video stream attempting to set refresh rate");
-            return;
-        }
-
-        Display.Mode current = mFragment.requireActivity().getWindowManager().getDefaultDisplay().getMode();
-        Display.Mode best = findBestDisplayMode(videoStream);
-        if (best != null) {
-            Timber.i("*** Best refresh mode is: %s - %dx%d/%f",
-                    best.getModeId(), best.getPhysicalWidth(), best.getPhysicalHeight(), best.getRefreshRate());
-            if (current.getModeId() != best.getModeId()) {
-                Timber.i("*** Attempting to change refresh rate from: %s - %dx%d@%f", current.getModeId(), current.getPhysicalWidth(),
-                        current.getPhysicalHeight(), current.getRefreshRate());
-                WindowManager.LayoutParams params = mFragment.requireActivity().getWindow().getAttributes();
-                params.preferredDisplayModeId = best.getModeId();
-                mFragment.requireActivity().getWindow().setAttributes(params);
-            } else {
-                Timber.i("Display is already in best mode");
-            }
-        } else {
-            Timber.i("*** Unable to find display mode for refresh rate: %f", videoStream.getRealFrameRate());
-        }
-    }
-
     // central place to update mCurrentPosition
     private void refreshCurrentPosition() {
         long newPos = -1;
@@ -1048,10 +946,10 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
         Long mbPos = position * 10000;
 
-        // set refresh rate
-        if (refreshRateSwitchingBehavior != RefreshRateSwitchingBehavior.DISABLED) {
-            setRefreshRate(JavaCompat.getVideoStream(response.getMediaSource()));
-        }
+        // Refresh rate: the display mode that fits the video (DisplayModeSwitch.kt)
+        boolean switchesDisplayMode = mFragment.getActivity() != null && DisplayModeSwitch.switchDisplayMode(
+                mFragment.getActivity(), JavaCompat.getVideoStream(response.getMediaSource()),
+                userPreferences.getValue().get(UserPreferences.Companion.getRefreshRateSwitchingBehavior()), isLiveTv);
 
         // set playback speed to user selection, or 1 if we're watching live-tv
         if (mVideoManager != null)
@@ -1080,8 +978,9 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         PlaybackControllerHelperKt.applyMediaSegments(this, item, () -> {
             // The player may have closed while the segments loaded (Back right after tuning)
             if (mVideoManager == null) return null;
-            // Set video start delay
-            long videoStartDelay = userPreferences.getValue().get(UserPreferences.Companion.getVideoStartDelay());
+            // Set video start delay, and wait for the TV after a display mode switch
+            long videoStartDelay = DisplayModeSwitch.videoStartDelayMs(
+                    userPreferences.getValue().get(UserPreferences.Companion.getVideoStartDelay()), switchesDisplayMode);
             if (videoStartDelay > 0) {
                 mHandler.postDelayed(new Runnable() {
                     @Override

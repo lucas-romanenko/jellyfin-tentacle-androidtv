@@ -3,6 +3,7 @@ package org.jellyfin.androidtv.ui.playback.nextup
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,6 +56,8 @@ import org.jellyfin.androidtv.ui.composable.modifier.overscan
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.playback.common.PlaybackPromptItemData
+import org.jellyfin.androidtv.ui.playback.keepsDisplayMode
+import org.jellyfin.androidtv.ui.playback.requestDisplayMode
 import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
@@ -71,6 +75,14 @@ fun NextUpScreen(
 	val viewModel = koinViewModel<NextUpViewModel>()
 
 	val state by viewModel.state.collectAsState()
+
+	// Closed without playing on: the TV's own display mode again, as when the player closes
+	val activity = LocalActivity.current
+	DisposableEffect(viewModel) {
+		onDispose {
+			if (!viewModel.state.value.keepsDisplayMode()) activity?.window?.let { requestDisplayMode(it, 0) }
+		}
+	}
 
 	LaunchedEffect(itemId) {
 		viewModel.setItemId(itemId)

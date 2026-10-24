@@ -52,6 +52,8 @@ class TrailerPlayerFragment : Fragment() {
 
 	private val navigationRepository: NavigationRepository by inject()
 	private var player: ExoPlayer? = null
+	// Its controller is the timeline (position, bar, duration) shown over the trailer
+	private var playerView: PlayerView? = null
 	private val mainHandler = Handler(Looper.getMainLooper())
 	private var skipRunnable: Runnable? = null
 	private var loadingView: View? = null
@@ -81,18 +83,23 @@ class TrailerPlayerFragment : Fragment() {
 					goBack()
 					return true
 				}
-				// There is no on-screen controller, so give the remote the basics: OK / Play-Pause
-				// toggles playback and Left / Right skip 10 s (previously every key but Back was
-				// ignored, so a trailer could not even be paused).
+				// The remote's basics: OK / Play-Pause toggles playback and Left / Right skip 10 s.
+				// Each of them brings up the timeline, so a skip shows where it landed; paused,
+				// the timeline stays until playback goes on.
 				val p = player
 				if (p != null && event.action == KeyEvent.ACTION_DOWN) {
-					when (event.keyCode) {
+					val handled = when (event.keyCode) {
 						KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
-						KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { p.playWhenReady = !p.playWhenReady; return true }
-						KeyEvent.KEYCODE_MEDIA_PLAY -> { p.playWhenReady = true; return true }
-						KeyEvent.KEYCODE_MEDIA_PAUSE -> { p.playWhenReady = false; return true }
-						KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { p.seekTo(p.currentPosition + 10_000); return true }
-						KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> { p.seekTo((p.currentPosition - 10_000).coerceAtLeast(0)); return true }
+						KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { p.playWhenReady = !p.playWhenReady; true }
+						KeyEvent.KEYCODE_MEDIA_PLAY -> { p.playWhenReady = true; true }
+						KeyEvent.KEYCODE_MEDIA_PAUSE -> { p.playWhenReady = false; true }
+						KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { p.seekTo(p.currentPosition + 10_000); true }
+						KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> { p.seekTo((p.currentPosition - 10_000).coerceAtLeast(0)); true }
+						else -> false
+					}
+					if (handled) {
+						playerView?.showController()
+						return true
 					}
 				}
 				return super.dispatchKeyEvent(event)
@@ -108,11 +115,22 @@ class TrailerPlayerFragment : Fragment() {
 				FrameLayout.LayoutParams.MATCH_PARENT,
 				FrameLayout.LayoutParams.MATCH_PARENT,
 			)
-			useController = false
+			// The timeline: on screen while the trailer is paused, and for a few seconds after a
+			// key (above). The keys stay with this screen (they pause and skip 10 s), so the
+			// controller's own buttons never take focus; previous / next mean nothing here, and
+			// its rewind / fast forward buttons would show other steps (5 s, 15 s).
+			useController = true
+			setShowPreviousButton(false)
+			setShowNextButton(false)
+			setShowRewindButton(false)
+			setShowFastForwardButton(false)
+			isFocusable = false
+			descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
 			resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
 			setBackgroundColor(android.graphics.Color.BLACK)
 			setShutterBackgroundColor(android.graphics.Color.BLACK)
 		}
+		this.playerView = playerView
 
 		root.addView(playerView)
 
@@ -296,6 +314,7 @@ class TrailerPlayerFragment : Fragment() {
 		super.onDestroyView()
 		releasePlayer()
 		loadingView = null
+		playerView = null
 	}
 }
 

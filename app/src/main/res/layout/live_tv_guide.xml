@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The Live TV guide, Tentacle style: a header (Live TV, Favorites / All, the days that have
-     guide data, Recordings / Schedule / Series, clock), the focused programme, then the grid. -->
+     guide data, Recordings, clock), the focused programme, then the grid. -->
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -73,32 +73,14 @@
                 android:orientation="horizontal" />
         </HorizontalScrollView>
 
-        <!-- Icons; the name shows while focused (setupGuideLinks) -->
+        <!-- One way into Recordings (Recorded | Scheduled | Series), #203 -->
         <TextView
             android:id="@+id/recordingsButton"
             style="@style/GuideChip"
             android:layout_width="wrap_content"
             android:layout_height="32dp"
-            android:contentDescription="@string/lbl_recordings"
-            android:drawableStart="@drawable/guide_ic_record" />
-
-        <TextView
-            android:id="@+id/scheduleButton"
-            style="@style/GuideChip"
-            android:layout_width="wrap_content"
-            android:layout_height="32dp"
-            android:layout_marginStart="8dp"
-            android:contentDescription="@string/lbl_schedule"
-            android:drawableStart="@drawable/guide_ic_tv_timer" />
-
-        <TextView
-            android:id="@+id/seriesButton"
-            style="@style/GuideChip"
-            android:layout_width="wrap_content"
-            android:layout_height="32dp"
-            android:layout_marginStart="8dp"
-            android:contentDescription="@string/lbl_series"
-            android:drawableStart="@drawable/guide_ic_record_series" />
+            android:drawableStart="@drawable/guide_ic_record"
+            android:text="@string/lbl_recordings" />
 
         <org.jellyfin.androidtv.ui.ClockUserView
             android:id="@+id/clock"

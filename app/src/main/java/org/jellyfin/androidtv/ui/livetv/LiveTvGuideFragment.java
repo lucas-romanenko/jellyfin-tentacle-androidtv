@@ -1767,6 +1767,38 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         }
     }
 
+    /**
+     * The record icons of the programmes on screen, from Jellyfin's timers now (programme id, no
+     * dashes -> [timer id, series timer id]): changed in place, nothing else redrawn.
+     */
+    int applyRecordMarks(java.util.Map<String, String[]> marks) {
+        if (mProgramRows == null) return 0;
+        return applyRecordMarks(mProgramRows, marks);
+    }
+
+    /** How many programme cells changed. */
+    private static int applyRecordMarks(ViewGroup parent, java.util.Map<String, String[]> marks) {
+        int changed = 0;
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            View child = parent.getChildAt(i);
+            if (child instanceof ProgramGridCell) {
+                ProgramGridCell cell = (ProgramGridCell) child;
+                BaseItemDto p = cell.getProgram();
+                if (p == null || p.getId() == null) continue;
+                String[] m = marks.get(p.getId().toString().replace("-", "").toLowerCase(java.util.Locale.ROOT));
+                String timer = m != null ? m[0] : null, series = m != null ? m[1] : null;
+                if (!java.util.Objects.equals(timer, p.getTimerId()) || !java.util.Objects.equals(series, p.getSeriesTimerId())) {
+                    cell.setRecSeriesTimer(series);
+                    cell.setRecTimer(timer);
+                    changed++;
+                }
+            } else if (child instanceof ViewGroup) {
+                changed += applyRecordMarks((ViewGroup) child, marks);
+            }
+        }
+        return changed;
+    }
+
     public void setSelectedProgram(RelativeLayout programView) {
         mSelectedProgramView = programView;
         if (mSelectedProgramView instanceof ProgramGridCell) {

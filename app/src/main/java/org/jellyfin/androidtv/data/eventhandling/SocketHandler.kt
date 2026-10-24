@@ -51,8 +51,12 @@ import org.jellyfin.sdk.model.api.PlayMessage
 import org.jellyfin.sdk.model.api.PlaystateCommand
 import org.jellyfin.sdk.model.api.PlaystateMessage
 import org.jellyfin.sdk.model.api.RefreshProgressMessage
+import org.jellyfin.sdk.model.api.SeriesTimerCancelledMessage
+import org.jellyfin.sdk.model.api.SeriesTimerCreatedMessage
 import org.jellyfin.sdk.model.api.SyncPlayCommandMessage
 import org.jellyfin.sdk.model.api.SyncPlayGroupUpdateMessage
+import org.jellyfin.sdk.model.api.TimerCancelledMessage
+import org.jellyfin.sdk.model.api.TimerCreatedMessage
 import org.jellyfin.sdk.model.extensions.get
 import org.jellyfin.sdk.model.extensions.getValue
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
@@ -210,6 +214,7 @@ class SocketHandler(
 						Timber.d("Tentacle push: %s", topics)
 						if ("activity" in topics || "requests" in topics) activityPoller.pollNow()
 						if ("notifications" in topics) notificationFetches.trySend(Unit)
+						if ("recordings" in topics) RecordingChanges.changed()
 					}
 				} catch (e: CancellationException) {
 					throw e
@@ -220,6 +225,12 @@ class SocketHandler(
 				delay(5.seconds)
 			}
 		}
+
+		// A recording set or cancelled anywhere (this TV, the web, Tentacle's teams and rules).
+		subscribe<TimerCreatedMessage>().onEach { android.util.Log.i("GuideRecord", "socket: TimerCreatedMessage"); RecordingChanges.changed() }.launchIn(coroutineScope)
+		subscribe<TimerCancelledMessage>().onEach { android.util.Log.i("GuideRecord", "socket: TimerCancelledMessage"); RecordingChanges.changed() }.launchIn(coroutineScope)
+		subscribe<SeriesTimerCreatedMessage>().onEach { android.util.Log.i("GuideRecord", "socket: SeriesTimerCreatedMessage"); RecordingChanges.changed() }.launchIn(coroutineScope)
+		subscribe<SeriesTimerCancelledMessage>().onEach { android.util.Log.i("GuideRecord", "socket: SeriesTimerCancelledMessage"); RecordingChanges.changed() }.launchIn(coroutineScope)
 
 		subscribe<PlayMessage>()
 			.onEach { message -> onPlayMessage(message) }
@@ -527,7 +538,7 @@ class SocketHandler(
 }
 
 /**
- * The topics of a Tentacle push (requests, activity, notifications), or null when the
+ * The topics of a Tentacle push (requests, activity, notifications, recordings), or null when the
  * RefreshProgress is not Tentacle's. The plugin sends ItemId "tentacle" and the changed topics
  * comma-separated in "Tentacle".
  */

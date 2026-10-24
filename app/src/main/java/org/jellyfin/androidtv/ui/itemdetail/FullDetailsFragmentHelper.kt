@@ -46,6 +46,7 @@ import org.jellyfin.sdk.model.serializer.toUUID
 import org.koin.android.ext.android.inject
 import timber.log.Timber
 import java.time.Instant
+import java.time.LocalDateTime
 import java.util.UUID
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -563,4 +564,25 @@ fun FullDetailsFragment.showSubtitleTrackSelector(
 			Toast.makeText(requireContext(), "Subtitles: Default", Toast.LENGTH_SHORT).show()
 		}
 	}.show()
+}
+
+/**
+ * OK on the Record button of a programme's details page: books the programme, or, when it is
+ * booked ([timerId]), asks before cancelling: "Cancel this recording?", or, once it has started,
+ * that cancelling stops the recording (#193).
+ */
+fun programmeRecordClick(
+	timerId: String?,
+	startDate: LocalDateTime?,
+	now: LocalDateTime,
+	book: () -> Unit,
+	confirm: (message: Int, onYes: () -> Unit) -> Unit,
+	cancel: (timerId: String) -> Unit,
+) {
+	if (timerId == null) {
+		book()
+		return
+	}
+	val recordingNow = startDate != null && !startDate.isAfter(now)
+	confirm(if (recordingNow) R.string.msg_cancel_recording_in_progress else R.string.msg_cancel_recording) { cancel(timerId) }
 }

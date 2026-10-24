@@ -48,6 +48,9 @@ class RecordingsBrowseViewModel(
 		loadAllRows()
 	}
 
+	/** Read again without the loading state (a recording changed): the cards stay where they are. */
+	fun refresh() = loadAllRows()
+
 	fun setFocusedItem(item: BaseItemDto) {
 		_focusedItem.value = item
 	}

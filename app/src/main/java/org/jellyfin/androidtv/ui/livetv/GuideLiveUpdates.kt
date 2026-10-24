@@ -4,6 +4,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.CancellationException
+import org.jellyfin.sdk.model.api.TimerInfoDto
+import org.jellyfin.sdk.model.api.RecordingStatus
+import org.jellyfin.sdk.api.client.extensions.liveTvApi
+import org.jellyfin.androidtv.data.eventhandling.RecordingChanges
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -18,6 +24,10 @@ import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.sockets.subscribe
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.UserDataChangedMessage
+import org.jellyfin.sdk.model.api.SeriesTimerCancelledMessage
+import org.jellyfin.sdk.model.api.SeriesTimerCreatedMessage
+import org.jellyfin.sdk.model.api.TimerCancelledMessage
+import org.jellyfin.sdk.model.api.TimerCreatedMessage
 import org.koin.android.ext.android.inject
 import org.tentacle.server.core.model.ServerType
 import timber.log.Timber
@@ -109,6 +119,43 @@ class GuideLiveUpdates(private val fragment: LiveTvGuideFragment) {
 
 				launch {
 					homeVersionTracker.reconnects.collect { events.trySend(Event.Relist) }
+				}
+
+				// A recording set or cancelled anywhere (this TV, the web, Tentacle's teams and
+				// rules): the record icons on the programmes change in place. Heard three ways:
+				// Jellyfin's timer messages on this guide's own subscription (like the stars
+				// above), the app-wide RecordingChanges (Tentacle's "recordings" push), and a
+				// re-read every minute while the guide is on screen.
+				val recordChanges = Channel<String>(Channel.CONFLATED)
+				if (serverRepository.currentServer.value?.serverType != ServerType.EMBY) {
+					launch { resubscribe { api.webSocket.subscribe<TimerCreatedMessage>().collect { recordChanges.trySend("TimerCreated") } } }
+					launch { resubscribe { api.webSocket.subscribe<TimerCancelledMessage>().collect { recordChanges.trySend("TimerCancelled") } } }
+					launch { resubscribe { api.webSocket.subscribe<SeriesTimerCreatedMessage>().collect { recordChanges.trySend("SeriesTimerCreated") } } }
+					launch { resubscribe { api.webSocket.subscribe<SeriesTimerCancelledMessage>().collect { recordChanges.trySend("SeriesTimerCancelled") } } }
+				}
+				launch { RecordingChanges.changes.collect { recordChanges.trySend("Tentacle") } }
+				launch {
+					while (isActive) {
+						delay(RECORD_REREAD)
+						recordChanges.trySend("minute")
+					}
+				}
+				launch {
+					for (why in recordChanges) {
+						delay(RECORD_SETTLE)
+						val timers = try {
+							withContext(Dispatchers.IO) { api.liveTvApi.getTimers().content.items }
+						} catch (e: CancellationException) {
+							throw e
+						} catch (e: Exception) {
+							Timber.w(e, "Guide: recordings not read again")
+							continue
+						}
+						val changed = fragment.applyRecordMarks(guideRecordMarks(timers))
+						if (why != "minute" || changed > 0) {
+							android.util.Log.i("GuideRecord", "$why: ${timers.size} timers, $changed programme(s) changed")
+						}
+					}
 				}
 			}
 		}
@@ -220,4 +267,45 @@ class GuideLiveUpdates(private val fragment: LiveTvGuideFragment) {
 	private companion object {
 		val LIBRARY_SETTLE = 1500.milliseconds
 	}
+}
+
+/** How long the guide waits after a recording change before it reads Jellyfin's timers. */
+private val RECORD_SETTLE = 600.milliseconds
+
+/** The guide re-reads its record icons this often while on screen, in case a message was missed. */
+private val RECORD_REREAD = 60.seconds
+
+/** Runs [subscription] again after it ends or fails (the SDK's flow can end after a Jellyfin restart). */
+private suspend fun kotlinx.coroutines.CoroutineScope.resubscribe(subscription: suspend () -> Unit) {
+	while (isActive) {
+		try {
+			subscription()
+		} catch (e: CancellationException) {
+			throw e
+		} catch (e: Exception) {
+			Timber.w(e, "Guide: recordings subscription error")
+		}
+		delay(5.seconds)
+	}
+}
+
+/**
+ * Programme id (no dashes, lower case) -> [timer id, series timer id] of the recordings that are
+ * set or running, for the guide's record icons ([LiveTvGuideFragment.applyRecordMarks]).
+ */
+fun guideRecordMarks(timers: List<TimerInfoDto>): Map<String, Array<String?>> = recordMarks(timers.map {
+	RecordTimer(it.id, it.programId, it.status == RecordingStatus.NEW || it.status == RecordingStatus.IN_PROGRESS, it.seriesTimerId)
+})
+
+/** One Jellyfin timer as the guide's record icons need it ([active]: set or recording now). */
+data class RecordTimer(val id: String?, val programId: String?, val active: Boolean, val seriesTimerId: String?)
+
+internal fun recordMarks(timers: List<RecordTimer>): Map<String, Array<String?>> {
+	val out = HashMap<String, Array<String?>>()
+	for (t in timers) {
+		val programId = t.programId?.replace("-", "")?.lowercase() ?: continue
+		if (!t.active) continue
+		out[programId] = arrayOf(t.id, t.seriesTimerId)
+	}
+	return out
 }

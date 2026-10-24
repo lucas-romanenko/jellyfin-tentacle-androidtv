@@ -46,10 +46,13 @@ fun placeScrollX(place: GuidePlace, guideStart: LocalDateTime, pxPerMinute: Int)
 
 /**
  * The channel to focus: the one played last when it changed while the guide was away (picked
- * in the guide, or Channel Up / Down in the player), else the one that had focus.
+ * in the guide, or Channel Up / Down in the player) and this view has it ([channelIds], null when
+ * not known), else the one that had focus. Channel Up past the last favourite plays a channel the
+ * Favorites view doesn't show: focus stays on the channel left, not on the first row.
  */
-fun placeFocus(place: GuidePlace, lastPlayed: UUID?): UUID? =
-	if (lastPlayed != null && lastPlayed != place.lastPlayedAtLeave) lastPlayed else place.focusId ?: lastPlayed
+fun placeFocus(place: GuidePlace, lastPlayed: UUID?, channelIds: Collection<UUID>? = null): UUID? =
+	if (lastPlayed != null && lastPlayed != place.lastPlayedAtLeave && (channelIds == null || lastPlayed in channelIds)) lastPlayed
+	else place.focusId ?: lastPlayed
 
 /**
  * The first channel of the page to show: the page left, when it has the channel to focus (or that

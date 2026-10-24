@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -31,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.SpanStyle
@@ -42,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import coil3.compose.AsyncImage
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.ui.base.Icon
@@ -98,9 +101,10 @@ fun RecordingsTopBar(
 	onSelect: (RecordingsTab) -> Unit,
 	onHome: () -> Unit,
 	selectedChipFocus: FocusRequester,
+	modifier: Modifier = Modifier,
 ) {
 	Row(
-		modifier = Modifier
+		modifier = modifier
 			.fillMaxWidth()
 			.padding(start = 24.dp, end = 32.dp, top = 19.dp)
 			.height(34.dp),
@@ -128,7 +132,7 @@ fun RecordingsTopBar(
 						when (tab) {
 							RecordingsTab.RECORDED -> R.string.lbl_recorded
 							RecordingsTab.SCHEDULED -> R.string.lbl_scheduled
-							RecordingsTab.SERIES -> R.string.lbl_series
+							RecordingsTab.SERIES -> R.string.lbl_recordings_series
 						}
 					),
 					count = counts[tab],
@@ -298,6 +302,9 @@ fun RecordingActionSheet(
 		onDismissRequest = onDismiss,
 		properties = DialogProperties(usePlatformDefaultWidth = false),
 	) {
+		// No dimming: the row it belongs to stays as it was, as in the mockup
+		val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+		SideEffect { window?.setDimAmount(0f) }
 		Box(
 			modifier = Modifier
 				.fillMaxSize()

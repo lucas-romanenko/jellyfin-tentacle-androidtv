@@ -700,6 +700,8 @@
     <string name="lbl_recording_now">Recording now</string>
     <string name="lbl_recorded">Recorded</string>
     <string name="lbl_scheduled">Scheduled</string>
+    <!-- The Recordings switch's third part (lbl_series is "Programme" in en-GB) -->
+    <string name="lbl_recordings_series">Series</string>
     <string name="lbl_no_series_recordings">No series are set to record</string>
     <string name="hint_cancel_this_recording_series">Skips this one; the series keeps recording</string>
     <string name="hint_cancel_series">Stops every recording of this series</string>

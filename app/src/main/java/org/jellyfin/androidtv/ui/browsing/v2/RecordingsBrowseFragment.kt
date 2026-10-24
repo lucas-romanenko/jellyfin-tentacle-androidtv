@@ -49,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.onKeyEvent
@@ -77,6 +78,7 @@ import org.jellyfin.androidtv.ui.base.CircularProgressIndicator
 import org.jellyfin.androidtv.ui.base.Icon
 import org.jellyfin.androidtv.ui.base.JellyfinTheme
 import org.jellyfin.androidtv.ui.base.Text
+import org.jellyfin.androidtv.ui.composable.requestFocusSettled
 import org.jellyfin.androidtv.ui.itemdetail.programmeRecordClick
 import org.jellyfin.androidtv.ui.itemdetail.v2.resumeStartMs
 import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
@@ -184,6 +186,8 @@ class RecordingsBrowseFragment : Fragment() {
 		val chipFocus = remember { FocusRequester() }
 		val contentFocus = remember { FocusRequester() }
 		var returnToShow by remember { mutableStateOf<String?>(null) }
+		var contentHasFocus by remember { mutableStateOf(false) }
+		var chipHasFocus by remember { mutableStateOf(false) }
 
 		val loading = when (tab) {
 			RecordingsTab.RECORDED -> uiState.isLoading
@@ -207,6 +211,7 @@ class RecordingsBrowseFragment : Fragment() {
 				onSelect = { tab = it },
 				onHome = { navigationRepository.navigate(Destinations.home) },
 				selectedChipFocus = chipFocus,
+				modifier = Modifier.onFocusChanged { chipHasFocus = it.hasFocus },
 			)
 
 			when (tab) {
@@ -215,7 +220,12 @@ class RecordingsBrowseFragment : Fragment() {
 				RecordingsTab.SCHEDULED -> Spacer(modifier = Modifier.height(12.dp))
 			}
 
-			Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+			Box(
+				modifier = Modifier
+					.weight(1f)
+					.fillMaxWidth()
+					.onFocusChanged { contentHasFocus = it.hasFocus },
+			) {
 				if (loading) {
 					CircularProgressIndicator(
 						modifier = Modifier.size(48.dp).align(Alignment.Center),
@@ -260,7 +270,9 @@ class RecordingsBrowseFragment : Fragment() {
 		LaunchedEffect(loading) {
 			if (loading || placedFocus) return@LaunchedEffect
 			placedFocus = true
-			if (runCatching { contentFocus.requestFocus() }.isFailure) runCatching { chipFocus.requestFocus() }
+			// Settled: while the ComposeView doesn't hold Android focus yet, one request gets lost.
+			contentFocus.requestFocusSettled(isFocused = { contentHasFocus })
+			if (!contentHasFocus) chipFocus.requestFocusSettled(isFocused = { chipHasFocus })
 		}
 
 		recordingSheet?.let { item ->

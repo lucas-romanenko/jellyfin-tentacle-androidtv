@@ -42,6 +42,23 @@ Playback choices made on the TV before (maximum bitrate and resolution, refresh-
 switching, audio output, external player) are kept as they were; new installs get the
 defaults. Inside a library, its view options (grid, picture size) stay in the library's own menu.
 
+## Refresh rate
+
+The TV's own **Match content frame rate** setting decides (Android 12 and later, in
+Android's display settings):
+
+- **Always**: films, episodes and recordings play at their own frame rate (a 23.976 fps
+  episode at 23.976 Hz instead of juddering at 60 Hz), at the TV's resolution. The screen goes
+  black for a second or two while the TV switches: the video starts after that, and the TV
+  switches back when the player closes. Interlaced video plays at its field rate (25i at 50 Hz).
+  Live TV stays in the TV's mode (a channel's rate is often unknown, and every zap would black
+  out), unless refresh-rate switching was picked on the TV before.
+- **Never**: never switches.
+- **Seamless only**, or Android 11 and older: switches only where there is no blackout, unless
+  refresh-rate switching was picked on the TV before.
+
+`ui/playback/DisplayModeSwitch.kt`.
+
 ## Updates
 
 Install: the **Downloader** app on the TV with your Tentacle server's address + `/tv` (the

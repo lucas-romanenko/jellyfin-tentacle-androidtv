@@ -83,6 +83,7 @@ class NavigationRepositoryImpl(
 	private val defaultDestination: Destination.Fragment,
 ) : NavigationRepository {
 	private val fragmentHistory = Stack<Destination.Fragment>()
+	private var firstScreenIsHome = true
 
 	private val _currentAction = MutableSharedFlow<NavigationAction>(1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 	override val currentAction = _currentAction.asSharedFlow()
@@ -122,21 +123,28 @@ class NavigationRepositoryImpl(
 	override fun reset(destination: Destination.Fragment?, clearHistory: Boolean) {
 		fragmentHistory.clear()
 		val actualDestination = destination ?: defaultDestination
+		// The view keeps the first screen of a cleared history as its root: goHome() goes back to it
+		if (clearHistory) firstScreenIsHome = actualDestination.fragment == defaultDestination.fragment
 		_currentAction.tryEmit(NavigationAction.NavigateFragment(actualDestination, true, false, clearHistory))
 		Timber.i("Navigating to $actualDestination (via reset, clearHistory=$clearHistory)")
 	}
 
 	override fun goHome() {
-		if (fragmentHistory.size <= 1) {
-			// Already on home (or empty stack) — nothing to do
+		// The first screen (Home after start-up) is the view's root, never in fragmentHistory (#213)
+		if (!firstScreenIsHome) {
+			// Opened on another screen (a launcher row's title, a voice search): Home isn't there to go back to
+			Timber.i("goHome: opening home screen")
+			reset(defaultDestination, clearHistory = true)
+			return
+		}
+
+		if (fragmentHistory.isEmpty()) {
 			Timber.i("goHome: already on home screen")
 			return
 		}
 
-		// Pop everything above the first entry (home)
-		while (fragmentHistory.size > 1) {
-			fragmentHistory.pop()
-		}
+		// Back to the Home kept in the view, and nothing left for Back to pop
+		fragmentHistory.clear()
 		_currentAction.tryEmit(NavigationAction.PopToFirst)
 		Timber.i("goHome: popping back to home screen")
 	}

@@ -41,6 +41,9 @@ class GuidePlaceTests : FunSpec({
 
 	test("focus: the channel played last when it changed (Channel Up / Down), else the one focused") {
 		placeFocus(place(focus = 301, lastPlayedAtLeave = 12), lastPlayed = ids[302]) shouldBe ids[302]
+		placeFocus(place(focus = 301, lastPlayedAtLeave = 12), lastPlayed = ids[302], channelIds = ids) shouldBe ids[302]
+		// up to a channel this view doesn't show (past the last favourite): the one focused (#209)
+		placeFocus(place(focus = 301, lastPlayedAtLeave = 12), lastPlayed = ids[302], channelIds = ids - ids[302]) shouldBe ids[301]
 		// picked 301 again, up to 302, down to 301: 301
 		placeFocus(place(focus = 301, lastPlayedAtLeave = 301), lastPlayed = ids[301]) shouldBe ids[301]
 		// a programme's page, nothing played: the one focused

@@ -394,7 +394,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
 
         // Back from a channel: the page it was on, when the channel to focus is on it
         GuidePlace place = pendingPlace();
-        Integer placed = place != null ? GuidePlaces.placePageStart(idsOf(channels), place, GuidePlaces.placeFocus(place, TvManager.getLastLiveTvChannel()), pageSize) : null;
+        List<UUID> channelIds = idsOf(channels);
+        Integer placed = place != null ? GuidePlaces.placePageStart(channelIds, place, GuidePlaces.placeFocus(place, TvManager.getLastLiveTvChannel(), channelIds), pageSize) : null;
         int start;
         if (placed != null) {
             start = placed;
@@ -546,7 +547,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             load();
 
             GuidePlace place = pendingPlace();
-            mFirstFocusChannelId = place != null ? GuidePlaces.placeFocus(place, TvManager.getLastLiveTvChannel()) : TvManager.getLastLiveTvChannel();
+            mFirstFocusChannelId = place != null ? GuidePlaces.placeFocus(place, TvManager.getLastLiveTvChannel(), mAllChannels != null ? idsOf(mAllChannels) : null) : TvManager.getLastLiveTvChannel();
             return true;
         }
         return false;
@@ -1278,7 +1279,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         final GuidePlace place = mPlace;
         mPlace = null;
         if (place == null || mProgramVScroller == null) return;
-        final UUID focusId = GuidePlaces.placeFocus(place, TvManager.getLastLiveTvChannel());
+        final UUID focusId = GuidePlaces.placeFocus(place, TvManager.getLastLiveTvChannel(), mAllChannels != null ? idsOf(mAllChannels) : null);
         mProgramRows.post(() -> {
             if (!isAdded() || mProgramVScroller == null) return;
             Integer topRowTop = null;

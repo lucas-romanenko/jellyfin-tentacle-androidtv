@@ -11,7 +11,9 @@ import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.graphics.drawable.GradientDrawable
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.ProgressBar
 import androidx.annotation.OptIn
 import androidx.core.net.toUri
@@ -55,6 +57,8 @@ class TrailerPlayerFragment : Fragment() {
 	private val mainHandler = Handler(Looper.getMainLooper())
 	private var skipRunnable: Runnable? = null
 	private var loadingView: View? = null
+	private var playPauseView: ImageView? = null
+	private val hidePlayPause = Runnable { playPauseView?.isVisible = false }
 
 	@OptIn(UnstableApi::class)
 	override fun onCreateView(
@@ -82,8 +86,8 @@ class TrailerPlayerFragment : Fragment() {
 					return true
 				}
 				// There is no on-screen controller, so give the remote the basics: OK / Play-Pause
-				// toggles playback and Left / Right skip 10 s (previously every key but Back was
-				// ignored, so a trailer could not even be paused).
+				// toggles playback (with a play / pause icon, #205) and Left / Right skip 10 s
+				// (previously every key but Back was ignored, so a trailer could not even be paused).
 				val p = player
 				if (p != null && event.action == KeyEvent.ACTION_DOWN) {
 					when (event.keyCode) {
@@ -126,6 +130,21 @@ class TrailerPlayerFragment : Fragment() {
 		}
 		root.addView(spinner)
 		loadingView = spinner
+
+		// Play / pause icon (#205): there is no timeline, so a paused trailer says it is paused.
+		val size = (96 * resources.displayMetrics.density).toInt()
+		val padding = (24 * resources.displayMetrics.density).toInt()
+		val playPause = ImageView(requireContext()).apply {
+			layoutParams = FrameLayout.LayoutParams(size, size, Gravity.CENTER)
+			setPadding(padding, padding, padding, padding)
+			background = GradientDrawable().apply {
+				shape = GradientDrawable.OVAL
+				setColor(0x99000000.toInt())
+			}
+			isVisible = false
+		}
+		root.addView(playPause)
+		playPauseView = playPause
 
 		startTrailer(videoId, startSeconds, segments, playerView)
 
@@ -170,6 +189,10 @@ class TrailerPlayerFragment : Fragment() {
 			exoPlayer.playWhenReady = true
 
 			exoPlayer.addListener(object : Player.Listener {
+				override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+					showPlayPause(playWhenReady)
+				}
+
 				override fun onPlaybackStateChanged(playbackState: Int) {
 					if (playbackState == Player.STATE_READY) loadingView?.isVisible = false
 					if (playbackState == Player.STATE_ENDED) {
@@ -269,6 +292,15 @@ class TrailerPlayerFragment : Fragment() {
 			.show()
 	}
 
+	private fun showPlayPause(playing: Boolean) {
+		val view = playPauseView ?: return
+		val state = trailerPlayPauseIcon(playing)
+		mainHandler.removeCallbacks(hidePlayPause)
+		view.setImageResource(state.icon)
+		view.isVisible = true
+		state.hideAfterMs?.let { mainHandler.postDelayed(hidePlayPause, it) }
+	}
+
 	private fun releasePlayer() {
 		skipRunnable?.let { mainHandler.removeCallbacks(it) }
 		skipRunnable = null
@@ -295,7 +327,9 @@ class TrailerPlayerFragment : Fragment() {
 	override fun onDestroyView() {
 		super.onDestroyView()
 		releasePlayer()
+		mainHandler.removeCallbacks(hidePlayPause)
 		loadingView = null
+		playPauseView = null
 	}
 }
 

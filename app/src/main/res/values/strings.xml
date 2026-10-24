@@ -698,6 +698,11 @@
     <string name="scheduled_in_next_24_hours">Scheduled in next 24 hours</string>
     <!-- Recordings and Schedule screens (#203) -->
     <string name="lbl_recording_now">Recording now</string>
+    <string name="lbl_recorded">Recorded</string>
+    <string name="lbl_scheduled">Scheduled</string>
+    <string name="lbl_no_series_recordings">No series are set to record</string>
+    <string name="hint_cancel_this_recording_series">Skips this one; the series keeps recording</string>
+    <string name="hint_cancel_series">Stops every recording of this series</string>
     <string name="lbl_recently_recorded">Recently recorded</string>
     <string name="lbl_shows">Shows</string>
     <string name="lbl_needs_attention">Needs attention</string>

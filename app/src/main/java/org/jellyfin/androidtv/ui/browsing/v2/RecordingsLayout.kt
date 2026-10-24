@@ -192,3 +192,16 @@ fun recordingResumeTicks(item: BaseItemDto): Long? =
 /** Delete is offered only where Jellyfin lets this person delete, and never for a TMDB title (#69). */
 fun canOfferRecordingDelete(item: BaseItemDto): Boolean =
 	item.canDelete == true && item.providerIds?.get("Tmdb").isNullOrBlank()
+
+/** The Recordings screen's switch: Recorded | Scheduled | Series. */
+enum class RecordingsTab { RECORDED, SCHEDULED, SERIES }
+
+/** The parts this person sees: Scheduled and Series only for people who may manage recordings. */
+fun recordingsTabs(canManage: Boolean): List<RecordingsTab> =
+	if (canManage) RecordingsTab.entries else listOf(RecordingsTab.RECORDED)
+
+/** The part a screen opens on: the one asked for ("Schedule" on Home), else Recorded. */
+fun openingRecordingsTab(requested: String?, canManage: Boolean): RecordingsTab {
+	val tab = RecordingsTab.entries.firstOrNull { it.name == requested } ?: RecordingsTab.RECORDED
+	return if (tab in recordingsTabs(canManage)) tab else RecordingsTab.RECORDED
+}

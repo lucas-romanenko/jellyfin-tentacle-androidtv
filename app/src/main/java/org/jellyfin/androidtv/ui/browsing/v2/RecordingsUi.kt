@@ -4,17 +4,19 @@ import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,23 +28,43 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import coil3.compose.AsyncImage
+import org.jellyfin.androidtv.R
+import org.jellyfin.androidtv.ui.base.Icon
 import org.jellyfin.androidtv.ui.base.Text
+import org.jellyfin.androidtv.ui.composable.rememberCurrentTime
 import org.jellyfin.androidtv.util.locale
+import java.text.NumberFormat
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
-/** Red of the "recording now" marks on the Recordings and Schedule screens. */
+// The guide's colours (res/values/colors.xml): the Recordings screen is built like the guide.
+val GuideBackground = Color(0xFF110F1E)
+val GuideAccent = Color(0xFF8B80FF)
+val GuideChipBackground = Color(0xFF1D1A33)
+val GuideChipStroke = Color(0xFF2F2B4D)
+val GuideCellNow = Color(0xFF28234D)
+val GuideTextMuted = Color(0xFF9B97B6)
+
+/** Red of the "recording now" marks on the Recordings screen. */
 val RecordingRed = Color(0xFFE53935)
 
-/** Dates and times as the Recordings and Schedule screens write them: "Fri 23 Oct", "8:00 PM" or "20:00". */
+/** Dates and times as the Recordings screen writes them: "Fri 23 Oct", "8:00 PM" or "20:00". */
 class RecordingFormat(context: Context) {
 	private val day = DateTimeFormatter.ofPattern("EEE d MMM", context.locale)
 	private val time = DateTimeFormatter.ofPattern(
@@ -63,6 +85,196 @@ fun rememberRecordingFormat(): RecordingFormat {
 	return remember(context) { RecordingFormat(context) }
 }
 
+/**
+ * The top of the Recordings screen, as the guide's: the bold title, the Recorded | Scheduled |
+ * Series switch built like the guide's Favorites | All (purple = shown, white = focused, the
+ * count after the label), then Home and the clock on the right.
+ */
+@Composable
+fun RecordingsTopBar(
+	tabs: List<RecordingsTab>,
+	selected: RecordingsTab,
+	counts: Map<RecordingsTab, Int?>,
+	onSelect: (RecordingsTab) -> Unit,
+	onHome: () -> Unit,
+	selectedChipFocus: FocusRequester,
+) {
+	Row(
+		modifier = Modifier
+			.fillMaxWidth()
+			.padding(start = 24.dp, end = 32.dp, top = 19.dp)
+			.height(34.dp),
+		verticalAlignment = Alignment.CenterVertically,
+	) {
+		Text(
+			text = stringResource(R.string.lbl_recordings),
+			fontSize = 23.sp,
+			fontWeight = FontWeight.Bold,
+			color = Color.White,
+		)
+		Spacer(modifier = Modifier.width(16.dp))
+		Row(
+			modifier = Modifier
+				.height(34.dp)
+				.clip(RoundedCornerShape(5.dp))
+				.background(GuideChipBackground)
+				.border(1.dp, GuideChipStroke, RoundedCornerShape(5.dp))
+				.padding(2.dp),
+			horizontalArrangement = Arrangement.spacedBy(2.dp),
+		) {
+			for (tab in tabs) {
+				SwitchChip(
+					label = stringResource(
+						when (tab) {
+							RecordingsTab.RECORDED -> R.string.lbl_recorded
+							RecordingsTab.SCHEDULED -> R.string.lbl_scheduled
+							RecordingsTab.SERIES -> R.string.lbl_series
+						}
+					),
+					count = counts[tab],
+					selected = tab == selected,
+					onClick = { onSelect(tab) },
+					modifier = if (tab == selected) Modifier.focusRequester(selectedChipFocus) else Modifier,
+				)
+			}
+		}
+		Spacer(modifier = Modifier.weight(1f))
+		HomeButton(onClick = onHome)
+		Spacer(modifier = Modifier.width(12.dp))
+		val time by rememberCurrentTime()
+		Text(text = time, fontSize = 20.sp, fontWeight = FontWeight.Light, color = Color.White)
+	}
+}
+
+@Composable
+private fun SwitchChip(
+	label: String,
+	count: Int?,
+	selected: Boolean,
+	onClick: () -> Unit,
+	modifier: Modifier = Modifier,
+) {
+	val interactionSource = remember { MutableInteractionSource() }
+	val isFocused by interactionSource.collectIsFocusedAsState()
+	val text = remember(label, count) {
+		buildAnnotatedString {
+			append(label)
+			if (count != null) withStyle(SpanStyle(fontSize = 12.sp, fontWeight = FontWeight.Normal)) {
+				append("  " + NumberFormat.getIntegerInstance().format(count))
+			}
+		}
+	}
+	Box(
+		modifier = modifier
+			.height(30.dp)
+			.clip(RoundedCornerShape(3.dp))
+			.background(
+				when {
+					isFocused -> Color.White
+					selected -> GuideAccent
+					else -> Color.Transparent
+				}
+			)
+			.clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+			.padding(horizontal = 11.dp),
+		contentAlignment = Alignment.Center,
+	) {
+		Text(
+			text = text,
+			fontSize = 14.sp,
+			fontWeight = FontWeight.Medium,
+			color = if (isFocused) GuideBackground else Color.White,
+			maxLines = 1,
+		)
+	}
+}
+
+@Composable
+private fun HomeButton(onClick: () -> Unit) {
+	val interactionSource = remember { MutableInteractionSource() }
+	val isFocused by interactionSource.collectIsFocusedAsState()
+	Box(
+		modifier = Modifier
+			.size(width = 40.dp, height = 32.dp)
+			.clip(RoundedCornerShape(5.dp))
+			.background(if (isFocused) Color.White else GuideChipBackground)
+			.border(1.dp, if (isFocused) Color.White else GuideChipStroke, RoundedCornerShape(5.dp))
+			.clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
+		contentAlignment = Alignment.Center,
+	) {
+		Icon(
+			imageVector = ImageVector.vectorResource(R.drawable.ic_house),
+			contentDescription = stringResource(R.string.home),
+			modifier = Modifier.size(18.dp),
+			tint = if (isFocused) GuideBackground else Color.White,
+		)
+	}
+}
+
+/**
+ * The focused item, as the guide's header shows the focused programme: its picture on the left,
+ * the name, a purple line with when and where, and a grey detail line.
+ */
+@Composable
+fun GuideStyleHeader(
+	imageUrl: String?,
+	title: String,
+	timeLine: String,
+	detail: String?,
+	detailColor: Color = GuideTextMuted,
+	modifier: Modifier = Modifier,
+) {
+	Row(
+		modifier = modifier
+			.fillMaxWidth()
+			.padding(start = 24.dp, end = 60.dp, top = 12.dp)
+			.height(90.dp),
+	) {
+		Box(modifier = Modifier.size(width = 160.dp, height = 90.dp)) {
+			if (imageUrl != null) {
+				AsyncImage(
+					model = imageUrl,
+					contentDescription = null,
+					modifier = Modifier
+						.fillMaxSize()
+						.clip(RoundedCornerShape(4.dp)),
+					contentScale = ContentScale.Crop,
+				)
+			}
+		}
+		Column(modifier = Modifier.padding(start = 16.dp)) {
+			Text(
+				text = title,
+				fontSize = 20.sp,
+				fontWeight = FontWeight.Medium,
+				color = Color.White,
+				maxLines = 1,
+				overflow = TextOverflow.Ellipsis,
+			)
+			if (timeLine.isNotEmpty()) {
+				Text(
+					text = timeLine,
+					fontSize = 14.sp,
+					color = GuideAccent,
+					maxLines = 1,
+					overflow = TextOverflow.Ellipsis,
+					modifier = Modifier.padding(top = 4.dp),
+				)
+			}
+			if (!detail.isNullOrEmpty()) {
+				Text(
+					text = detail,
+					fontSize = 14.sp,
+					color = detailColor,
+					maxLines = 2,
+					overflow = TextOverflow.Ellipsis,
+					modifier = Modifier.padding(top = 6.dp),
+				)
+			}
+		}
+	}
+}
+
 /** One choice of the action sheet; [hint] is a small line under it. */
 data class SheetAction(
 	val label: String,
@@ -71,8 +283,8 @@ data class SheetAction(
 )
 
 /**
- * The small action sheet the Menu key or a long press of OK opens on a recording or a booked
- * programme. Picking a choice closes it first.
+ * The small menu the Menu key or a long press of OK opens on a recording or a booked programme,
+ * on the right like the mockup's. Picking a choice closes it first.
  */
 @Composable
 fun RecordingActionSheet(
@@ -87,24 +299,26 @@ fun RecordingActionSheet(
 		properties = DialogProperties(usePlatformDefaultWidth = false),
 	) {
 		Box(
-			modifier = Modifier.fillMaxSize(),
-			contentAlignment = Alignment.Center,
+			modifier = Modifier
+				.fillMaxSize()
+				.padding(end = 60.dp),
+			contentAlignment = Alignment.CenterEnd,
 		) {
 			Column(
 				modifier = Modifier
-					.widthIn(min = 340.dp, max = 460.dp)
-					.clip(RoundedCornerShape(20.dp))
-					.background(Color(0xE6141414))
-					.border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(20.dp))
-					.padding(vertical = 16.dp),
+					.width(280.dp)
+					.clip(RoundedCornerShape(6.dp))
+					.background(GuideChipBackground)
+					.border(1.dp, GuideChipStroke, RoundedCornerShape(6.dp))
+					.padding(vertical = 6.dp),
 			) {
 				Text(
 					text = title,
-					fontSize = 14.sp,
-					color = Color.White.copy(alpha = 0.55f),
+					fontSize = 11.sp,
+					color = GuideTextMuted,
 					maxLines = 1,
 					overflow = TextOverflow.Ellipsis,
-					modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 8.dp),
+					modifier = Modifier.padding(start = 15.dp, end = 15.dp, top = 4.dp, bottom = 2.dp),
 				)
 				actions.forEachIndexed { index, action ->
 					SheetRow(
@@ -134,29 +348,31 @@ private fun SheetRow(
 	val interactionSource = remember { MutableInteractionSource() }
 	val isFocused by interactionSource.collectIsFocusedAsState()
 
-	Column(
-		modifier = modifier
-			.fillMaxWidth()
-			.clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
-			.focusable(interactionSource = interactionSource)
-			.background(if (isFocused) Color.White.copy(alpha = 0.14f) else Color.Transparent)
-			.padding(horizontal = 24.dp, vertical = 11.dp),
-	) {
-		Text(
-			text = action.label,
-			fontSize = 17.sp,
-			fontWeight = if (isFocused) FontWeight.W600 else FontWeight.W400,
-			color = if (isFocused) Color.White else Color.White.copy(alpha = 0.85f),
-			maxLines = 1,
-			overflow = TextOverflow.Ellipsis,
-		)
+	Column(modifier = Modifier.fillMaxWidth()) {
+		Box(
+			modifier = modifier
+				.fillMaxWidth()
+				.padding(horizontal = 4.dp)
+				.clip(RoundedCornerShape(3.dp))
+				.background(if (isFocused) GuideAccent else Color.Transparent)
+				.clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+				.padding(horizontal = 11.dp, vertical = 8.dp),
+		) {
+			Text(
+				text = action.label,
+				fontSize = 15.sp,
+				color = Color.White,
+				maxLines = 1,
+				overflow = TextOverflow.Ellipsis,
+			)
+		}
 		if (action.hint != null) {
-			Spacer(modifier = Modifier.height(2.dp))
 			Text(
 				text = action.hint,
-				fontSize = 12.sp,
-				color = Color.White.copy(alpha = 0.5f),
+				fontSize = 11.sp,
+				color = GuideTextMuted,
 				maxLines = 2,
+				modifier = Modifier.padding(start = 15.dp, end = 15.dp, top = 1.dp, bottom = 5.dp),
 			)
 		}
 	}
@@ -167,10 +383,10 @@ private fun SheetRow(
 fun RecChip(modifier: Modifier = Modifier) {
 	Box(
 		modifier = modifier
-			.clip(RoundedCornerShape(4.dp))
+			.clip(RoundedCornerShape(3.dp))
 			.background(RecordingRed)
-			.padding(horizontal = 6.dp, vertical = 2.dp),
+			.padding(horizontal = 5.dp, vertical = 2.dp),
 	) {
-		Text(text = "● REC", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.White)
+		Text(text = "● REC", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
 	}
 }

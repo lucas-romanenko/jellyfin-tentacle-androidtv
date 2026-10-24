@@ -158,4 +158,18 @@ class RecordingsLayoutTests : FunSpec({
 		tonight.isRecordingNow(now) shouldBe false
 		late.isSeries shouldBe true
 	}
+
+	test("Scheduled and Series only for people who may manage recordings") {
+		recordingsTabs(canManage = true) shouldContainExactly listOf(RecordingsTab.RECORDED, RecordingsTab.SCHEDULED, RecordingsTab.SERIES)
+		recordingsTabs(canManage = false) shouldContainExactly listOf(RecordingsTab.RECORDED)
+	}
+
+	test("the screen opens on the part asked for, else Recorded") {
+		openingRecordingsTab("SCHEDULED", canManage = true) shouldBe RecordingsTab.SCHEDULED
+		openingRecordingsTab("SERIES", canManage = true) shouldBe RecordingsTab.SERIES
+		openingRecordingsTab(null, canManage = true) shouldBe RecordingsTab.RECORDED
+		openingRecordingsTab("nonsense", canManage = true) shouldBe RecordingsTab.RECORDED
+		// A kid's Home "Schedule" button (none expected) still opens what they may see
+		openingRecordingsTab("SCHEDULED", canManage = false) shouldBe RecordingsTab.RECORDED
+	}
 })

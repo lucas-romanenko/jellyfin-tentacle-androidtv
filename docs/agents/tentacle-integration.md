@@ -117,9 +117,16 @@ The code wins where they differ.
   it follows the person. Days: today up to the furthest programme end
   (`POST LiveTv/Programs`, StartDate descending, Limit 1, favourite ids in
   the body for Favorites); one day of data = no day chips, and paging right
-  stops there. Recordings / Schedule / Series are header buttons (the last
-  two for people who may manage recordings). Holding OK on a channel name
-  favourites it.
+  stops there. One Recordings button in the header opens the Recordings
+  screen (`ui/browsing/v2/RecordingsBrowseFragment.kt`, #203): built like
+  the guide, with a Recorded | Scheduled | Series switch (the last two for
+  people who may manage recordings, `enableLiveTvManagement`);
+  `Destinations.liveTvRecordings` / `liveTvSchedule` /
+  `liveTvSeriesRecordings` open its parts. Recorded is one paged
+  `LiveTv/Recordings` read sorted into rows by `groupRecordings`
+  (`RecordingsLayout.kt`, `RecordingsLayoutTests`); a recording's air time
+  comes from its file name (`yyyy_MM_dd_HH_mm_ss`), since recordings carry
+  no StartDate. Holding OK on a channel name favourites it.
   Live updates (`ui/livetv/GuideLiveUpdates.kt`, pure logic in `GuideModel.kt`,
   `GuideLiveModelTests`), while the guide is started: the websocket's
   `UserDataChanged` (Jellyfin sends it ~1 s after any favourite change,

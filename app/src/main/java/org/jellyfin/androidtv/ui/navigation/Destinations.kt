@@ -13,8 +13,7 @@ import org.jellyfin.androidtv.ui.browsing.v2.LibraryBrowseFragment
 import org.jellyfin.androidtv.ui.browsing.v2.LiveTvBrowseFragment
 import org.jellyfin.androidtv.ui.browsing.v2.MusicBrowseFragment
 import org.jellyfin.androidtv.ui.browsing.v2.RecordingsBrowseFragment
-import org.jellyfin.androidtv.ui.browsing.v2.ScheduleBrowseFragment
-import org.jellyfin.androidtv.ui.browsing.v2.SeriesRecordingsBrowseFragment
+import org.jellyfin.androidtv.ui.browsing.v2.RecordingsTab
 import org.jellyfin.androidtv.ui.activity.ActivityFragment
 import org.jellyfin.androidtv.ui.discover.DiscoverFragment as TentacleDiscoverFragment
 import org.jellyfin.androidtv.ui.home.HomeFragment
@@ -186,9 +185,13 @@ object Destinations {
 
 	// Live TV
 	val liveTvGuide = fragmentDestination<LiveTvGuideFragment>()
-	val liveTvSchedule = fragmentDestination<ScheduleBrowseFragment>()
-	val liveTvRecordings = fragmentDestination<RecordingsBrowseFragment>()
-	val liveTvSeriesRecordings = fragmentDestination<SeriesRecordingsBrowseFragment>()
+	// One Recordings screen (#203); each of these opens its Recorded, Scheduled or Series part.
+	// Built when used: a Bundle with a value can't be made while JVM unit tests load Destinations.
+	val liveTvRecordings get() = recordings(RecordingsTab.RECORDED)
+	val liveTvSchedule get() = recordings(RecordingsTab.SCHEDULED)
+	val liveTvSeriesRecordings get() = recordings(RecordingsTab.SERIES)
+	private fun recordings(tab: RecordingsTab) =
+		fragmentDestination<RecordingsBrowseFragment>(RecordingsBrowseFragment.EXTRA_TAB to tab.name)
 
 	// Playback
 	val nowPlaying = fragmentDestination<AudioNowPlayingFragment>()

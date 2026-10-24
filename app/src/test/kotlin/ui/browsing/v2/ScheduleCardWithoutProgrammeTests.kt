@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -45,8 +46,7 @@ import java.time.format.DateTimeFormatter
 import kotlin.concurrent.thread
 
 /**
- * OK on a Live TV Schedule card (and on the Recordings screen's "Scheduled in next 24 hours" row)
- * for a timer that has no programme in the guide closes the app.
+ * OK on a Live TV Schedule row for a timer that has no programme in the guide closes the app.
  *
  * Jellyfin sends a timer's ProgramInfo only while its programme is in the guide
  * (LiveTvManager.GetTimers): a timer booked without a programme id (a manual or scheduler-made
@@ -132,22 +132,23 @@ class ScheduleCardWithoutProgrammeTests : FunSpec({
 	test("Schedule: OK on a timer without programme info does not close the app") {
 		FakeServer().use { server ->
 			val viewModel = ScheduleBrowseViewModel(api(server))
-			viewModel.initialize(mockk(relaxed = true))
+			viewModel.initialize()
 			val state = runBlocking { withTimeout(30_000) { viewModel.uiState.first { !it.isLoading } } }
-			val card = state.scheduleGroups.single().items.single()
+			val row = state.days.single().entries.single()
 
-			shouldNotThrowAny { pressOk(card) }
+			row.channelName shouldBe "Sports 1"
+			shouldNotThrowAny { pressOk(row.item) }
 		}
 	}
 
-	test("Recordings, Scheduled in next 24 hours: OK on the same timer does not close the app") {
+	test("Recordings: an empty server loads without the scheduled row") {
 		FakeServer().use { server ->
 			val viewModel = RecordingsBrowseViewModel(api(server))
 			viewModel.initialize()
 			val state = runBlocking { withTimeout(30_000) { viewModel.uiState.first { !it.isLoading } } }
-			val card = state.scheduledNext24h.single()
 
-			shouldNotThrowAny { pressOk(card) }
+			state.groups.groupedCount shouldBe 0
+			state.groups.recordingNow shouldBe emptyList()
 		}
 	}
 })

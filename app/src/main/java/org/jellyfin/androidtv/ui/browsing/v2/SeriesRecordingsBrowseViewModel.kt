@@ -37,6 +37,9 @@ class SeriesRecordingsBrowseViewModel(
 		loadSeriesTimers()
 	}
 
+	/** Read again without the loading state (a series set or cancelled): the cards stay where they are. */
+	fun refresh() = loadSeriesTimers()
+
 	fun setFocusedTimer(timer: SeriesTimerInfoDto) {
 		_focusedTimer.value = timer
 	}

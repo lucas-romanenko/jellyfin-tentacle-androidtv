@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.R
-import org.jellyfin.androidtv.auth.repository.UserRepository
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.data.model.DataRefreshService
@@ -81,31 +80,13 @@ fun LiveTvGuideFragment.toggleFavorite() {
 }
 
 /**
- * Recordings / Schedule / Series from the guide's header: the guide is where Live TV opens now,
- * so these stay one press away. Schedule and Series only for people who may manage recordings.
+ * Recordings from the guide's header: the guide is where Live TV opens now, so the one Recordings
+ * screen (Recorded, and Scheduled / Series for people who may manage recordings) stays one press
+ * away (#203).
  */
 fun LiveTvGuideFragment.setupGuideLinks(binding: LiveTvGuideBinding) {
 	val navigationRepository by inject<NavigationRepository>()
-	val userRepository by inject<UserRepository>()
-	val canManage = userRepository.currentUser.value?.policy?.enableLiveTvManagement == true
-
 	binding.recordingsButton.setOnClickListener { navigationRepository.navigate(Destinations.liveTvRecordings) }
-	binding.scheduleButton.isVisible = canManage
-	binding.scheduleButton.setOnClickListener { navigationRepository.navigate(Destinations.liveTvSchedule) }
-	binding.seriesButton.isVisible = canManage
-	binding.seriesButton.setOnClickListener { navigationRepository.navigate(Destinations.liveTvSeriesRecordings) }
-	// Icons only, so the header keeps room for every day; the focused one shows its name
-	for ((button, label) in listOf(
-		binding.recordingsButton to R.string.lbl_recordings,
-		binding.scheduleButton to R.string.lbl_schedule,
-		binding.seriesButton to R.string.lbl_series,
-	)) {
-		button.compoundDrawablePadding = 0
-		button.setOnFocusChangeListener { _, focused ->
-			button.text = if (focused) getString(label) else null
-			button.compoundDrawablePadding = if (focused) button.resources.getDimensionPixelSize(R.dimen.guide_chip_icon_gap) else 0
-		}
-	}
 }
 
 /** "Favorites  3" / "All  5,669": the count a little smaller than the label. */

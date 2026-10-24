@@ -3,32 +3,35 @@ package org.jellyfin.androidtv.ui.browsing.v2
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.jellyfin.androidtv.data.repository.ItemRepository
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.exception.ApiClientException
+import org.jellyfin.sdk.api.client.extensions.libraryApi
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
+import org.jellyfin.sdk.api.client.extensions.playStateApi
 import org.jellyfin.sdk.model.api.BaseItemDto
-import org.jellyfin.sdk.model.api.BaseItemKind
-import org.jellyfin.sdk.model.api.LocationType
-import org.jellyfin.sdk.model.api.MediaType
-import org.jellyfin.sdk.model.serializer.toUUIDOrNull
+import org.jellyfin.sdk.model.api.ImageType
+import org.jellyfin.sdk.model.api.ItemFields
+import org.jellyfin.sdk.model.api.RecordingStatus
 import timber.log.Timber
 import java.time.LocalDateTime
+import java.util.UUID
+
+/** What the Recording now row says under a card: since when, on which channel (from its timer). */
+data class RecordingNowInfo(val since: LocalDateTime?, val channelName: String?)
 
 data class RecordingsBrowseUiState(
 	val isLoading: Boolean = true,
-	val recentRecordings: List<BaseItemDto> = emptyList(),
-	val seriesRecordings: List<BaseItemDto> = emptyList(),
-	val movieRecordings: List<BaseItemDto> = emptyList(),
-	val sportsRecordings: List<BaseItemDto> = emptyList(),
-	val kidsRecordings: List<BaseItemDto> = emptyList(),
-	val scheduledNext24h: List<BaseItemDto> = emptyList(),
+	val groups: RecordedGroups = RecordedGroups(),
+	val recordingNow: Map<UUID, RecordingNowInfo> = emptyMap(),
+	/** The show page open in place of the rows (its title), or null. */
+	val openShow: String? = null,
 )
 
 class RecordingsBrowseViewModel(
@@ -39,153 +42,146 @@ class RecordingsBrowseViewModel(
 	val uiState: StateFlow<RecordingsBrowseUiState> = _uiState.asStateFlow()
 
 	// The focused card, apart from uiState: a D-pad press recomposes only the header HUD.
-	private val _focusedItem = MutableStateFlow<BaseItemDto?>(null)
-	val focusedItem: StateFlow<BaseItemDto?> = _focusedItem.asStateFlow()
+	private val _focusedItem = MutableStateFlow<RecordingFocus?>(null)
+	val focusedItem: StateFlow<RecordingFocus?> = _focusedItem.asStateFlow()
 
 	fun initialize() {
 		_uiState.value = RecordingsBrowseUiState(isLoading = true)
 		_focusedItem.value = null
-		loadAllRows()
+		loadAll()
 	}
 
 	/** Read again without the loading state (a recording changed): the cards stay where they are. */
-	fun refresh() = loadAllRows()
+	fun refresh() = loadAll()
 
-	fun setFocusedItem(item: BaseItemDto) {
-		_focusedItem.value = item
+	fun setFocused(focus: RecordingFocus) {
+		_focusedItem.value = focus
 	}
 
-	private fun loadAllRows() {
+	fun openShow(title: String?) {
+		_uiState.update { it.copy(openShow = title) }
+	}
+
+	private fun loadAll() {
 		viewModelScope.launch {
 			try {
-				val recentJob = launch { loadRecentRecordings() }
-				val seriesJob = launch { loadSeriesRecordings() }
-				val moviesJob = launch { loadMovieRecordings() }
-				val sportsJob = launch { loadSportsRecordings() }
-				val kidsJob = launch { loadKidsRecordings() }
-				val timersJob = launch { loadScheduledTimers() }
-
-				recentJob.join()
-				seriesJob.join()
-				moviesJob.join()
-				sportsJob.join()
-				kidsJob.join()
-				timersJob.join()
-
-				_uiState.update { it.copy(isLoading = false) }
-			} catch (err: Exception) {
-				Timber.e(err, "Failed to load recordings rows")
-				_uiState.update { it.copy(isLoading = false) }
-			}
-		}
-	}
-
-	private suspend fun loadRecentRecordings() {
-		try {
-			val response = withContext(Dispatchers.IO) {
-				api.liveTvApi.getRecordings(
-					fields = ItemRepository.itemFields,
-					enableImages = true,
-					limit = 40,
-				).content
-			}
-			_uiState.update { it.copy(recentRecordings = response.items) }
-		} catch (err: ApiClientException) {
-			Timber.e(err, "Failed to load recent recordings")
-		}
-	}
-
-	private suspend fun loadSeriesRecordings() {
-		try {
-			val response = withContext(Dispatchers.IO) {
-				api.liveTvApi.getRecordings(
-					fields = ItemRepository.itemFields,
-					enableImages = true,
-					limit = 60,
-					isSeries = true,
-				).content
-			}
-			_uiState.update { it.copy(seriesRecordings = response.items) }
-		} catch (err: ApiClientException) {
-			Timber.e(err, "Failed to load series recordings")
-		}
-	}
-
-	private suspend fun loadMovieRecordings() {
-		try {
-			val response = withContext(Dispatchers.IO) {
-				api.liveTvApi.getRecordings(
-					fields = ItemRepository.itemFields,
-					enableImages = true,
-					limit = 60,
-					isMovie = true,
-				).content
-			}
-			_uiState.update { it.copy(movieRecordings = response.items) }
-		} catch (err: ApiClientException) {
-			Timber.e(err, "Failed to load movie recordings")
-		}
-	}
-
-	private suspend fun loadSportsRecordings() {
-		try {
-			val response = withContext(Dispatchers.IO) {
-				api.liveTvApi.getRecordings(
-					fields = ItemRepository.itemFields,
-					enableImages = true,
-					limit = 60,
-					isSports = true,
-				).content
-			}
-			_uiState.update { it.copy(sportsRecordings = response.items) }
-		} catch (err: ApiClientException) {
-			Timber.e(err, "Failed to load sports recordings")
-		}
-	}
-
-	private suspend fun loadKidsRecordings() {
-		try {
-			val response = withContext(Dispatchers.IO) {
-				api.liveTvApi.getRecordings(
-					fields = ItemRepository.itemFields,
-					enableImages = true,
-					limit = 60,
-					isKids = true,
-				).content
-			}
-			_uiState.update { it.copy(kidsRecordings = response.items) }
-		} catch (err: ApiClientException) {
-			Timber.e(err, "Failed to load kids recordings")
-		}
-	}
-
-	private suspend fun loadScheduledTimers() {
-		try {
-			val timers = withContext(Dispatchers.IO) {
-				api.liveTvApi.getTimers().content
-			}
-
-			val next24 = LocalDateTime.now().plusDays(1)
-			val nearTimers = timers.items
-				.filter { it.startDate?.isBefore(next24) == true }
-				.map { timer ->
-					val programInfo = timer.programInfo ?: BaseItemDto(
-						id = requireNotNull(timer.id?.toUUIDOrNull()),
-						channelName = timer.channelName,
-						name = timer.name.orEmpty(),
-						type = BaseItemKind.PROGRAM,
-						timerId = timer.id,
-						seriesTimerId = timer.seriesTimerId,
-						startDate = timer.startDate,
-						endDate = timer.endDate,
-						mediaType = MediaType.UNKNOWN,
-					)
-					programInfo.copy(locationType = LocationType.VIRTUAL)
+				val itemsJob = async(Dispatchers.IO) { loadRecordings() }
+				val inProgressJob = async(Dispatchers.IO) { loadInProgressIds() }
+				val items = itemsJob.await()
+				val inProgress = inProgressJob.await()
+				val nowInfo = if (inProgress.isEmpty()) emptyMap() else loadRecordingNowInfo(items.filter { it.id in inProgress })
+				val groups = withContext(Dispatchers.Default) { groupRecordings(items, inProgress, LocalDateTime.now()) }
+				_uiState.update { state ->
+					// A show page whose last recording went away closes.
+					val open = state.openShow?.takeIf { title -> groups.shows.any { it.title == title } }
+					state.copy(isLoading = false, groups = groups, recordingNow = nowInfo, openShow = open)
 				}
-
-			_uiState.update { it.copy(scheduledNext24h = nearTimers) }
-		} catch (err: ApiClientException) {
-			Timber.e(err, "Failed to load scheduled timers")
+			} catch (err: ApiClientException) {
+				Timber.e(err, "Failed to load recordings")
+				_uiState.update { it.copy(isLoading = false) }
+			}
 		}
 	}
+
+	/** Every recording in one paged call with only the fields the rows use. */
+	private suspend fun loadRecordings(): List<BaseItemDto> {
+		val all = ArrayList<BaseItemDto>()
+		var start = 0
+		while (start < MAX_RECORDINGS) {
+			val page = api.liveTvApi.getRecordings(
+				startIndex = start,
+				limit = PAGE_SIZE,
+				fields = RECORDING_FIELDS,
+				enableImages = true,
+				imageTypeLimit = 1,
+				enableImageTypes = listOf(ImageType.THUMB, ImageType.PRIMARY),
+				enableUserData = true,
+				enableTotalRecordCount = start == 0,
+			).content
+			all += page.items
+			if (page.items.size < PAGE_SIZE) break
+			start += PAGE_SIZE
+		}
+		return all
+	}
+
+	private suspend fun loadInProgressIds(): Set<UUID> = try {
+		api.liveTvApi.getRecordings(isInProgress = true, enableImages = false, enableUserData = false, enableTotalRecordCount = false)
+			.content.items.mapTo(HashSet()) { it.id }
+	} catch (err: ApiClientException) {
+		Timber.w(err, "Failed to read recordings in progress")
+		emptySet()
+	}
+
+	/** "Since 7:00 PM · TSN 2" from the running timers, matched by name (recordings carry no channel). */
+	private suspend fun loadRecordingNowInfo(items: List<BaseItemDto>): Map<UUID, RecordingNowInfo> = try {
+		val timers = withContext(Dispatchers.IO) { api.liveTvApi.getTimers(isActive = true).content.items }
+			.filter { it.status == RecordingStatus.IN_PROGRESS || it.status == null }
+		items.associate { item ->
+			val timer = timers.firstOrNull { it.name.equals(item.name, ignoreCase = true) }
+				?: timers.singleOrNull()?.takeIf { items.size == 1 }
+			item.id to RecordingNowInfo(timer?.startDate ?: item.dateCreated, timer?.channelName ?: item.channelName)
+		}
+	} catch (err: ApiClientException) {
+		Timber.w(err, "Failed to read running timers")
+		emptyMap()
+	}
+
+	/** Mark watched or not watched for this person; the rows read again. */
+	fun setPlayed(item: BaseItemDto, played: Boolean, onDone: (Boolean) -> Unit) {
+		viewModelScope.launch {
+			val ok = try {
+				withContext(Dispatchers.IO) {
+					if (played) api.playStateApi.markPlayedItem(itemId = item.id)
+					else api.playStateApi.markUnplayedItem(itemId = item.id)
+				}
+				true
+			} catch (err: ApiClientException) {
+				Timber.e(err, "Failed to mark ${item.id} played=$played")
+				false
+			}
+			onDone(ok)
+			if (ok) refresh()
+		}
+	}
+
+	/**
+	 * Deletes one recording for the household. Only offered where Jellyfin's CanDelete says this person
+	 * may, and never for a TMDB title, whose delete must go through Tentacle (#69).
+	 */
+	fun delete(item: BaseItemDto, onDone: (Boolean) -> Unit) {
+		if (!canOfferRecordingDelete(item)) {
+			onDone(false)
+			return
+		}
+		viewModelScope.launch {
+			val ok = try {
+				withContext(Dispatchers.IO) { api.libraryApi.deleteItem(itemId = item.id) }
+				true
+			} catch (err: ApiClientException) {
+				Timber.e(err, "Failed to delete recording ${item.id}")
+				false
+			}
+			onDone(ok)
+			if (ok) refresh()
+		}
+	}
+
+	companion object {
+		private const val PAGE_SIZE = 200
+		private const val MAX_RECORDINGS = 5000
+		private val RECORDING_FIELDS = listOf(
+			ItemFields.DATE_CREATED,
+			ItemFields.PATH,
+			ItemFields.GENRES,
+			ItemFields.CAN_DELETE,
+			ItemFields.PROVIDER_IDS,
+		)
+	}
+}
+
+/** The focused card for the header: one recording, or a show card (its recordings). */
+sealed interface RecordingFocus {
+	data class Recording(val item: BaseItemDto, val recordingNow: RecordingNowInfo?) : RecordingFocus
+	data class Show(val show: RecordedShow) : RecordingFocus
 }

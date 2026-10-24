@@ -82,7 +82,13 @@ interface NavigationRepository {
 class NavigationRepositoryImpl(
 	private val defaultDestination: Destination.Fragment,
 ) : NavigationRepository {
+	// The screens above the first one. The first screen (the one a reset opened) is not in it: the
+	// view (DestinationFragmentView) keeps that one as the root of its own history.
 	private val fragmentHistory = Stack<Destination.Fragment>()
+
+	// Whether that first screen is Home. It is not when the app opened on another screen (a title
+	// from a launcher row, a voice search): popping to the first screen then doesn't reach Home.
+	private var firstIsHome = true
 
 	private val _currentAction = MutableSharedFlow<NavigationAction>(1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 	override val currentAction = _currentAction.asSharedFlow()
@@ -122,21 +128,28 @@ class NavigationRepositoryImpl(
 	override fun reset(destination: Destination.Fragment?, clearHistory: Boolean) {
 		fragmentHistory.clear()
 		val actualDestination = destination ?: defaultDestination
+		// Without clearHistory the view keeps its first screen and adds this one on top
+		if (clearHistory) firstIsHome = actualDestination.fragment == defaultDestination.fragment
 		_currentAction.tryEmit(NavigationAction.NavigateFragment(actualDestination, true, false, clearHistory))
 		Timber.i("Navigating to $actualDestination (via reset, clearHistory=$clearHistory)")
 	}
 
 	override fun goHome() {
-		if (fragmentHistory.size <= 1) {
-			// Already on home (or empty stack) — nothing to do
+		if (!firstIsHome) {
+			// The app opened on another screen: there is no Home to go back to, open one
+			Timber.i("goHome: first screen isn't home, opening home")
+			reset(defaultDestination, clearHistory = true)
+			return
+		}
+
+		if (fragmentHistory.isEmpty()) {
+			// Home is the screen in front — nothing to do
 			Timber.i("goHome: already on home screen")
 			return
 		}
 
-		// Pop everything above the first entry (home)
-		while (fragmentHistory.size > 1) {
-			fragmentHistory.pop()
-		}
+		// Pop every screen above the first one (home)
+		fragmentHistory.clear()
 		_currentAction.tryEmit(NavigationAction.PopToFirst)
 		Timber.i("goHome: popping back to home screen")
 	}

@@ -252,7 +252,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         mChannels.setFocusable(false);
         mChannelScroller.setFocusable(false);
 
-        mPreview = new GuidePreview(this, binding.programImage, binding.previewSurface, binding.title);
+        mPreview = new GuidePreview(this, binding.programImage, binding.previewSurface, binding.title, this::isInGrid);
         mPreview.start();
 
         // A known Live TV problem, in the server's words (Tentacle FamilyStatus)
@@ -1746,6 +1746,11 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     /** The header's live preview follows focus: the channel on now after a rest, else the picture. */
     private void notePreviewFocus(RelativeLayout programView) {
         if (mPreview == null) return;
+        // Picking channels for multi-view: its bar covers the box, and multi-view needs the connections
+        if (mMultiView != null && mMultiView.isActive()) {
+            mPreview.onFocus(null, GuidePreviewKind.PICTURE);
+            return;
+        }
         LocalDateTime now = LocalDateTime.now();
         if (programView instanceof ProgramGridCell) {
             BaseItemDto program = ((ProgramGridCell) programView).getProgram();

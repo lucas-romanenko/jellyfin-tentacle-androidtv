@@ -4,7 +4,6 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
-import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.LifecycleOwner
@@ -127,9 +126,6 @@ class GuideMultiViewPick(
 		val on = isActive
 		binding.multiViewBar.isVisible = on
 		binding.recordingsButton.isVisible = !on
-		// The bar covers the Filters button: invisible (not gone, other views sit next to it), so
-		// Up/Down between the Start chip and the guide can't land on a button nobody sees.
-		binding.filterButton.isInvisible = on
 		binding.multiViewButton.isSelected = on
 		binding.multiViewButton.text = if (on) startLabel(picks.count, picks.max, picks.min)
 		else fragment.getString(R.string.lbl_multiview)

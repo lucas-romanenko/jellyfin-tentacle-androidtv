@@ -7,6 +7,7 @@ import android.os.Looper
 import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.TextView
 import androidx.annotation.OptIn
 import androidx.lifecycle.Lifecycle
@@ -94,6 +95,7 @@ class GuidePreview(
 	private val box: View,
 	private val surface: SurfaceView,
 	private val title: TextView,
+	private val inGrid: (View) -> Boolean,
 ) {
 	private val api by fragment.inject<ApiClient>()
 	private val tentacleRepository by fragment.inject<TentacleRepository>()
@@ -130,6 +132,13 @@ class GuidePreview(
 		val viewOwner = fragment.viewLifecycleOwner
 		viewOwner.lifecycleScope.launch {
 			viewOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+				// Focus out of the grid (Back to the top row, a header button): the preview stops, as
+				// when it moves to another programme
+				val observer = box.viewTreeObserver
+				val focusListener = ViewTreeObserver.OnGlobalFocusChangeListener { _, new ->
+					if (new != null && !inGrid(new)) onFocus(null, GuidePreviewKind.PICTURE)
+				}
+				observer.addOnGlobalFocusChangeListener(focusListener)
 				try {
 					while (isActive) {
 						val answer = tentacleRepository.getLivePreview(previewing = playing != null)
@@ -138,6 +147,7 @@ class GuidePreview(
 						delay(GUIDE_PREVIEW_POLL_MS)
 					}
 				} finally {
+					if (observer.isAlive) observer.removeOnGlobalFocusChangeListener(focusListener)
 					stop()
 				}
 			}

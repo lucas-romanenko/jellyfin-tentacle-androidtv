@@ -245,14 +245,26 @@ fun GuideStyleHeader(
 			.height(90.dp),
 	) {
 		Box(modifier = Modifier.size(width = 160.dp, height = 90.dp)) {
-			if (imageUrl != null) {
+			if (imageUrl != null && imageScale == ContentScale.Fit) {
+				// A logo: whole, on the cards' background
+				AsyncImage(
+					model = imageUrl,
+					contentDescription = null,
+					modifier = Modifier
+						.fillMaxSize()
+						.clip(RoundedCornerShape(4.dp))
+						.background(CardArtBackground)
+						.padding(horizontal = 24.dp, vertical = 12.dp),
+					contentScale = ContentScale.Fit,
+				)
+			} else if (imageUrl != null) {
 				AsyncImage(
 					model = imageUrl,
 					contentDescription = null,
 					modifier = Modifier
 						.fillMaxSize()
 						.clip(RoundedCornerShape(4.dp)),
-					contentScale = ContentScale.Crop,
+					contentScale = imageScale,
 				)
 			}
 		}

@@ -35,6 +35,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ComposeView
@@ -173,14 +178,12 @@ class FavoritesBrowseFragment : Fragment() {
 	private fun FavoritesContent() {
 		val uiState by viewModel.uiState.collectAsState()
 		val homeFocus = remember { FocusRequester() }
-		val cardFocus = remember { FocusRequester() }
+		// One per card, to put focus back on a card by id (opening, back from a page, Down from the top bar)
+		val cardFocus = remember { HashMap<String, FocusRequester>() }
+		val focusCard: (String?) -> Boolean = { id -> id != null && runCatching { cardFocus[id]?.requestFocus() != null }.getOrDefault(false) }
 		var contentHasFocus by remember { mutableStateOf(false) }
 		var topHasFocus by remember { mutableStateOf(false) }
 		val now = rememberMinute()
-
-		val target = remember(uiState.rows) {
-			favoriteFocusTarget(uiState.rows, viewModel.lastFocusedId, viewModel.lastFocusedKind, viewModel.lastFocusedIndex)
-		}
 
 		// Back on a card: the top bar first, as on Home (Back there leaves the screen)
 		BackHandler(enabled = contentHasFocus) {
@@ -194,6 +197,8 @@ class FavoritesBrowseFragment : Fragment() {
 		) {
 			FavoritesTopBar(
 				homeFocus = homeFocus,
+				// Down from the top bar: the card Back left (or last focused), else the nearest one
+				onDown = { focusCard(viewModel.lastFocusedId) },
 				modifier = Modifier.onFocusChanged { topHasFocus = it.hasFocus },
 			)
 			FavoritesHeader(now)
@@ -215,7 +220,7 @@ class FavoritesBrowseFragment : Fragment() {
 						color = GuideTextMuted,
 						modifier = Modifier.padding(start = 60.dp, top = 24.dp, end = 60.dp),
 					)
-					else -> FavoriteRows(uiState.rows, target, cardFocus, now)
+					else -> FavoriteRows(uiState.rows, cardFocus, now)
 				}
 			}
 		}
@@ -223,17 +228,19 @@ class FavoritesBrowseFragment : Fragment() {
 		// Opening (or back from a details page): the card last focused, else the first card.
 		// After a change in place: only when the focused card went away (the next one in its row).
 		var placed by remember { mutableStateOf(false) }
-		LaunchedEffect(uiState.isLoading, target) {
+		LaunchedEffect(uiState.isLoading, uiState.rows) {
 			if (uiState.isLoading) return@LaunchedEffect
 			if (placed && (contentHasFocus || topHasFocus)) return@LaunchedEffect
 			placed = true
-			if (target != null) cardFocus.requestFocusSettled(isFocused = { contentHasFocus })
+			val target = favoriteFocusTarget(uiState.rows, viewModel.lastFocusedId, viewModel.lastFocusedKind, viewModel.lastFocusedIndex)
+			val requester = target?.let { cardFocus.getOrPut(it) { FocusRequester() } }
+			if (requester != null) requester.requestFocusSettled(isFocused = { contentHasFocus })
 			else homeFocus.requestFocusSettled(isFocused = { topHasFocus })
 		}
 	}
 
 	@Composable
-	private fun FavoritesTopBar(homeFocus: FocusRequester, modifier: Modifier = Modifier) {
+	private fun FavoritesTopBar(homeFocus: FocusRequester, onDown: () -> Boolean, modifier: Modifier = Modifier) {
 		Row(
 			modifier = modifier
 				.fillMaxWidth()
@@ -250,7 +257,11 @@ class FavoritesBrowseFragment : Fragment() {
 			Spacer(modifier = Modifier.weight(1f))
 			HomeButton(
 				onClick = { navigationRepository.navigate(Destinations.home) },
-				modifier = Modifier.focusRequester(homeFocus),
+				modifier = Modifier
+					.focusRequester(homeFocus)
+					.onPreviewKeyEvent { event ->
+						event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown && onDown()
+					},
 			)
 			Spacer(modifier = Modifier.width(12.dp))
 			val time by rememberCurrentTime()
@@ -292,8 +303,7 @@ class FavoritesBrowseFragment : Fragment() {
 	@Composable
 	private fun FavoriteRows(
 		rows: List<FavoriteRow>,
-		target: String?,
-		cardFocus: FocusRequester,
+		cardFocus: HashMap<String, FocusRequester>,
 		now: LocalDateTime,
 	) {
 		LazyColumn(
@@ -310,7 +320,7 @@ class FavoritesBrowseFragment : Fragment() {
 						contentPadding = PaddingValues(horizontal = 60.dp),
 					) {
 						itemsIndexed(row.items, key = { _, item -> item.id }, contentType = { _, _ -> row.kind.name }) { index, item ->
-							val modifier = if (item.id.toString() == target) Modifier.focusRequester(cardFocus) else Modifier
+							val modifier = Modifier.focusRequester(cardFocus.getOrPut(item.id.toString()) { FocusRequester() })
 							val onFocused = { viewModel.setFocusedItem(item, row.kind, index) }
 							if (row.kind == FavoriteRowKind.CHANNELS || item.type == BaseItemKind.TV_CHANNEL) {
 								ChannelCard(item, now, onFocused, modifier)

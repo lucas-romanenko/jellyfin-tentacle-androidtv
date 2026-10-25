@@ -304,7 +304,7 @@ class MultiViewFragment : Fragment() {
 			add(SheetAction(getString(R.string.multiview_full_screen)) { fullScreen(index) })
 			add(SheetAction(getString(R.string.multiview_swap)) { menu.value = MenuState.Swap(index, swapChoices()) })
 			if (session.tiles.size > MultiViewPicks.MIN_TILES)
-				add(SheetAction(getString(R.string.multiview_remove)) { remove(index) })
+				add(SheetAction(getString(R.string.multiview_remove)) { removeTile(index) })
 		}
 		menu.value = MenuState.Actions(tile.name, actions)
 	}
@@ -318,7 +318,7 @@ class MultiViewFragment : Fragment() {
 			.map { SwapChoice(it.id.toString().replace("-", ""), listOfNotNull(it.number, it.name).joinToString("  ")) }
 	}
 
-	private fun remove(index: Int) {
+	private fun removeTile(index: Int) {
 		val ids = withoutTile(session.tiles.map { it.itemId }, index) ?: return
 		change(ids, if (highlighted >= ids.size) ids.size - 1 else highlighted)
 	}

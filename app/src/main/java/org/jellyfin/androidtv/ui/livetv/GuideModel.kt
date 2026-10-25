@@ -76,6 +76,24 @@ fun guideDays(now: LocalDateTime, furthestEnd: LocalDateTime?): List<LocalDate> 
 		.toList()
 }
 
+/** A day after today has real guide data with at least this share of the busiest day before it. */
+const val GUIDE_DAY_MIN_SHARE = 0.25
+
+/**
+ * How many of the days with [counts] (programmes on each day, today first) have real guide data:
+ * today always, then each next day while it has at least [GUIDE_DAY_MIN_SHARE] of the busiest
+ * day before it. A handful of channels with longer listings (or one event channel) don't count.
+ */
+fun realGuideDayCount(counts: List<Int>): Int {
+	if (counts.isEmpty()) return 0
+	var busiest = counts[0]
+	for (i in 1 until counts.size) {
+		if (counts[i] <= 0 || counts[i] < busiest * GUIDE_DAY_MIN_SHARE) return i
+		busiest = maxOf(busiest, counts[i])
+	}
+	return counts.size
+}
+
 /** The next guide page (starting at [guideEnd]) has data: unknown data never blocks paging. */
 fun hasGuideDataAfter(guideEnd: LocalDateTime, furthestEnd: LocalDateTime?): Boolean =
 	furthestEnd == null || guideEnd.isBefore(furthestEnd)

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The Live TV guide, Tentacle style: a header (Live TV, Favorites / All, the days that have
-     guide data, Recordings, clock), the focused programme, then the grid. -->
+<!-- The Live TV guide, Tentacle style: a header (Live TV, Favorites / All, Multi-view,
+     Recordings, the days that have guide data, clock), the focused programme, then the grid. -->
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
@@ -54,32 +54,13 @@
                 tools:text="All 5,669" />
         </LinearLayout>
 
-        <!-- Today … the last day with guide data (hidden when only today has data). Takes the
-             room left, so a long guide's days scroll instead of pushing the buttons off screen. -->
-        <HorizontalScrollView
-            android:layout_width="0dp"
-            android:layout_height="32dp"
-            android:layout_marginStart="16dp"
-            android:layout_marginEnd="8dp"
-            android:layout_weight="1"
-            android:fadingEdgeLength="24dp"
-            android:requiresFadingEdge="horizontal"
-            android:scrollbars="none">
-
-            <LinearLayout
-                android:id="@+id/days"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:orientation="horizontal" />
-        </HorizontalScrollView>
-
         <!-- Multi-view: pick 2-4 channels in the guide, then Start (becomes "2 of 4 · Start") -->
         <TextView
             android:id="@+id/multiViewButton"
             style="@style/GuideChip"
             android:layout_width="wrap_content"
             android:layout_height="32dp"
-            android:layout_marginEnd="8dp"
+            android:layout_marginStart="16dp"
             android:drawableStart="@drawable/guide_ic_multiview"
             android:text="@string/lbl_multiview" />
 
@@ -89,8 +70,30 @@
             style="@style/GuideChip"
             android:layout_width="wrap_content"
             android:layout_height="32dp"
+            android:layout_marginStart="8dp"
             android:drawableStart="@drawable/guide_ic_record"
             android:text="@string/lbl_recordings" />
+
+        <!-- Today … the last day with real guide data (hidden when only today has data), at the
+             right end, so Multi-view and Recordings stay next to Favorites | All (Lucas, 25 Oct).
+             Takes the room left: a long run of days scrolls in here, a short one sits on the right. -->
+        <HorizontalScrollView
+            android:layout_width="0dp"
+            android:layout_height="32dp"
+            android:layout_marginStart="16dp"
+            android:layout_weight="1"
+            android:fadingEdgeLength="24dp"
+            android:fillViewport="true"
+            android:requiresFadingEdge="horizontal"
+            android:scrollbars="none">
+
+            <LinearLayout
+                android:id="@+id/days"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:gravity="end|center_vertical"
+                android:orientation="horizontal" />
+        </HorizontalScrollView>
 
         <org.jellyfin.androidtv.ui.ClockUserView
             android:id="@+id/clock"

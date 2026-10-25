@@ -99,6 +99,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     private int mAllCount = -1;
     // When the guide data ends (furthest programme end in this view); null = unknown
     private LocalDateTime mFurthestEnd;
+    // Where the days with real guide data end (the date choice); null = unknown
+    private LocalDateTime mDaysEnd;
     private List<LocalDate> mGuideDays = new ArrayList<>();
     // A load started before the last toggle answers into nothing
     private int mLoadGeneration = 0;
@@ -376,11 +378,13 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             for (BaseItemDto channel : channels) ids.add(channel.getId());
         }
         mFurthestEnd = null;
+        mDaysEnd = null;
         updateDays();
         if (!channels.isEmpty()) {
-            TvManagerHelperKt.loadFurthestProgramEnd(this, ids, end -> {
+            TvManagerHelperKt.loadFurthestProgramEnd(this, ids, (end, daysEnd) -> {
                 if (!isAdded() || generation != mLoadGeneration) return null;
                 mFurthestEnd = end;
+                mDaysEnd = daysEnd;
                 updateDays();
                 return null;
             });
@@ -470,11 +474,11 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         if (mLiveUpdates != null) mLiveUpdates.recompute();
     }
 
-    /** Today up to the last day with guide data; no choice when only today has data. */
+    /** Today up to the last day with real guide data; no choice when only today has data. */
     private void updateDays() {
         if (mDays == null || !isAdded()) return;
         LocalDateTime now = LocalDateTime.now();
-        mGuideDays = GuideModel.guideDays(now, mFurthestEnd);
+        mGuideDays = GuideModel.guideDays(now, mDaysEnd);
         mDays.removeAllViews();
         if (mGuideDays.size() < 2 || mAllChannels == null || mAllChannels.isEmpty()) {
             mDays.setVisibility(View.GONE);
@@ -1228,10 +1232,11 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     }
 
     /** The view's guide data now ends at [end] (its channels changed): the dates follow, when they differ. */
-    void onLiveGuideEnd(LocalDateTime end) {
-        if (end.equals(mFurthestEnd)) return;
+    void onLiveGuideEnd(LocalDateTime end, LocalDateTime daysEnd) {
+        if (end.equals(mFurthestEnd) && daysEnd.equals(mDaysEnd)) return;
         mFurthestEnd = end;
-        List<LocalDate> days = GuideModel.guideDays(LocalDateTime.now(), mFurthestEnd);
+        mDaysEnd = daysEnd;
+        List<LocalDate> days = GuideModel.guideDays(LocalDateTime.now(), mDaysEnd);
         boolean show = days.size() >= 2 && mAllChannels != null && !mAllChannels.isEmpty();
         if (days.equals(mGuideDays) && show == (mDays.getVisibility() == View.VISIBLE)) return;
         View focus = requireActivity().getCurrentFocus();

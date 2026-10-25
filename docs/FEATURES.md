@@ -36,7 +36,10 @@ of the version that removed the options.
 - Watched markers on; the clock on, top right; navbar on top
 - Posters, no series thumbnails; theme music off
 - Live TV guide: favourites first. The guide's options and filter buttons are gone (filters
-  saved before are cleared): Favorites | All is the choice.
+  saved before are cleared): Favorites | All is the choice. Header: Live TV, Favorites | All,
+  Multi-view, Recordings, then the dates on the right (scrolling there when there are many).
+  A date is offered only when it has real guide data (at least a quarter of the busiest day
+  before it), so one event listing a week ahead adds no empty days.
 - Live TV multi-view (try-out): Multi-view in the guide, tick 2-4 channels, Start. One
   picture from Tentacle; the highlighted tile is heard, OK = full screen, Back = the grid.
 

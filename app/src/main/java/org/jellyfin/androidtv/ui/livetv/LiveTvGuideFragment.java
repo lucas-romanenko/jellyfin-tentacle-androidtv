@@ -117,6 +117,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     // The live preview in the header's box (GuidePreview)
     private GuidePreview mPreview;
     RelativeLayout mSelectedProgramView;
+    // The press whose long press opened a menu (see onKey)
+    private long mLongPressDownTime = -1;
 
     private List<BaseItemDto> mAllChannels;
     private UUID mFirstFocusChannelId;
@@ -533,6 +535,9 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         }
         mHandler.removeCallbacks(mNowTick);
         mHandler.postDelayed(mNowTick, 60_000);
+        // Back from a programme's page or the player with focus still on a programme on now: its
+        // preview starts again after the rest (onPause stopped it)
+        if (mSelectedProgramView != null) notePreviewFocus(mSelectedProgramView);
     }
 
     /** Loads the guide when it is stale, forced or empty; true when it does. */
@@ -582,7 +587,14 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     @Override
     public boolean onKey(View v, int keyCode, KeyEvent event) {
         if (event.getAction() == KeyEvent.ACTION_UP) return onKeyUp(keyCode, event);
-        else if (event.getAction() == KeyEvent.ACTION_DOWN && event.isLongPress()) return onKeyLongPress(keyCode);
+        else if (event.getAction() == KeyEvent.ACTION_DOWN && event.isLongPress()) {
+            // MainActivity hands a long press over twice (its onKeyDown, then onKeyLongPress): it
+            // opened two menus on the Sony, so Back seemed not to close it, and a channel's star
+            // toggled twice (nothing changed)
+            if (event.getDownTime() == mLongPressDownTime) return true;
+            mLongPressDownTime = event.getDownTime();
+            return onKeyLongPress(keyCode);
+        }
         else if (event.getAction() == KeyEvent.ACTION_DOWN) return onKeyDown(keyCode, event);
         return false;
     }

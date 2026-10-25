@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -36,7 +35,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.SpanStyle
@@ -46,14 +44,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
 import coil3.compose.AsyncImage
 import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.ui.base.Icon
 import org.jellyfin.androidtv.ui.base.Text
 import org.jellyfin.androidtv.ui.composable.rememberCurrentTime
+import org.jellyfin.androidtv.ui.shared.menu.TvMenu
+import org.jellyfin.androidtv.ui.shared.menu.TvMenuAction
 import org.jellyfin.androidtv.util.locale
 import java.text.NumberFormat
 import java.time.LocalDate
@@ -304,95 +301,11 @@ fun RecordingActionSheet(
 	title: String,
 	actions: List<SheetAction>,
 	onDismiss: () -> Unit,
-) {
-	val firstFocus = remember { FocusRequester() }
-
-	Dialog(
-		onDismissRequest = onDismiss,
-		properties = DialogProperties(usePlatformDefaultWidth = false),
-	) {
-		// No dimming: the row it belongs to stays as it was, as in the mockup
-		val window = (LocalView.current.parent as? DialogWindowProvider)?.window
-		SideEffect { window?.setDimAmount(0f) }
-		Box(
-			modifier = Modifier
-				.fillMaxSize()
-				.padding(end = 60.dp),
-			contentAlignment = Alignment.CenterEnd,
-		) {
-			Column(
-				modifier = Modifier
-					.width(280.dp)
-					.clip(RoundedCornerShape(6.dp))
-					.background(GuideChipBackground)
-					.border(1.dp, GuideChipStroke, RoundedCornerShape(6.dp))
-					.padding(vertical = 6.dp),
-			) {
-				Text(
-					text = title,
-					fontSize = 11.sp,
-					color = GuideTextMuted,
-					maxLines = 1,
-					overflow = TextOverflow.Ellipsis,
-					modifier = Modifier.padding(start = 15.dp, end = 15.dp, top = 4.dp, bottom = 2.dp),
-				)
-				actions.forEachIndexed { index, action ->
-					SheetRow(
-						action = action,
-						onClick = {
-							onDismiss()
-							action.onClick()
-						},
-						modifier = if (index == 0) Modifier.focusRequester(firstFocus) else Modifier,
-					)
-				}
-			}
-		}
-	}
-
-	LaunchedEffect(Unit) {
-		runCatching { firstFocus.requestFocus() }
-	}
-}
-
-@Composable
-private fun SheetRow(
-	action: SheetAction,
-	onClick: () -> Unit,
-	modifier: Modifier = Modifier,
-) {
-	val interactionSource = remember { MutableInteractionSource() }
-	val isFocused by interactionSource.collectIsFocusedAsState()
-
-	Column(modifier = Modifier.fillMaxWidth()) {
-		Box(
-			modifier = modifier
-				.fillMaxWidth()
-				.padding(horizontal = 4.dp)
-				.clip(RoundedCornerShape(3.dp))
-				.background(if (isFocused) GuideAccent else Color.Transparent)
-				.clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
-				.padding(horizontal = 11.dp, vertical = 8.dp),
-		) {
-			Text(
-				text = action.label,
-				fontSize = 15.sp,
-				color = Color.White,
-				maxLines = 1,
-				overflow = TextOverflow.Ellipsis,
-			)
-		}
-		if (action.hint != null) {
-			Text(
-				text = action.hint,
-				fontSize = 11.sp,
-				color = GuideTextMuted,
-				maxLines = 2,
-				modifier = Modifier.padding(start = 15.dp, end = 15.dp, top = 1.dp, bottom = 5.dp),
-			)
-		}
-	}
-}
+) = TvMenu(
+	title = title,
+	actions = actions.map { TvMenuAction(label = it.label, hint = it.hint, onClick = it.onClick) },
+	onDismiss = onDismiss,
+)
 
 /** A small chip on a card: "● REC". */
 @Composable

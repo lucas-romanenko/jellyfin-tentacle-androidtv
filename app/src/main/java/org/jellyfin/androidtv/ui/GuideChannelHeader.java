@@ -43,6 +43,12 @@ public class GuideChannelHeader extends RelativeLayout {
             Utils.convertDpToPixel(context, LiveTvGuideFragment.GUIDE_ROW_HEIGHT_DP)
         ));
         this.addView(v);
+        // Exactly a programme row high, wherever it is added: the channel column and the programmes
+        // line up at any depth
+        setLayoutParams(new android.widget.LinearLayout.LayoutParams(
+            LayoutParams.MATCH_PARENT,
+            Utils.convertDpToPixel(context, LiveTvGuideFragment.GUIDE_ROW_HEIGHT_DP)
+        ));
         this.setFocusable(true);
         setBackground(ContextCompat.getDrawable(mContext, R.drawable.guide_channel_bg));
         ((TextView) findViewById(R.id.channelName)).setText(channel.getName());
@@ -116,5 +122,9 @@ public class GuideChannelHeader extends RelativeLayout {
         } else {
             setBackground(ContextCompat.getDrawable(mContext, R.drawable.guide_channel_bg));
         }
+        // The focused background is an inset, and a View takes a background's insets as its padding
+        // and keeps it when the next background has none: every channel focused once stayed 2dp
+        // taller, so the column drifted below its programmes the further down one went.
+        setPadding(0, 0, 0, 0);
     }
 }

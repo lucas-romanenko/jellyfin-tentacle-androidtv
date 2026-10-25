@@ -35,14 +35,37 @@ of the version that removed the options.
 - Background blur: light; the background follows the selected item
 - Watched markers on; the clock on, top right; navbar on top
 - Posters, no series thumbnails; theme music off
-- Live TV guide: favourites first. The guide's options button is gone; its filters stay
-  (the filter button in the guide).
+- Live TV guide: favourites first. The guide's options and filter buttons are gone (filters
+  saved before are cleared): Favorites | All is the choice.
 - Live TV multi-view (try-out): Multi-view in the guide, tick 2-4 channels, Start. One
   picture from Tentacle; the highlighted tile is heard, OK = full screen, Back = the grid.
 
 Playback choices made on the TV before (maximum bitrate and resolution, refresh-rate
 switching, audio output, external player) are kept as they were; new installs get the
 defaults. Inside a library, its view options (grid, picture size) stay in the library's own menu.
+
+## Menus (long press of OK, or Menu)
+
+One menu everywhere (`ui/shared/menu/TvMenu.kt`): small, dark and rounded, the focused choice
+purple, on the right. It ignores the rest of the press that opened it, so letting go of OK never
+picks its first choice (`OkKeyGate`); confirmations use it too.
+
+- **Guide programme**: Watch now (on now) or Tune to channel, Record this / Record every
+  episode (or their cancels), Details. No favourite here.
+- **Guide channel name**: a favourite at once ("Added to Favorites"); taking one off asks first.
+- **Home**: in Continue Watching, Remove from Continue Watching (the saved place goes, watched
+  stays), Play from start, Mark watched, Details; other cards Mark watched / unwatched, Details.
+  The row changes at once. A long press never also opens the card (`OkLongPress`).
+- **Recordings**: a recording still recording plays on OK (live, on the stream the recording
+  already uses); its menu has Watch live and Play from start.
+
+## Live preview in the guide
+
+With a provider connection to spare (Tentacle's `/LivePreview`, asked every 15 s), the guide
+header's box plays the focused channel muted after 1.5 s on a programme on now; a later
+programme shows its picture. Without one the box goes and the text moves left; this is decided
+when the guide opens and when the answer changes, not per programme. OK on the previewed channel
+hands its stream to the player. `ui/livetv/GuidePreview.kt`.
 
 ## Refresh rate
 

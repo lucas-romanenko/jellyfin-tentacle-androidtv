@@ -1433,6 +1433,22 @@ class TentacleRepository(
 	}
 
 	/**
+	 * May the guide play a live preview now ([LivePreviewAnswer]); null when there is no answer.
+	 * [previewing]: this TV's own preview is running, so the server doesn't count it against itself.
+	 */
+	suspend fun getLivePreview(previewing: Boolean = false): LivePreviewAnswer? = withContext(Dispatchers.IO) {
+		try {
+			val url = buildUrl(LIVE_PREVIEW_PATH) + if (previewing) "&previewing=true" else ""
+			statusClient.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
+				parseLivePreview(response.code, response.body?.string())
+			}
+		} catch (e: Exception) {
+			Timber.d(e, "Live preview answer unavailable")
+			null
+		}
+	}
+
+	/**
 	 * Reset the availability cache (e.g. after server reconnect).
 	 * Also clears per-user notification state so a switched-in user doesn't
 	 * inherit the previous user's dedupe set or pending toasts.

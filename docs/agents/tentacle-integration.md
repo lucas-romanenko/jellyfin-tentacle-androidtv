@@ -99,6 +99,10 @@ The code wins where they differ.
   `detail` = "Sent to <admin> to approve…") is a success: the `detail`
   (else "Sent for approval") shows in green and the button reads
   "Requested" (`addOutcome`, `addEpisodesOutcome`).
+- **Guide live preview**: `/LivePreview` (`?previewing=true` while this TV's preview runs;
+  `{"previews","limit","active","free","recordings_soon","known"}`, 3 s, every 15 s while the
+  guide is on screen; no answer keeps what is shown). `previews` false = no box in the guide
+  header (`ui/livetv/GuidePreview.kt`, `data/repository/LivePreview.kt`).
 - **Problems in plain words**: `/FamilyStatus`
   (`{"messages":[{"area":"livetv"|"requests"|"library","text"}]}`, 3 s,
   failures ignored). `ui/livetv/LiveTvStatusNotice.kt` shows the `livetv`
@@ -276,6 +280,7 @@ and has no callers: don't wire it to a button for ordinary users.
 | GET | `/TentacleDiscover/Detail/{mediaType}/{tmdbId}` | user |
 | GET | `/TentacleDiscover/DetailTvdb/{tvdbId}` | user |
 | GET | `/TentacleDiscover/FamilyStatus` | user |
+| GET | `/TentacleDiscover/LivePreview` | user |
 | POST | `/TentacleDiscover/FixMatch/movie/{tmdbId}` | user |
 | GET | `/TentacleDiscover/FixMatch/movie/{tmdbId}/Frames` | user |
 | GET | `/TentacleDiscover/FixMatch/movie/{tmdbId}/Suggestions` | user |

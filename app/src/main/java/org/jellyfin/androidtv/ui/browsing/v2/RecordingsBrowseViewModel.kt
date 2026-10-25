@@ -25,7 +25,30 @@ import java.time.LocalDateTime
 import java.util.UUID
 
 /** What the Recording now row says under a card: since when, on which channel (from its timer). */
-data class RecordingNowInfo(val since: LocalDateTime?, val channelName: String?)
+/** A recording in progress: since when, and its channel ([channelId] null when no timer matched). */
+data class RecordingNowInfo(val since: LocalDateTime?, val channelName: String?, val channelId: UUID? = null)
+
+/** What OK does on a recording card. */
+enum class RecordingOk {
+	/** Recording now: join the channel's live stream, the one the recording reads (no new provider connection). */
+	WATCH_LIVE,
+
+	/** Recorded: as before (the item's own launch). */
+	OPEN,
+}
+
+/**
+ * OK on a recording that is still recording plays it (Lucas, 24 Oct): live, on the channel the
+ * recording already streams, which Jellyfin shares (one provider connection for both, see
+ * tentacle-share-streams). Not the growing file: Jellyfin offers no stream of a recording still
+ * being written (PlaybackInfo: NoCompatibleStream, seen on the Sony 25 Oct), so with its channel
+ * unknown, and once finished, it opens as before.
+ */
+fun recordingOk(now: RecordingNowInfo?): RecordingOk = when {
+	now == null -> RecordingOk.OPEN
+	now.channelId != null -> RecordingOk.WATCH_LIVE
+	else -> RecordingOk.OPEN
+}
 
 data class RecordingsBrowseUiState(
 	val isLoading: Boolean = true,
@@ -121,7 +144,7 @@ class RecordingsBrowseViewModel(
 		items.associate { item ->
 			val timer = timers.firstOrNull { it.name.equals(item.name, ignoreCase = true) }
 				?: timers.singleOrNull()?.takeIf { items.size == 1 }
-			item.id to RecordingNowInfo(timer?.startDate ?: item.dateCreated, timer?.channelName ?: item.channelName)
+			item.id to RecordingNowInfo(timer?.startDate ?: item.dateCreated, timer?.channelName ?: item.channelName, timer?.channelId ?: item.channelId)
 		}
 	} catch (err: ApiClientException) {
 		Timber.w(err, "Failed to read running timers")

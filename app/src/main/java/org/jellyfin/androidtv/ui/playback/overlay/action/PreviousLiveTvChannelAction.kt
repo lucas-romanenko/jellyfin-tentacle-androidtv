@@ -24,6 +24,9 @@ class PreviousLiveTvChannelAction(
 		context: Context,
 		view: View,
 	) {
-		videoPlayerAdapter.masterOverlayFragment.switchChannel(TvManager.getPrevLiveTvChannel())
+		// No channel watched before this one (first tune since the app started): nothing to go back to.
+		// It crashed the app on the Sony (playChannel got null).
+		val previous = TvManager.getPrevLiveTvChannel() ?: return
+		videoPlayerAdapter.masterOverlayFragment.switchChannel(previous)
 	}
 }

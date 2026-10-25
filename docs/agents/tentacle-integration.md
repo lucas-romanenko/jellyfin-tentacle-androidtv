@@ -144,7 +144,7 @@ The code wins where they differ.
   as Back on Home goes to the navbar; Back there leaves the guide. The grid
   keeps its place, and the first Down from the top row returns to the cell
   Back left. The Recordings screen does the same (Back on a card → its
-  switch).
+  switch; Down from the top bar → the Recorded card Back left).
 - **Favorites** (`ui/browsing/v2/FavoritesBrowseFragment.kt`, the navbar's
   heart; plain Jellyfin, no plugin call): Lucas wants only three rows, no
   header ("row for favorite movies, row for favorite shows and row for

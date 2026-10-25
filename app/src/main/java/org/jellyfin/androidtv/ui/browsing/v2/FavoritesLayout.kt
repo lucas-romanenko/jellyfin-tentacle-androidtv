@@ -1,7 +1,8 @@
 package org.jellyfin.androidtv.ui.browsing.v2
 
+import org.jellyfin.androidtv.ui.playback.segment.youtubeVideoId
 import org.jellyfin.androidtv.util.sdk.isLiveTvRecording
-import org.jellyfin.androidtv.util.sdk.isTentacleYouTube
+import org.jellyfin.androidtv.util.sdk.youTubeChannelFromPath
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 
@@ -29,6 +30,19 @@ data class FavoriteRow(val kind: FavoriteRowKind, val items: List<BaseItemDto>)
 /** Tentacle's YouTube live channels carry this tag prefix (followed by the person's id). */
 private const val YOUTUBE_CHANNEL_TAG = "tentacle-youtube-"
 
+/**
+ * True for a video from Tentacle's YouTube library, as Tentacle web's Favorites decides: its
+ * "yt:<slug>" tag, the YouTube genre, its video id or its .strm folder. Not the bare "youtube"
+ * tag: TMDB gives that keyword to ordinary films too (Bo Burnham: Inside).
+ */
+fun isFavoriteYouTubeVideo(item: BaseItemDto): Boolean {
+	if (item.type != BaseItemKind.MOVIE && item.type != BaseItemKind.VIDEO) return false
+	return item.tags.orEmpty().any { it.trim().startsWith("yt:", ignoreCase = true) }
+		|| item.genres.orEmpty().any { it.trim().equals("YouTube", ignoreCase = true) }
+		|| youtubeVideoId(item.providerIds) != null
+		|| youTubeChannelFromPath(item.path) != null
+}
+
 /** True for one of Tentacle's YouTube live channels: it goes in the YouTube row, not Live TV. */
 fun isTentacleYouTubeChannel(channel: BaseItemDto): Boolean =
 	channel.tags.orEmpty().any { it.startsWith(YOUTUBE_CHANNEL_TAG, ignoreCase = true) }
@@ -50,7 +64,7 @@ fun favoriteRows(
 	for (item in items) {
 		val kind = when {
 			item.isLiveTvRecording -> FavoriteRowKind.RECORDINGS
-			item.isTentacleYouTube -> FavoriteRowKind.YOUTUBE
+			isFavoriteYouTubeVideo(item) -> FavoriteRowKind.YOUTUBE
 			else -> when (item.type) {
 				BaseItemKind.MOVIE -> FavoriteRowKind.MOVIES
 				BaseItemKind.SERIES -> FavoriteRowKind.SHOWS

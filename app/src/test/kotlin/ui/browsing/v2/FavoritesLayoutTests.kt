@@ -54,6 +54,15 @@ class FavoritesLayoutTests : FunSpec({
 		rows[4].items shouldContainExactly listOf(recording)
 	}
 
+	test("a film TMDB tagged \"youtube\" stays a film; a yt: video is YouTube") {
+		val boBurnham = item("Bo Burnham: Inside", BaseItemKind.MOVIE, tags = listOf("youtube", "comedy"))
+		val ytVideo = item("A video", BaseItemKind.MOVIE, tags = listOf("youtube", "yt:some-channel"))
+		val rows = favoriteRows(listOf(boBurnham, ytVideo), emptyList(), emptyList())
+		rows.map { it.kind } shouldContainExactly listOf(FavoriteRowKind.MOVIES, FavoriteRowKind.YOUTUBE)
+		rows[0].items shouldContainExactly listOf(boBurnham)
+		rows[1].items shouldContainExactly listOf(ytVideo)
+	}
+
 	test("with only channels, they are the only row") {
 		favoriteRows(emptyList(), listOf(tsn), emptyList()).map { it.kind } shouldContainExactly listOf(FavoriteRowKind.CHANNELS)
 		favoriteRows(emptyList(), emptyList(), emptyList()) shouldBe emptyList()

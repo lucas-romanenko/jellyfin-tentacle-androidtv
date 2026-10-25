@@ -494,8 +494,8 @@ class FavoritesBrowseFragment : Fragment() {
 	}
 
 	private companion object {
-		const val POSTER_WIDTH = 124
-		const val POSTER_HEIGHT = 186
+		const val POSTER_WIDTH = 100
+		const val POSTER_HEIGHT = 150
 		const val WIDE_WIDTH = 200
 		const val WIDE_HEIGHT = 112
 

@@ -17,7 +17,6 @@ import org.jellyfin.androidtv.ui.livetv.withoutChannelSeparators
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.itemsApi
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
-import org.jellyfin.sdk.api.client.extensions.personsApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.ItemFields
@@ -44,10 +43,6 @@ class FavoritesBrowseViewModel(
 	private val _uiState = MutableStateFlow(FavoritesBrowseUiState())
 	val uiState: StateFlow<FavoritesBrowseUiState> = _uiState.asStateFlow()
 
-	// Kept out of uiState: the focus moves with every D-pad press, and only the header shows it.
-	private val _focusedItem = MutableStateFlow<BaseItemDto?>(null)
-	val focusedItem: StateFlow<BaseItemDto?> = _focusedItem.asStateFlow()
-
 	// The screen's place, kept while a details page or the player is on top (the fragment's view
 	// goes, this ViewModel stays): the rows' scroll and the card to focus again.
 	val listState = LazyListState()
@@ -70,7 +65,6 @@ class FavoritesBrowseViewModel(
 	// The last good read of each source: a failed read keeps what is shown
 	private var items = emptyList<BaseItemDto>()
 	private var channels = emptyList<BaseItemDto>()
-	private var people = emptyList<BaseItemDto>()
 
 	/** The first load; afterwards (back from a details page) the rows are read again in place. */
 	fun initialize() {
@@ -79,14 +73,13 @@ class FavoritesBrowseViewModel(
 	}
 
 	fun setFocusedItem(item: BaseItemDto, kind: FavoriteRowKind, index: Int) {
-		_focusedItem.value = item
 		lastFocusedId = item.id.toString()
 		lastFocusedKind = kind
 		lastFocusedIndex = index
 	}
 
 	/**
-	 * Reads every row again (three requests at once) and swaps them in: rows are keyed by item,
+	 * Reads every row again (two requests at once) and swaps them in: rows are keyed by item,
 	 * so cards that stay keep their place and focus. A read in flight is replaced.
 	 */
 	fun refresh() {
@@ -95,11 +88,9 @@ class FavoritesBrowseViewModel(
 		loadJob = viewModelScope.launch {
 			val newItems = async { loadItems() }
 			val newChannels = async { loadChannels() }
-			val newPeople = async { loadPeople() }
 			newItems.await()?.let { items = it }
 			newChannels.await()?.let { channels = it }
-			newPeople.await()?.let { people = it }
-			val rows = favoriteRows(items, channels, people)
+			val rows = favoriteRows(items, channels)
 			val ids = favoriteIds(rows)
 			val focused = lastFocusedId
 			val refocus = if (focused != null && focused in shownIds && focused !in ids) {
@@ -110,24 +101,15 @@ class FavoritesBrowseViewModel(
 		}
 	}
 
-	/** Every favourite item but channels and people, in one request. */
+	/** The favourite films and shows, in one request. */
 	private suspend fun loadItems(): List<BaseItemDto>? = try {
 		withContext(Dispatchers.IO) {
 			api.itemsApi.getItems(
 				sortBy = setOf(ItemSortBy.SORT_NAME),
 				filters = setOf(ItemFilter.IS_FAVORITE),
-				includeItemTypes = setOf(
-					BaseItemKind.MOVIE,
-					BaseItemKind.SERIES,
-					BaseItemKind.SEASON,
-					BaseItemKind.EPISODE,
-					BaseItemKind.BOX_SET,
-					BaseItemKind.PLAYLIST,
-					BaseItemKind.VIDEO,
-					BaseItemKind.MUSIC_VIDEO,
-				),
+				includeItemTypes = setOf(BaseItemKind.MOVIE, BaseItemKind.SERIES),
 				recursive = true,
-				fields = ItemRepository.browseFields + ItemFields.TAGS + ItemFields.STUDIOS,
+				fields = ItemRepository.browseFields + ItemFields.TAGS,
 				imageTypeLimit = 1,
 			).content.items
 		}
@@ -149,7 +131,6 @@ class FavoritesBrowseViewModel(
 				isFavorite = true,
 				addCurrentProgram = true,
 				enableUserData = true,
-				fields = listOf(ItemFields.TAGS),
 				sortBy = if (sortDatePlayed) setOf(ItemSortBy.DATE_PLAYED) else setOf(ItemSortBy.SORT_NAME),
 				sortOrder = if (sortDatePlayed) SortOrder.DESCENDING else SortOrder.ASCENDING,
 			).content.items.let(::withoutChannelSeparators)
@@ -158,17 +139,6 @@ class FavoritesBrowseViewModel(
 		throw err
 	} catch (err: Exception) {
 		Timber.e(err, "Failed to load favorite channels")
-		null
-	}
-
-	private suspend fun loadPeople(): List<BaseItemDto>? = try {
-		withContext(Dispatchers.IO) {
-			api.personsApi.getPersons(isFavorite = true).content.items
-		}
-	} catch (err: kotlinx.coroutines.CancellationException) {
-		throw err
-	} catch (err: Exception) {
-		Timber.e(err, "Failed to load favorite people")
 		null
 	}
 }

@@ -7,28 +7,17 @@ import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 
 /**
- * The Favourites screen's rows, in the order of Tentacle web's Favourites (Movies, Shows, Live TV,
- * YouTube, Recordings, then the rest), so the person's favourite channels are the third row. A row
- * with nothing in it isn't shown.
+ * The Favourites screen's rows (Lucas, 24 Oct: "should simply show row for favorite movies, row
+ * for favorite shows and row for favorite channels"): films, shows, then the favourite channels.
+ * A row with nothing in it isn't shown.
  */
 enum class FavoriteRowKind(val wide: Boolean) {
 	MOVIES(wide = false),
 	SHOWS(wide = false),
 	CHANNELS(wide = true),
-	YOUTUBE(wide = true),
-	RECORDINGS(wide = true),
-	SEASONS(wide = false),
-	EPISODES(wide = true),
-	COLLECTIONS(wide = false),
-	PLAYLISTS(wide = false),
-	VIDEOS(wide = true),
-	PEOPLE(wide = false),
 }
 
 data class FavoriteRow(val kind: FavoriteRowKind, val items: List<BaseItemDto>)
-
-/** Tentacle's YouTube live channels carry this tag prefix (followed by the person's id). */
-private const val YOUTUBE_CHANNEL_TAG = "tentacle-youtube-"
 
 /**
  * True for a video from Tentacle's YouTube library, as Tentacle web's Favorites decides: its
@@ -43,48 +32,19 @@ fun isFavoriteYouTubeVideo(item: BaseItemDto): Boolean {
 		|| youTubeChannelFromPath(item.path) != null
 }
 
-/** True for one of Tentacle's YouTube live channels: it goes in the YouTube row, not Live TV. */
-fun isTentacleYouTubeChannel(channel: BaseItemDto): Boolean =
-	channel.tags.orEmpty().any { it.startsWith(YOUTUBE_CHANNEL_TAG, ignoreCase = true) }
-
 /**
- * Sorts the favourites into rows: [items] (one query for every kind), [channels] (the guide's
- * favourite channels, in the guide's order) and [people]. Recordings and YouTube videos are
- * Movies or Videos to Jellyfin, so they are told apart first.
+ * Sorts the favourites into rows: [items] (films and shows, one query) and [channels] (the
+ * guide's favourite channels, in the guide's order). Recordings and YouTube videos are Movies to
+ * Jellyfin but not films, so they stay out of Films.
  */
-fun favoriteRows(
-	items: List<BaseItemDto>,
-	channels: List<BaseItemDto>,
-	people: List<BaseItemDto>,
-): List<FavoriteRow> {
-	val byKind = FavoriteRowKind.entries.associateWith { mutableListOf<BaseItemDto>() }
-	val (youTubeChannels, liveChannels) = channels.partition(::isTentacleYouTubeChannel)
-	byKind.getValue(FavoriteRowKind.CHANNELS) += liveChannels
-
-	for (item in items) {
-		val kind = when {
-			item.isLiveTvRecording -> FavoriteRowKind.RECORDINGS
-			isFavoriteYouTubeVideo(item) -> FavoriteRowKind.YOUTUBE
-			else -> when (item.type) {
-				BaseItemKind.MOVIE -> FavoriteRowKind.MOVIES
-				BaseItemKind.SERIES -> FavoriteRowKind.SHOWS
-				BaseItemKind.SEASON -> FavoriteRowKind.SEASONS
-				BaseItemKind.EPISODE -> FavoriteRowKind.EPISODES
-				BaseItemKind.BOX_SET -> FavoriteRowKind.COLLECTIONS
-				BaseItemKind.PLAYLIST -> FavoriteRowKind.PLAYLISTS
-				BaseItemKind.VIDEO, BaseItemKind.MUSIC_VIDEO -> FavoriteRowKind.VIDEOS
-				else -> null
-			}
-		} ?: continue
-		byKind.getValue(kind) += item
-	}
-	// Videos first, then the YouTube live channels, as on the web
-	byKind.getValue(FavoriteRowKind.YOUTUBE) += youTubeChannels
-	byKind.getValue(FavoriteRowKind.PEOPLE) += people
-
-	return FavoriteRowKind.entries
-		.map { FavoriteRow(it, byKind.getValue(it).distinctById()) }
-		.filter { it.items.isNotEmpty() }
+fun favoriteRows(items: List<BaseItemDto>, channels: List<BaseItemDto>): List<FavoriteRow> {
+	val movies = items.filter { it.type == BaseItemKind.MOVIE && !it.isLiveTvRecording && !isFavoriteYouTubeVideo(it) }
+	val shows = items.filter { it.type == BaseItemKind.SERIES }
+	return listOf(
+		FavoriteRow(FavoriteRowKind.MOVIES, movies.distinctById()),
+		FavoriteRow(FavoriteRowKind.SHOWS, shows.distinctById()),
+		FavoriteRow(FavoriteRowKind.CHANNELS, channels.distinctById()),
+	).filter { it.items.isNotEmpty() }
 }
 
 /** The ids of every favourite shown, to tell whether a favourite change affects the screen. */

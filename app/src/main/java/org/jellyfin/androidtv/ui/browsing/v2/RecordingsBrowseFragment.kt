@@ -40,11 +40,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
@@ -183,6 +189,14 @@ class RecordingsBrowseFragment : Fragment() {
 		var returnToShow by remember { mutableStateOf<String?>(null) }
 		var contentHasFocus by remember { mutableStateOf(false) }
 		var chipHasFocus by remember { mutableStateOf(false) }
+		// One per Recorded card ("<row>:<id>", "show:<title>"; a recording can be in two rows), so
+		// Down from the top bar returns to the card Back left, as in the guide and Favorites
+		val recordedCardFocus = remember { HashMap<String, FocusRequester>() }
+		var lastRecordedCard by remember { mutableStateOf<String?>(null) }
+		val focusLastRecordedCard: () -> Boolean = {
+			val requester = lastRecordedCard?.let { recordedCardFocus[it] }
+			requester != null && runCatching { requester.requestFocus(FocusDirection.Enter) }.getOrDefault(false)
+		}
 
 		val loading = when (tab) {
 			RecordingsTab.RECORDED -> uiState.isLoading
@@ -212,7 +226,12 @@ class RecordingsBrowseFragment : Fragment() {
 				onSelect = { tab = it },
 				onHome = { navigationRepository.navigate(Destinations.home) },
 				selectedChipFocus = chipFocus,
-				modifier = Modifier.onFocusChanged { chipHasFocus = it.hasFocus },
+				modifier = Modifier
+					.onFocusChanged { chipHasFocus = it.hasFocus }
+					.onPreviewKeyEvent { event ->
+						event.type == KeyEventType.KeyDown && event.key == Key.DirectionDown &&
+							tab == RecordingsTab.RECORDED && uiState.openShow == null && focusLastRecordedCard()
+					},
 			)
 
 			when (tab) {
@@ -244,6 +263,8 @@ class RecordingsBrowseFragment : Fragment() {
 								format = format,
 								listState = recordedList,
 								firstFocus = contentFocus,
+								cardFocus = recordedCardFocus,
+								onCardFocused = { lastRecordedCard = it },
 								returnToShow = returnToShow,
 								onShowFocusReturned = { returnToShow = null },
 								onOpenShow = { title ->
@@ -368,6 +389,8 @@ class RecordingsBrowseFragment : Fragment() {
 		format: RecordingFormat,
 		listState: LazyListState,
 		firstFocus: FocusRequester,
+		cardFocus: HashMap<String, FocusRequester>,
+		onCardFocused: (String) -> Unit,
 		returnToShow: String?,
 		onShowFocusReturned: () -> Unit,
 		onOpenShow: (String) -> Unit,
@@ -410,16 +433,24 @@ class RecordingsBrowseFragment : Fragment() {
 									runCatching { focusBack.requestFocus() }
 									onShowFocusReturned()
 								}
+								val cardKey = "show:" + show.title
 								ShowCard(
 									show = show,
 									format = format,
-									modifier = when {
-										focusBack != null -> Modifier.focusRequester(focusBack)
-										key == firstKey && show === groups.shows.first() -> Modifier.focusRequester(firstFocus)
-										else -> Modifier
-									},
+									modifier = Modifier
+										.focusRequester(cardFocus.getOrPut(cardKey) { FocusRequester() })
+										.then(
+											when {
+												focusBack != null -> Modifier.focusRequester(focusBack)
+												key == firstKey && show === groups.shows.first() -> Modifier.focusRequester(firstFocus)
+												else -> Modifier
+											}
+										),
 									onClick = { onOpenShow(show.title) },
-									onFocused = { viewModel.setFocused(RecordingFocus.Show(show)) },
+									onFocused = {
+										onCardFocused(cardKey)
+										viewModel.setFocused(RecordingFocus.Show(show))
+									},
 								)
 							}
 						}
@@ -435,14 +466,20 @@ class RecordingsBrowseFragment : Fragment() {
 					) {
 						items(items, key = { it.id }, contentType = { "recordingCard" }) { item ->
 							val now = uiState.recordingNow[item.id]
+							val cardKey = "$key:${item.id}"
 							RecordingCard(
 								item = item,
 								recordingNow = now,
 								format = format,
 								onClick = { launchItem(item) },
 								onMenu = { onMenu(item) },
-								onFocused = { viewModel.setFocused(RecordingFocus.Recording(item, now)) },
-								modifier = if (key == firstKey && item === items.first()) Modifier.focusRequester(firstFocus) else Modifier,
+								onFocused = {
+									onCardFocused(cardKey)
+									viewModel.setFocused(RecordingFocus.Recording(item, now))
+								},
+								modifier = Modifier
+									.focusRequester(cardFocus.getOrPut(cardKey) { FocusRequester() })
+									.then(if (key == firstKey && item === items.first()) Modifier.focusRequester(firstFocus) else Modifier),
 							)
 						}
 					}

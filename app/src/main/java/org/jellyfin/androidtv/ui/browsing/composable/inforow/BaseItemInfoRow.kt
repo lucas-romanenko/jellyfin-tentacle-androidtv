@@ -29,8 +29,8 @@ import org.jellyfin.androidtv.util.TimeUtils
 import org.jellyfin.androidtv.util.sdk.getProgramSubText
 import org.jellyfin.androidtv.util.sdk.getSeasonEpisodeName
 import org.jellyfin.androidtv.util.sdk.isNew
-import org.jellyfin.androidtv.util.sdk.isTentacleYouTube
-import org.jellyfin.androidtv.util.sdk.youTubeSubtitle
+import org.jellyfin.androidtv.util.sdk.hasTentacleLabel
+import org.jellyfin.androidtv.util.sdk.tentacleLabel
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.MediaSourceInfo
@@ -418,9 +418,9 @@ fun BaseItemInfoRow(
 			}
 
 			else -> {
-				if (item.isTentacleYouTube) {
-					// "YouTube · <channel>" in place of the upload date (or nothing)
-					item.youTubeSubtitle?.let { InfoRowItem(contentDescription = null) { Text(it) } }
+				if (item.hasTentacleLabel) {
+					// "YouTube · <channel>" or "Recording · Fri 23 Oct" in place of the date (or nothing)
+					item.tentacleLabel?.let { InfoRowItem(contentDescription = null) { Text(it) } }
 				} else {
 					InfoRowDate(item)
 				}

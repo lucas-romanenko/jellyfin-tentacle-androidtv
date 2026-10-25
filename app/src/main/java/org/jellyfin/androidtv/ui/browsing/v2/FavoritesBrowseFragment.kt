@@ -230,6 +230,12 @@ class FavoritesBrowseFragment : Fragment() {
 		var placed by remember { mutableStateOf(false) }
 		LaunchedEffect(uiState.isLoading, uiState.rows) {
 			if (uiState.isLoading) return@LaunchedEffect
+			val refocus = uiState.refocus
+			if (placed && refocus != null && !topHasFocus) {
+				cardFocus.getOrPut(refocus) { FocusRequester() }
+					.requestFocusSettled(isFocused = { viewModel.lastFocusedId == refocus })
+				return@LaunchedEffect
+			}
 			if (placed && (contentHasFocus || topHasFocus)) return@LaunchedEffect
 			placed = true
 			val target = favoriteFocusTarget(uiState.rows, viewModel.lastFocusedId, viewModel.lastFocusedKind, viewModel.lastFocusedIndex)

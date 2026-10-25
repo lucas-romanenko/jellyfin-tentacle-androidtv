@@ -29,6 +29,11 @@ import timber.log.Timber
 data class FavoritesBrowseUiState(
 	val isLoading: Boolean = true,
 	val rows: List<FavoriteRow> = emptyList(),
+	/**
+	 * The card to focus because the focused one just went (unstarred elsewhere): its neighbour,
+	 * chosen when the rows were swapped, before Compose moves focus somewhere of its own.
+	 */
+	val refocus: String? = null,
 )
 
 class FavoritesBrowseViewModel(
@@ -95,8 +100,13 @@ class FavoritesBrowseViewModel(
 			newChannels.await()?.let { channels = it }
 			newPeople.await()?.let { people = it }
 			val rows = favoriteRows(items, channels, people)
-			shownIds = favoriteIds(rows)
-			_uiState.value = FavoritesBrowseUiState(isLoading = false, rows = rows)
+			val ids = favoriteIds(rows)
+			val focused = lastFocusedId
+			val refocus = if (focused != null && focused in shownIds && focused !in ids) {
+				favoriteFocusTarget(rows, focused, lastFocusedKind, lastFocusedIndex)
+			} else null
+			shownIds = ids
+			_uiState.value = FavoritesBrowseUiState(isLoading = false, rows = rows, refocus = refocus)
 		}
 	}
 

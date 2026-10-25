@@ -29,9 +29,14 @@ class GuidePreviewTests : FunSpec({
 		parseLivePreview(200, """{"previews":false,"limit":8,"active":7,"free":1}""")?.previews shouldBe false
 	}
 
+	test("no limit: free is null and previews run") {
+		parseLivePreview(200, """{"previews":true,"limit":0,"active":2,"free":null,"recordings_soon":0,"known":true}""") shouldBe
+			LivePreviewAnswer(previews = true, limit = 0, active = 2, free = null)
+	}
+
 	test("the plugin without Tentacle answers no, and the server's extra fields are read") {
 		parseLivePreview(200, """{"previews":false,"limit":0,"active":0,"free":0,"recordings_soon":0,"known":false}""") shouldBe
-			LivePreviewAnswer(previews = false, known = false)
+			LivePreviewAnswer(previews = false, free = 0, known = false)
 		parseLivePreview(200, """{"previews":false,"limit":8,"active":5,"free":1,"recordings_soon":2,"known":true}""")?.recordingsSoon shouldBe 2
 	}
 

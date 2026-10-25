@@ -10,7 +10,7 @@ const val LIVE_PREVIEW_PATH = "/TentacleDiscover/LivePreview"
 /**
  * Whether the household has a provider connection to spare for a guide preview: [previews] true when
  * at least one stays free after the preview takes one (recordings about to start count as taken).
- * [limit] 0 = no limit set. [known] false: Tentacle couldn't be asked (the plugin answers "no").
+ * [limit] 0 = no limit set ([free] null then). [known] false: Tentacle couldn't be asked (the plugin answers "no").
  * Server: `GET /api/live/preview`, through the plugin's `/TentacleDiscover/LivePreview`.
  */
 @Serializable
@@ -18,7 +18,8 @@ data class LivePreviewAnswer(
 	val previews: Boolean = false,
 	val limit: Int = 0,
 	val active: Int = 0,
-	val free: Int = 0,
+	/** null when there is no limit. */
+	val free: Int? = null,
 	@SerialName("recordings_soon") val recordingsSoon: Int = 0,
 	val known: Boolean = true,
 )

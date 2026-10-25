@@ -300,7 +300,7 @@ class MultiViewFragment : Fragment() {
 	private fun openMenu() {
 		val tile = session.tiles.getOrNull(highlighted) ?: return
 		val index = highlighted
-		val actions = buildList {
+		val actions = buildList<SheetAction> {
 			add(SheetAction(getString(R.string.multiview_full_screen)) { fullScreen(index) })
 			add(SheetAction(getString(R.string.multiview_swap)) { menu.value = MenuState.Swap(index, swapChoices()) })
 			if (session.tiles.size > MultiViewPicks.MIN_TILES)

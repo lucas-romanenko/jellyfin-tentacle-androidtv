@@ -241,6 +241,13 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
             hideRecentChannels();
             switchChannel(id, false);
             return kotlin.Unit.INSTANCE;
+        }, () -> {
+            hideRecentChannels();
+            return kotlin.Unit.INSTANCE;
+        }, up -> {
+            hideRecentChannels();
+            stepChannel(up);
+            return kotlin.Unit.INSTANCE;
         });
 
         binding.getRoot().setOnTouchListener((v, event) -> {
@@ -467,7 +474,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     @Override
     public boolean onKey(View v, int keyCode, KeyEvent event) {
         if (isRecentChannelsShowing()) {
-            // Left, right and OK stay in the row; what reaches here closes it (Up, Down, Back)
+            // The row handles its own keys (RecentChannelsPanel); one that gets here anyway closes it
             if (event.getAction() == KeyEvent.ACTION_UP) {
                 if (keyCode == KeyEvent.KEYCODE_CHANNEL_UP || keyCode == KeyEvent.KEYCODE_CHANNEL_DOWN) {
                     hideRecentChannels();

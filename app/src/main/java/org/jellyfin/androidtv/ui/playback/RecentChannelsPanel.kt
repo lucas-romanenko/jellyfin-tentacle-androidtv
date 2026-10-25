@@ -1,6 +1,7 @@
 package org.jellyfin.androidtv.ui.playback
 
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.compose.foundation.background
@@ -30,6 +31,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
@@ -94,6 +96,8 @@ class RecentChannelsPanel(
 	private val fragment: CustomPlaybackOverlayFragment,
 	parent: ViewGroup,
 	private val onPick: (UUID) -> Unit,
+	private val onClose: () -> Unit,
+	private val onChannelKey: (up: Boolean) -> Unit,
 ) {
 	private val api by fragment.inject<ApiClient>()
 	private val serverRepository by fragment.inject<ServerRepository>()
@@ -205,7 +209,7 @@ class RecentChannelsPanel(
 			if (opened == 0 || firstId == null) return@LaunchedEffect
 			rowState.scrollToItem(0)
 			firstFocus.requestFocusSettled(isFocused = { firstFocused })
-			android.util.Log.i("PlayerTiming", "channel row shown +${android.os.SystemClock.uptimeMillis() - openedAtMs} ms, ${shown?.channels?.size ?: 0} channels")
+			android.util.Log.i("PlayerTiming", "channel row shown +${android.os.SystemClock.uptimeMillis() - openedAtMs} ms, ${shown.channels.size} channels")
 		}
 
 		var now by remember { mutableStateOf(LocalDateTime.now()) }
@@ -219,6 +223,23 @@ class RecentChannelsPanel(
 		Column(
 			modifier = Modifier
 				.fillMaxWidth()
+				.onPreviewKeyEvent { event ->
+					// Here, not in the player's key handling: with nothing further up or down in the
+					// row, focus could otherwise leave for the hidden player controls
+					val native = event.nativeKeyEvent
+					when (native.keyCode) {
+						KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+						KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE -> {
+							if (native.action == KeyEvent.ACTION_UP) onClose()
+							true
+						}
+						KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_CHANNEL_DOWN -> {
+							if (native.action == KeyEvent.ACTION_UP) onChannelKey(native.keyCode == KeyEvent.KEYCODE_CHANNEL_UP)
+							true
+						}
+						else -> false
+					}
+				}
 				.background(Brush.verticalGradient(listOf(Color.Transparent, GuideBackground.copy(alpha = 0.92f), GuideBackground)))
 				.padding(top = 36.dp, bottom = 28.dp),
 		) {
@@ -271,7 +292,7 @@ class RecentChannelsPanel(
 			onMenu = null,
 			onFocused = {},
 			title = channel.name.orEmpty(),
-			subtitle = if (onNow) listOfNotNull(program?.name, program?.endDate?.let { timeLeft(now, it) }).joinToString(" · ") else "",
+			subtitle = if (onNow) listOfNotNull(program.name, program.endDate?.let { timeLeft(now, it) }).joinToString(" · ") else "",
 			modifier = modifier,
 		) {
 			if (logoUrl != null) {

@@ -52,6 +52,7 @@ import org.jellyfin.androidtv.util.UUIDUtils
 import org.jellyfin.androidtv.util.apiclient.JellyfinImage
 import org.jellyfin.androidtv.util.apiclient.getUrl
 import org.jellyfin.androidtv.util.sdk.ApiClientFactory
+import org.jellyfin.androidtv.util.sdk.isLiveTvRecording
 import org.jellyfin.design.Tokens
 import org.jellyfin.playback.core.PlaybackManager
 import org.jellyfin.playback.core.model.PlayState
@@ -662,6 +663,9 @@ private fun BaseRowItem.getDisplayConfig(imageType: ImageType, uniformAspect: Bo
 					else -> base.aspectRatio
 				},
 				iconRes = R.drawable.ic_clapperboard,
+				// A recording without its poster: its 16:9 picture whole on the poster card, not cropped
+				scaleType = if (imageType == ImageType.POSTER && image != null && baseItem?.isLiveTvRecording == true &&
+					isWideForPosterCard(image)) ImageView.ScaleType.FIT_CENTER else base.scaleType,
 			)
 
 			else -> base

@@ -38,8 +38,8 @@ import org.jellyfin.androidtv.ui.presentation.CardPresenter
 import org.jellyfin.androidtv.util.Utils
 import org.jellyfin.androidtv.util.sdk.ApiClientFactory
 import org.jellyfin.androidtv.util.sdk.compat.copyWithServerId
-import org.jellyfin.androidtv.util.sdk.isTentacleYouTube
-import org.jellyfin.androidtv.util.sdk.youTubeSubtitle
+import org.jellyfin.androidtv.util.sdk.hasTentacleLabel
+import org.jellyfin.androidtv.util.sdk.tentacleLabel
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.itemsApi
 import org.jellyfin.sdk.model.api.BaseItemDto
@@ -317,9 +317,9 @@ class GenreBrowseFragment : Fragment() {
 		// Add metadata items
 		val metadataItems = mutableListOf<String>()
 		
-		// Year; for a Tentacle YouTube video "YouTube · <channel>" (or nothing)
-		val youTube = item.isTentacleYouTube
-		if (youTube) item.youTubeSubtitle?.let { metadataItems.add(it) }
+		// Year; for a Tentacle YouTube video or a recording "YouTube · <channel>" or "Recording · Fri 23 Oct"
+		val youTube = item.hasTentacleLabel
+		if (youTube) item.tentacleLabel?.let { metadataItems.add(it) }
 		else item.productionYear?.let { metadataItems.add(it.toString()) }
 		
 		// Rating (if available)

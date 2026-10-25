@@ -121,8 +121,9 @@ fun BaseItemDto.getFullName(context: Context): String? = when (type) {
 	else -> name
 }
 
-// A Tentacle YouTube video is a Movie to Jellyfin: "YouTube · <channel>", never "Movie • 2026".
-fun BaseItemDto.getSubName(context: Context): String? = if (isTentacleYouTube) youTubeSubtitle else when (type) {
+// A Tentacle YouTube video or a Live TV recording is a Movie to Jellyfin: "YouTube · <channel>" or
+// "Recording · Fri 23 Oct", never "Movie • 2026".
+fun BaseItemDto.getSubName(context: Context): String? = if (hasTentacleLabel) tentacleLabel else when (type) {
 	BaseItemKind.EPISODE -> when {
 		locationType == LocationType.VIRTUAL && name != null && premiereDate != null -> {
 			premiereDate?.let { date ->

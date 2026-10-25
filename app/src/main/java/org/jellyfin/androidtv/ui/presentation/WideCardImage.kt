@@ -28,3 +28,11 @@ internal fun fillsWideCard(image: JellyfinImage): Boolean = when (image.type) {
 	ImageType.THUMB, ImageType.BACKDROP -> true
 	else -> image.aspectRatio?.let { abs(it - WIDE_ASPECT) / WIDE_ASPECT <= 0.2f } ?: false
 }
+
+/**
+ * Whether [image] is wide (landscape) and so is shown whole on a poster card rather than cut down
+ * to its middle third. Only for Live TV recordings whose Primary is still their 16:9 picture
+ * (Tentacle's pictures off, or one a person chose): Tentacle gives recordings a 2:3 poster.
+ */
+internal fun isWideForPosterCard(image: JellyfinImage): Boolean =
+	image.type == ImageType.THUMB || image.type == ImageType.BACKDROP || (image.aspectRatio ?: 0f) > 1.2f

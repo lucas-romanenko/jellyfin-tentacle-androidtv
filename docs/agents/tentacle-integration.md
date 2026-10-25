@@ -146,23 +146,24 @@ The code wins where they differ.
   Back left. The Recordings screen does the same (Back on a card → its
   switch).
 - **Favorites** (`ui/browsing/v2/FavoritesBrowseFragment.kt`, the navbar's
-  heart; plain Jellyfin, no plugin call): built like the Recordings screen
-  (title, Home, clock, the focused card's header), rows in Tentacle web's
-  order (`FavoriteRowKind`, `favoriteRows` in `FavoritesLayout.kt`,
-  `FavoritesLayoutTests`): Movies, Shows, Live TV (the guide's favourite
-  channels, `LiveTv/Channels?isFavorite&addCurrentProgram`, in the guide's
-  order; OK tunes), YouTube (videos by `isFavoriteYouTubeVideo`: a `yt:`
-  tag, the YouTube genre, a video id or the .strm folder, never the bare
-  TMDB `youtube` tag; then live channels tagged
-  `tentacle-youtube-*`), Recordings, Seasons, Episodes, Collections,
-  Playlists, Videos, People; an empty row isn't shown. Three reads at once
-  (one `Items?filters=IsFavorite` for every kind, the channels, the
-  people). Live, in place: `UserDataChanged` that adds or removes a
-  favourite (`favoritesChanged`), `LibraryChanged` after 1.5 s, a socket
-  reconnect, every minute (what's on now), and back from a details page.
-  The ViewModel keeps the rows' scroll and the last card (back from a
-  details page focus returns to it; a removed card's neighbour takes it).
-  Back on a card → Home button; Back there leaves.
+  heart; plain Jellyfin, no plugin call): Lucas wants only three rows, no
+  header ("row for favorite movies, row for favorite shows and row for
+  favorite channels"; a header with the focused card's description covered
+  the cards). The title with Home and the clock, then Films, Shows and
+  Channels (`FavoriteRowKind`, `favoriteRows` in `FavoritesLayout.kt`,
+  `FavoritesLayoutTests`), sized so all three fit on the screen whole
+  (posters 72 × 108, channels 144 × 81). Films leave out recordings and
+  YouTube videos (`isFavoriteYouTubeVideo`: a `yt:` tag, the YouTube genre, a
+  video id or the .strm folder, never the bare TMDB `youtube` tag). Channels
+  are the guide's favourites (`LiveTv/Channels?isFavorite&addCurrentProgram`,
+  in the guide's order): logo, number, what's on, time left; OK tunes. An
+  empty row isn't shown. Two reads at once. Live, in place: `UserDataChanged`
+  that adds or removes a favourite (`favoritesChanged`), `LibraryChanged`
+  after 1.5 s, a socket reconnect, every minute (what's on now), and back
+  from a details page. The ViewModel keeps the rows' scroll and the last card
+  (back from a details page focus returns to it; a removed card's neighbour
+  takes it). Back on a card → Home button; Back there leaves; Down returns
+  to the card.
 - **Episode picker** (`ui/discover/EpisodePickerDialog.kt`,
   `EpisodePickerMode`): `ADD_NEW` (add a series with chosen episodes),
   `DOWNLOAD_MORE` (VOD series: download missing episodes), `MANAGE` (change

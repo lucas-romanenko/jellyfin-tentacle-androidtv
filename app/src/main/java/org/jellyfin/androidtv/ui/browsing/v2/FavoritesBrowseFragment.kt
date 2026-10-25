@@ -73,8 +73,6 @@ import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.util.apiclient.itemImages
 import org.jellyfin.androidtv.util.apiclient.parentImages
-import org.jellyfin.androidtv.util.sdk.hasTentacleLabel
-import org.jellyfin.androidtv.util.sdk.tentacleLabel
 import org.jellyfin.sdk.api.sockets.subscribe
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
@@ -89,10 +87,10 @@ import kotlin.time.Duration.Companion.seconds
 import org.jellyfin.sdk.model.api.ImageType as JellyfinImageType
 
 /**
- * Favourites, in the guide's style like the Recordings screen (Lucas, 24 Oct): the bold title with
- * Home and the clock, the focused card's header, then rows that scroll sideways in the order of
- * Tentacle web's Favourites ([FavoriteRowKind]: Movies, Shows, the favourite channels third, …).
- * OK on a channel tunes it.
+ * Favourites (Lucas, 24 Oct: "should simply show row for favorite movies, row for favorite shows
+ * and row for favorite channels"): the bold title with Home and the clock, then three rows that
+ * scroll sideways, Films, Shows and Channels ([FavoriteRowKind]), all on the screen at once with
+ * nothing over them (no header: it covered the cards). OK on a channel tunes it.
  *
  * Follows changes while on screen, in place (focus and scroll stay): a favourite added or removed
  * anywhere (Jellyfin's UserDataChanged: Tentacle's My Channels, the web, the guide), Tentacle's
@@ -201,7 +199,6 @@ class FavoritesBrowseFragment : Fragment() {
 				onDown = { focusCard(viewModel.lastFocusedId) },
 				modifier = Modifier.onFocusChanged { topHasFocus = it.hasFocus },
 			)
-			FavoritesHeader(now)
 
 			Box(
 				modifier = Modifier
@@ -250,7 +247,7 @@ class FavoritesBrowseFragment : Fragment() {
 		Row(
 			modifier = modifier
 				.fillMaxWidth()
-				.padding(start = 24.dp, end = 32.dp, top = 19.dp)
+				.padding(start = 24.dp, end = 32.dp, top = 14.dp)
 				.height(34.dp),
 			verticalAlignment = Alignment.CenterVertically,
 		) {
@@ -275,37 +272,6 @@ class FavoritesBrowseFragment : Fragment() {
 		}
 	}
 
-	/** The focused card, as the guide's header: picture, name, a purple line, a grey line. */
-	@Composable
-	private fun FavoritesHeader(now: LocalDateTime) {
-		val item by viewModel.focusedItem.collectAsState()
-		val px = rememberCardPx(160, 90)
-		val format = rememberRecordingFormat()
-		val focused = item
-		when {
-			focused == null -> GuideStyleHeader(imageUrl = null, title = "", timeLine = "", detail = null)
-			focused.type == BaseItemKind.TV_CHANNEL -> {
-				val program = focused.currentProgram?.takeIf { isOnNow(it, now) }
-				GuideStyleHeader(
-					imageUrl = remember(focused.id, px) { channelLogoUrl(focused, px) },
-					imageScale = ContentScale.Fit,
-					title = program?.name ?: focused.name.orEmpty(),
-					timeLine = listOfNotNull(
-						program?.startDate?.let { format.span(it, program.endDate) },
-						program?.endDate?.let { timeLeft(now, it) },
-					).joinToString(" · "),
-					detail = listOfNotNull(focused.number, focused.name).joinToString(" "),
-				)
-			}
-			else -> GuideStyleHeader(
-				imageUrl = remember(focused.id, px) { wideImageUrl(focused, px) },
-				title = focused.name.orEmpty(),
-				timeLine = cardSubtitle(focused),
-				detail = focused.overview,
-			)
-		}
-	}
-
 	@Composable
 	private fun FavoriteRows(
 		rows: List<FavoriteRow>,
@@ -315,7 +281,7 @@ class FavoritesBrowseFragment : Fragment() {
 		LazyColumn(
 			state = viewModel.listState,
 			modifier = Modifier.fillMaxSize(),
-			contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+			contentPadding = PaddingValues(top = 4.dp, bottom = 8.dp),
 		) {
 			for (row in rows) {
 				item(key = row.kind.name, contentType = if (row.kind.wide) "wideRow" else "posterRow") {
@@ -347,7 +313,7 @@ class FavoritesBrowseFragment : Fragment() {
 			fontSize = 15.sp,
 			fontWeight = FontWeight.Bold,
 			color = Color.White,
-			modifier = Modifier.padding(start = 60.dp, top = 8.dp, bottom = 7.dp),
+			modifier = Modifier.padding(start = 60.dp, top = 6.dp, bottom = 5.dp),
 		)
 	}
 
@@ -366,7 +332,8 @@ class FavoritesBrowseFragment : Fragment() {
 			onMenu = null,
 			onFocused = onFocused,
 			title = item.name.orEmpty(),
-			subtitle = remember(item) { cardSubtitle(item) },
+			// The name only: three rows fit on the screen with nothing cut off
+			subtitle = "",
 			modifier = modifier,
 		) {
 			if (imageUrl != null) {
@@ -404,7 +371,7 @@ class FavoritesBrowseFragment : Fragment() {
 					contentDescription = channel.name,
 					modifier = Modifier
 						.fillMaxSize()
-						.padding(horizontal = 30.dp, vertical = 20.dp),
+						.padding(horizontal = 22.dp, vertical = 14.dp),
 					contentScale = ContentScale.Fit,
 				)
 			} else {
@@ -447,31 +414,7 @@ class FavoritesBrowseFragment : Fragment() {
 	private fun rowTitle(kind: FavoriteRowKind): Int = when (kind) {
 		FavoriteRowKind.MOVIES -> R.string.lbl_movies
 		FavoriteRowKind.SHOWS -> R.string.lbl_shows
-		FavoriteRowKind.CHANNELS -> R.string.lbl_guide_title
-		FavoriteRowKind.YOUTUBE -> R.string.lbl_favorites_youtube
-		FavoriteRowKind.RECORDINGS -> R.string.lbl_recordings
-		FavoriteRowKind.SEASONS -> R.string.lbl_seasons
-		FavoriteRowKind.EPISODES -> R.string.lbl_episodes
-		FavoriteRowKind.COLLECTIONS -> R.string.lbl_collections
-		FavoriteRowKind.PLAYLISTS -> R.string.lbl_playlists
-		FavoriteRowKind.VIDEOS -> R.string.lbl_videos
-		FavoriteRowKind.PEOPLE -> R.string.lbl_people
-	}
-
-	/** The grey line under a card: "Recording · Fri 23 Oct", "YouTube · <channel>", the year, "Show · S2 E13". */
-	private fun cardSubtitle(item: BaseItemDto): String {
-		if (item.hasTentacleLabel) item.tentacleLabel?.let { return it }
-		return when (item.type) {
-			BaseItemKind.EPISODE -> listOfNotNull(
-				item.seriesName,
-				listOfNotNull(item.parentIndexNumber?.let { "S$it" }, item.indexNumber?.let { "E$it" }).joinToString(" ").takeIf { it.isNotEmpty() },
-			).joinToString(" · ")
-			BaseItemKind.SEASON -> item.seriesName.orEmpty()
-			BaseItemKind.PLAYLIST, BaseItemKind.BOX_SET -> item.childCount?.takeIf { it > 0 }?.let {
-				resources.getQuantityString(R.plurals.items, it, it)
-			}.orEmpty()
-			else -> item.productionYear?.toString().orEmpty()
-		}
+		FavoriteRowKind.CHANNELS -> R.string.lbl_favorites_channels
 	}
 
 	private fun posterImageUrl(item: BaseItemDto, px: CardPx): String? {
@@ -500,10 +443,11 @@ class FavoritesBrowseFragment : Fragment() {
 	}
 
 	private companion object {
-		const val POSTER_WIDTH = 100
-		const val POSTER_HEIGHT = 150
-		const val WIDE_WIDTH = 200
-		const val WIDE_HEIGHT = 112
+		// Sized so the three rows fit on the screen whole, under the title (540 dp tall)
+		const val POSTER_WIDTH = 72
+		const val POSTER_HEIGHT = 108
+		const val WIDE_WIDTH = 144
+		const val WIDE_HEIGHT = 81
 
 		/** Jellyfin sends UserDataChanged per item: one read for a burst (several stars at once). */
 		const val FAVORITE_SETTLE_MS = 300L

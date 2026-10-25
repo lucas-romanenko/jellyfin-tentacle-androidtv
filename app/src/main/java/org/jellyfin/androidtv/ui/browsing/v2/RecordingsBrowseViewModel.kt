@@ -33,9 +33,6 @@ enum class RecordingOk {
 	/** Recording now: join the channel's live stream, the one the recording reads (no new provider connection). */
 	WATCH_LIVE,
 
-	/** Recording now, its channel unknown: the growing file from the start (no provider connection). */
-	PLAY_FROM_START,
-
 	/** Recorded: as before (the item's own launch). */
 	OPEN,
 }
@@ -43,12 +40,14 @@ enum class RecordingOk {
 /**
  * OK on a recording that is still recording plays it (Lucas, 24 Oct): live, on the channel the
  * recording already streams, which Jellyfin shares (one provider connection for both, see
- * tentacle-share-streams); its menu has Play from start too. A finished one opens as before.
+ * tentacle-share-streams). Not the growing file: Jellyfin offers no stream of a recording still
+ * being written (PlaybackInfo: NoCompatibleStream, seen on the Sony 25 Oct), so with its channel
+ * unknown, and once finished, it opens as before.
  */
 fun recordingOk(now: RecordingNowInfo?): RecordingOk = when {
 	now == null -> RecordingOk.OPEN
 	now.channelId != null -> RecordingOk.WATCH_LIVE
-	else -> RecordingOk.PLAY_FROM_START
+	else -> RecordingOk.OPEN
 }
 
 data class RecordingsBrowseUiState(

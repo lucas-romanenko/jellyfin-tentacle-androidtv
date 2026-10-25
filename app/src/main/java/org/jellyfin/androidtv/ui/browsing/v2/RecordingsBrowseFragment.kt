@@ -658,10 +658,10 @@ class RecordingsBrowseFragment : Fragment() {
 		val now = viewModel.uiState.value.recordingNow[item.id]
 		val actions = buildList {
 			if (now != null) {
-				// Still recording: live (shares the recording's stream), or the growing file from 0:00
+				// Still recording: live, sharing the recording's stream (Jellyfin won't stream the
+				// growing file, so there is no Play from start until it has finished)
 				val channelId = now.channelId
 				if (channelId != null) add(SheetAction(context.getString(R.string.lbl_watch_live)) { watchLive(channelId) })
-				add(SheetAction(context.getString(R.string.lbl_play_from_start)) { play(item, 0) })
 			} else if (resume != null) {
 				val prerollSeconds = userPreferences[UserPreferences.resumeSubtractDuration].toIntOrNull() ?: 0
 				val startMs = resumeStartMs(item, prerollSeconds)
@@ -709,7 +709,6 @@ class RecordingsBrowseFragment : Fragment() {
 	private fun openRecording(item: BaseItemDto, now: RecordingNowInfo?) {
 		when (recordingOk(now)) {
 			RecordingOk.WATCH_LIVE -> watchLive(requireNotNull(now?.channelId))
-			RecordingOk.PLAY_FROM_START -> play(item, 0)
 			RecordingOk.OPEN -> launchItem(item)
 		}
 	}

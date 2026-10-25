@@ -12,8 +12,8 @@ class RecordingOkTests : FunSpec({
 		recordingOk(RecordingNowInfo(since, "TSN 2", UUID.randomUUID())) shouldBe RecordingOk.WATCH_LIVE
 	}
 
-	test("recording now, channel unknown: the growing file from the start") {
-		recordingOk(RecordingNowInfo(since, null, null)) shouldBe RecordingOk.PLAY_FROM_START
+	test("recording now, channel unknown: opens as before (Jellyfin won't stream the growing file)") {
+		recordingOk(RecordingNowInfo(since, null, null)) shouldBe RecordingOk.OPEN
 	}
 
 	test("a finished recording opens as before") {

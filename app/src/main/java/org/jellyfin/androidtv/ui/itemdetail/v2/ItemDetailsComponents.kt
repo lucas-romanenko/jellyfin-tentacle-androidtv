@@ -4,6 +4,7 @@ import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -1003,12 +1004,6 @@ fun TrackItemCard(
 						event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_INFO -> {
 						onMenuAction?.invoke(); onMenuAction != null
 					}
-					// Long-press center/enter also opens the menu
-					event.nativeKeyEvent.isLongPress &&
-						(event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-							event.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_ENTER) -> {
-						onMenuAction?.invoke(); onMenuAction != null
-					}
 					// Reorder with left/right
 					canReorder && event.key == Key.DirectionLeft -> {
 						if (!isFirst) { onMoveUp?.invoke(); true } else false
@@ -1019,10 +1014,13 @@ fun TrackItemCard(
 					else -> false
 				}
 			}
-			.clickable(
+			// A long press of OK opens the menu (onLongClick). Seen on the Sony: caught in onKeyEvent it
+			// never fired (clickable takes OK first), and letting go played the track.
+			.combinedClickable(
 				interactionSource = interactionSource,
 				indication = null,
 				onClick = onClick,
+				onLongClick = onMenuAction,
 			)
 			.focusable(interactionSource = interactionSource)
 			.background(

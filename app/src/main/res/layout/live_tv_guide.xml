@@ -73,6 +73,16 @@
                 android:orientation="horizontal" />
         </HorizontalScrollView>
 
+        <!-- Multi-view: pick 2-4 channels in the guide, then Start (becomes "2 of 4 · Start") -->
+        <TextView
+            android:id="@+id/multiViewButton"
+            style="@style/GuideChip"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginEnd="8dp"
+            android:drawableStart="@drawable/guide_ic_multiview"
+            android:text="@string/lbl_multiview" />
+
         <!-- One way into Recordings (Recorded | Scheduled | Series), #203 -->
         <TextView
             android:id="@+id/recordingsButton"
@@ -87,6 +97,50 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="16dp" />
+    </LinearLayout>
+
+    <!-- Multi-view pick mode: what is picked and how to go on; over the focused programme -->
+    <LinearLayout
+        android:id="@+id/multiViewBar"
+        android:layout_width="match_parent"
+        android:layout_height="90dp"
+        android:layout_below="@id/header"
+        android:layout_marginStart="24dp"
+        android:layout_marginTop="12dp"
+        android:layout_marginEnd="24dp"
+        android:background="@color/tentacle_bg"
+        android:elevation="2dp"
+        android:gravity="center_vertical"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/multiViewTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium"
+            android:text="@string/multiview_pick_title"
+            android:textColor="@color/white"
+            android:textSize="20sp" />
+
+        <TextView
+            android:id="@+id/multiViewPicked"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/tentacle_accent"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/multiViewHint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/multiview_pick_hint"
+            android:textColor="@color/guide_text_muted"
+            android:textSize="14sp" />
     </LinearLayout>
 
     <!-- The focused programme -->

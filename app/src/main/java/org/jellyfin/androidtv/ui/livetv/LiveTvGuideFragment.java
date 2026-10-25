@@ -59,6 +59,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import org.jellyfin.androidtv.ui.livetv.multiview.GuideMultiViewPick;
+
 import kotlin.Lazy;
 import kotlinx.coroutines.flow.MutableStateFlow;
 import timber.log.Timber;
@@ -142,6 +144,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
     private final Lazy<PlaybackHelper> playbackHelper = inject(PlaybackHelper.class);
     private final Lazy<ImageHelper> imageHelper = inject(ImageHelper.class);
     private final Lazy<PlaybackLauncher> playbackLauncher = inject(PlaybackLauncher.class);
+    // Multi-view: the button next to Recordings and the guide's pick mode
+    private GuideMultiViewPick mMultiView;
     private MutableStateFlow<Boolean> showFilterOptions;
 
     // Favourite and lineup changes while the guide is open, applied in place (GuideLiveUpdates)
@@ -210,6 +214,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         mViewAll.setOnClickListener(v -> setView(GuideView.ALL));
         mShowAllButton.setOnClickListener(v -> setView(GuideView.ALL));
         LiveTvGuideFragmentHelperKt.setupGuideLinks(this, binding);
+        mMultiView = new GuideMultiViewPick(this, binding, mChannels);
         updateToggle();
 
         mResetButton = binding.resetButton;
@@ -276,6 +281,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         super.onViewCreated(view, savedInstanceState);
         // Back in the grid: the top row first (the switch shown), as on Home; Back again leaves
         new GuideBackToTop(this, this::isInGrid, () -> mView == GuideView.ALL ? mViewAll : mViewFavorites).attach(view);
+        // Added after it, so while picking channels for multi-view Back cancels the pick first
+        mMultiView.attach(getViewLifecycleOwner());
     }
 
     private int getGuideHours() {
@@ -610,6 +617,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         switch (keyCode){
             case KeyEvent.KEYCODE_ENTER:
             case KeyEvent.KEYCODE_DPAD_CENTER:
+                if (mMultiView.isActive()) return true; // picking: a long press is a pick, on release
                 if (mSelectedProgramView instanceof ProgramGridCell)
                     showProgramOptions();
                 else if(mSelectedProgramView instanceof GuideChannelHeader)
@@ -627,6 +635,14 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
                 break;
             case KeyEvent.KEYCODE_ENTER:
             case KeyEvent.KEYCODE_DPAD_CENTER:
+                if (mMultiView.isActive()) {
+                    // Picking channels for multi-view: OK ticks (or unticks) the row's channel
+                    if (mSelectedProgramView instanceof ProgramGridCell && mSelectedProgram != null)
+                        mMultiView.pick(mSelectedProgram.getChannelId());
+                    else if (mSelectedProgramView instanceof GuideChannelHeader)
+                        mMultiView.pick(((GuideChannelHeader) mSelectedProgramView).getChannel().getId());
+                    return true;
+                }
                 if ((event.getFlags() & KeyEvent.FLAG_CANCELED_LONG_PRESS) == 0) {
                     if (mSelectedProgramView instanceof ProgramGridCell) {
                         if (mSelectedProgram.getStartDate().isBefore(LocalDateTime.now()))
@@ -649,6 +665,10 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
                 return false;
             case KeyEvent.KEYCODE_MEDIA_PLAY:
             case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+                if (mMultiView.isActive()) {
+                    mMultiView.start();
+                    return true;
+                }
                 if ((mDetailPopup == null || !mDetailPopup.isShowing())
                         && mSelectedProgram != null
                         && mSelectedProgram.getChannelId() != null) {
@@ -956,6 +976,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
                 LinearLayout row = rows[i];
                 GuideChannelHeader header = headers[i];
                 mChannels.addView(header);
+                mMultiView.decorate(header);
                 header.loadImage();
                 mProgramRows.addView(row);
                 if (i == 0 && firstFocusView == null) firstFocusView = row;

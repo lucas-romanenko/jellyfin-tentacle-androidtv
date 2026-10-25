@@ -145,6 +145,25 @@ The code wins where they differ.
   keeps its place, and the first Down from the top row returns to the cell
   Back left. The Recordings screen does the same (Back on a card → its
   switch; Down from the top bar → the Recorded card Back left).
+- **Multi-view** (`ui/livetv/multiview/`, server `services/multiview.py`):
+  the guide's Multi-view chip (next to Recordings) asks
+  `GET /TentacleDiscover/MultiView` (free connections; a Toast says why
+  not) and puts the guide in pick mode (`GuideMultiViewPick.kt`): OK on a
+  channel or its programme ticks it (`pickBadge` 1-4 on the row, OK again
+  unticks; `MultiViewPicks`), the chip reads "2 of 4 · Start", Play starts
+  too, Back cancels (an `OnBackPressedCallback` added after
+  `GuideBackToTop`). Start posts the Jellyfin channel ids; Tentacle answers
+  a session with one 1080p MPEG-TS picture (2 side by side, 3-4 as 2x2)
+  and one audio track per tile. `MultiViewFragment` plays it with its own
+  ExoPlayer; the D-pad moves the highlight (`TileGrid`) and selects that
+  tile's audio track (`TrackSelectionOverride` on the n-th audio group); OK
+  = that channel through the normal player (`retrieveAndPlay`; its upstream
+  is open on the server, so no new connection), Back there returns here;
+  hold OK / Menu = full screen, swap (favourites), remove (`PUT`). A
+  keepalive every 15 s while the app is in front (the fragment stays in the
+  history, detached, while a channel plays); `onDestroy` (Back here, or
+  the history cleared) sends `DELETE`, and the server closes a session
+  alone after 45 s without a reader or keepalive.
 - **Favorites** (`ui/browsing/v2/FavoritesBrowseFragment.kt`, the navbar's
   heart; plain Jellyfin, no plugin call): Lucas wants only three rows, no
   header ("row for favorite movies, row for favorite shows and row for
@@ -259,6 +278,10 @@ and has no callers: don't wire it to a button for ordinary users.
 | GET | `/TentacleDiscover/FixMatch/movie/{tmdbId}/Suggestions` | user |
 | POST | `/TentacleDiscover/Follow/{tmdbId}` | user |
 | GET | `/TentacleDiscover/Genre` | user |
+| GET, POST | `/TentacleDiscover/MultiView` | user |
+| PUT, DELETE | `/TentacleDiscover/MultiView/{id}` | user |
+| POST | `/TentacleDiscover/MultiView/{id}/Keepalive` | user |
+| GET | `/TentacleDiscover/MultiView/{id}/Stream` | none (the session id) |
 | GET | `/TentacleDiscover/Genres` | user |
 | GET | `/TentacleDiscover/Items` | user |
 | DELETE | `/TentacleDiscover/LibraryItem/{mediaType}/{tmdbId}` | user |

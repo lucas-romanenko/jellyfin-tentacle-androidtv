@@ -60,6 +60,8 @@ public class TvManager {
         systemPreferences.set(SystemPreferences.Companion.getLiveTvPrevChannel(), systemPreferences.get(SystemPreferences.Companion.getLiveTvLastChannel()));
         systemPreferences.set(SystemPreferences.Companion.getLiveTvLastChannel(), id.toString());
         updateLastPlayedDate(id);
+        // The player's recent channels know it before the server has the start report
+        RecentChannelsStore.notePlayed(id, LocalDateTime.now());
         fillChannelIds();
     }
 

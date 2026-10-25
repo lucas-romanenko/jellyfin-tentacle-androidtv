@@ -186,11 +186,13 @@ class GuidePreview(
 
 	/**
 	 * The surface sits under the picture (a SurfaceView only gets a surface while visible), so the
-	 * video shows by hiding the picture once its first frame is drawn.
+	 * video shows by hiding the picture once its first frame is drawn. It is there only while a
+	 * preview plays: a stopped preview's last frame must not stay behind a programme without a
+	 * picture (seen on the Sony: PBS Kids' frame under Boomerang's next programme).
 	 */
 	private fun refreshVisibility() {
 		val width = box.layoutParams.width
-		surface.visibility = if (width == 0) View.GONE else View.VISIBLE
+		surface.visibility = if (width == 0 || playing == null) View.GONE else View.VISIBLE
 		box.visibility = if (width == 0 || showingVideo) View.INVISIBLE else View.VISIBLE
 	}
 
@@ -283,6 +285,7 @@ class GuidePreview(
 			liveStreamId = session.liveStreamId,
 		)
 		playing = session
+		refreshVisibility()
 		val listener = object : Player.Listener {
 			override fun onRenderedFirstFrame() {
 				if (playing === session) setShowingVideo(true)
@@ -299,6 +302,7 @@ class GuidePreview(
 			currentPlayer = null
 			playing?.let { release(it, after = 0) }
 			playing = null
+			refreshVisibility()
 		}
 		player.setVideoSurfaceView(surface)
 		currentPlayer = player
@@ -315,6 +319,7 @@ class GuidePreview(
 		val session = playing ?: return
 		playing = null
 		setShowingVideo(false)
+		refreshVisibility()
 		player()?.clearVideoSurfaceView(surface)
 		CardPreviewPlayer.giveBack(owner)
 		release(session, after = 0)
@@ -334,6 +339,7 @@ class GuidePreview(
 		}
 		playing = null
 		setShowingVideo(false)
+		refreshVisibility()
 		player()?.clearVideoSurfaceView(surface)
 		CardPreviewPlayer.giveBack(owner)
 		release(session, after = GUIDE_PREVIEW_HANDOFF_MS)

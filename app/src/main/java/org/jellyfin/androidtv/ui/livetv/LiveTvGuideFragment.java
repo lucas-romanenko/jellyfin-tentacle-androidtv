@@ -1774,8 +1774,25 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
 
         mDisplayDate.setText(TimeUtils.getFriendlyDate(requireContext(), mSelectedProgram.getStartDate()));
         String url = imageHelper.getValue().getPrimaryImageUrl(mSelectedProgram, null, ImageHelper.MAX_PRIMARY_IMAGE_HEIGHT);
+        // No picture of its own (short or ended programmes often have none): the channel's logo, never an empty box
+        if (url == null) url = channelImageUrl(mSelectedProgram.getChannelId());
         mImage.load(url, null, ContextCompat.getDrawable(requireContext(), R.drawable.blank10x10), 0, 0);
 
+    }
+
+    /** The logo of a channel in the list shown, or null. */
+    private String channelImageUrl(java.util.UUID channelId) {
+        if (channelId == null || mChannels == null) return null;
+        for (int i = 0; i < mChannels.getChildCount(); i++) {
+            View child = mChannels.getChildAt(i);
+            if (child instanceof GuideChannelHeader) {
+                BaseItemDto channel = ((GuideChannelHeader) child).getChannel();
+                if (channel != null && channelId.equals(channel.getId())) {
+                    return imageHelper.getValue().getPrimaryImageUrl(channel, null, ImageHelper.MAX_PRIMARY_IMAGE_HEIGHT);
+                }
+            }
+        }
+        return null;
     }
 
     /**

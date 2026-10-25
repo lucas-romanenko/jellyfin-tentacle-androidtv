@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -90,6 +91,15 @@ class MultiViewFragment : Fragment() {
 	private var busy = false
 	private var closed = false
 
+	/**
+	 * The app left the foreground (Home, another input or app): multi-view ends right there and
+	 * every connection goes back, as with Back. Coming back opens the guide (onStart), not a grid
+	 * whose session the server was about to drop.
+	 */
+	private val appStopped = LifecycleEventObserver { _, event ->
+		if (event == Lifecycle.Event.ON_STOP && activity?.isChangingConfigurations != true) leave()
+	}
+
 	/** Leaving is done once, on a scope that outlives this screen. */
 	private val leaveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -97,6 +107,7 @@ class MultiViewFragment : Fragment() {
 		super.onCreate(savedInstanceState)
 		session = multiViewJson.decodeFromString(requireArguments().getString(ARG_SESSION)!!)
 		highlighted = savedInstanceState?.getInt("highlighted") ?: 0
+		requireActivity().lifecycle.addObserver(appStopped)
 		startKeepAlive()
 	}
 
@@ -154,6 +165,10 @@ class MultiViewFragment : Fragment() {
 
 	override fun onStart() {
 		super.onStart()
+		if (closed) {
+			view?.post { if (isAdded) navigationRepository.goBack() }
+			return
+		}
 		play()
 	}
 
@@ -172,6 +187,7 @@ class MultiViewFragment : Fragment() {
 
 	override fun onDestroy() {
 		super.onDestroy()
+		activity?.lifecycle?.removeObserver(appStopped)
 		leave()
 	}
 

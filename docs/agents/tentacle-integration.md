@@ -152,7 +152,8 @@ The code wins where they differ.
   channel or its programme ticks it (`pickBadge` 1-4 on the row, OK again
   unticks; `MultiViewPicks`), the chip reads "2 of 4 · Start", Play starts
   too, Back cancels (an `OnBackPressedCallback` added after
-  `GuideBackToTop`). Start posts the Jellyfin channel ids; Tentacle answers
+  `GuideBackToTop`); the bar covers Filters, so pick mode makes it
+  invisible (else Up/Down from the chip landed on it). Start posts the Jellyfin channel ids; Tentacle answers
   a session with one 1080p MPEG-TS picture (2 side by side, 3-4 as 2x2)
   and one audio track per tile. `MultiViewFragment` plays it with its own
   ExoPlayer; the D-pad moves the highlight (`TileGrid`) and selects that
@@ -162,8 +163,10 @@ The code wins where they differ.
   hold OK / Menu = full screen, swap (favourites), remove (`PUT`). A
   keepalive every 15 s while the app is in front (the fragment stays in the
   history, detached, while a channel plays); `onDestroy` (Back here, or
-  the history cleared) sends `DELETE`, and the server closes a session
-  alone after 45 s without a reader or keepalive.
+  the history cleared) sends `DELETE`, and so does the app leaving the
+  foreground (the activity's `ON_STOP`: Home, another input or app; coming
+  back opens the guide, not a grid the server was about to drop). The
+  server closes a session alone after 45 s without a reader or keepalive.
 - **Favorites** (`ui/browsing/v2/FavoritesBrowseFragment.kt`, the navbar's
   heart; plain Jellyfin, no plugin call): Lucas wants only three rows, no
   header ("row for favorite movies, row for favorite shows and row for

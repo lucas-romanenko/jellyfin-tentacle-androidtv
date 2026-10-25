@@ -23,6 +23,7 @@ import org.jellyfin.androidtv.ui.itemdetail.v2.ItemDetailsFragment
 import org.jellyfin.androidtv.ui.itemdetail.v2.TrailerPlayerFragment
 import org.jellyfin.androidtv.ui.itemdetail.MusicFavoritesListFragment
 import org.jellyfin.androidtv.ui.livetv.LiveTvGuideFragment
+import org.jellyfin.androidtv.ui.livetv.multiview.MultiViewFragment
 import org.jellyfin.androidtv.ui.playback.AudioNowPlayingFragment
 import org.jellyfin.androidtv.ui.playback.CustomPlaybackOverlayFragment
 import org.jellyfin.androidtv.ui.playback.nextup.NextUpFragment
@@ -192,6 +193,8 @@ object Destinations {
 	val liveTvSeriesRecordings get() = recordings(RecordingsTab.SERIES)
 	private fun recordings(tab: RecordingsTab) =
 		fragmentDestination<RecordingsBrowseFragment>(RecordingsBrowseFragment.EXTRA_TAB to tab.name)
+	// Multi-view: Tentacle's picture of 2-4 channels (the session as JSON)
+	fun multiView(session: String) = fragmentDestination<MultiViewFragment>(MultiViewFragment.ARG_SESSION to session)
 
 	// Playback
 	val nowPlaying = fragmentDestination<AudioNowPlayingFragment>()

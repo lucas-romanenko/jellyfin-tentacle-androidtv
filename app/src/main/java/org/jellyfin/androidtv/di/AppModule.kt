@@ -200,6 +200,7 @@ val appModule = module {
 	single { TmdbRepository(get<OkHttpFactory>().createClient(get()), get(), get()) }
 	// Tentacle plugin integration
 	single { TentacleRepository(androidContext(), get(), get(), get<OkHttpFactory>().createClient(get<HttpClientOptions>())) }
+	single { org.jellyfin.androidtv.data.repository.MultiViewRepository(get(), get(), get<OkHttpFactory>().createClient(get<HttpClientOptions>())) }
 
 	viewModel { StartupViewModel(get(), get(), get(), get()) }
 	viewModel { UserLoginViewModel(get(), get(), get(), get(defaultDeviceInfo)) }

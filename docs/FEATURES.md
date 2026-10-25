@@ -37,6 +37,8 @@ of the version that removed the options.
 - Posters, no series thumbnails; theme music off
 - Live TV guide: favourites first. The guide's options button is gone; its filters stay
   (the filter button in the guide).
+- Live TV multi-view (try-out): Multi-view in the guide, tick 2-4 channels, Start. One
+  picture from Tentacle; the highlighted tile is heard, OK = full screen, Back = the grid.
 
 Playback choices made on the TV before (maximum bitrate and resolution, refresh-rate
 switching, audio output, external player) are kept as they were; new installs get the

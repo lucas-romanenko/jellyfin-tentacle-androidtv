@@ -1,0 +1,11 @@
+<!-- Multi-view: four tiles -->
+<vector android:height="16dp"
+    android:tint="#FFFFFF"
+    android:viewportHeight="24"
+    android:viewportWidth="24"
+    android:width="16dp"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M3,4h8v7H3z M13,4h8v7h-8z M3,13h8v7H3z M13,13h8v7h-8z" />
+</vector>

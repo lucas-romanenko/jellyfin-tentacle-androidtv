@@ -65,6 +65,17 @@ public class GuideChannelHeader extends RelativeLayout {
         );
     }
 
+    /** Its place in a multi-view pick, 1-4, as a mark on the logo; 0 hides it. */
+    public void setPickNumber(int number) {
+        TextView badge = findViewById(R.id.pickBadge);
+        if (number > 0) {
+            badge.setText(String.valueOf(number));
+            badge.setVisibility(View.VISIBLE);
+        } else {
+            badge.setVisibility(View.GONE);
+        }
+    }
+
     public BaseItemDto getChannel() { return mChannel; }
     public void setChannel(BaseItemDto channel) { mChannel = channel; }
 

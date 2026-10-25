@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A channel's place in a multi-view pick: 1-4 on a purple disc -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <solid android:color="@color/tentacle_accent" />
+    <stroke android:width="1.5dp" android:color="@color/white" />
+</shape>

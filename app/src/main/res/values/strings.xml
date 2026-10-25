@@ -1115,4 +1115,22 @@
     <string name="msg_guide_channels_count">%1$s of %2$s channels</string>
     <string name="lbl_favorites_channels">Channels</string>
     <string name="msg_no_favorites">No favorites yet. Movies, shows and channels you add to your favorites show up here.</string>
+    <!-- Multi-view: 2-4 Live TV channels at once -->
+    <string name="lbl_multiview">Multi-view</string>
+    <string name="multiview_pick_title">Multi-view: pick 2 to 4 channels</string>
+    <string name="multiview_pick_hint">OK on a channel ticks it (OK again unticks) · Up to Start · Back cancels</string>
+    <string name="multiview_picked_none">Nothing picked yet</string>
+    <string name="multiview_full">Up to %1$d channels</string>
+    <string name="multiview_full_connections">Only %1$d channels: that is how many connections are free</string>
+    <string name="multiview_starting">Starting…</string>
+    <string name="multiview_unavailable">Multi-view isn\'t available on this server</string>
+    <string name="multiview_failed">Multi-view didn\'t start. Try again in a moment.</string>
+    <string name="multiview_full_screen">Watch full screen</string>
+    <string name="multiview_swap">Swap channel</string>
+    <string name="multiview_remove">Remove from multi-view</string>
+    <string name="multiview_swap_title">Swap for</string>
+    <string name="multiview_swap_none">No other favourite channels</string>
+    <string name="multiview_stopped">stopped</string>
+    <string name="multiview_lost">The picture stopped. Press Back and start again.</string>
+    <string name="multiview_ended">Multi-view ended</string>
 </resources>

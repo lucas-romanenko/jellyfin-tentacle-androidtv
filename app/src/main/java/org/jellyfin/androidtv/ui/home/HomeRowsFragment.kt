@@ -72,6 +72,7 @@ import org.jellyfin.androidtv.ui.presentation.CardPresenter
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter
 import org.jellyfin.androidtv.ui.presentation.PositionableListRowPresenter
 import org.jellyfin.androidtv.util.KeyProcessor
+import org.jellyfin.androidtv.ui.shared.menu.OkLongPress
 import org.jellyfin.androidtv.util.Debouncer
 import org.jellyfin.androidtv.util.apiclient.EmptyResponse
 import org.jellyfin.playback.core.PlaybackManager
@@ -139,6 +140,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 	// Data
 	private var currentItem: BaseRowItem? = null
+	private val okLongPress = OkLongPress()
 	private var currentRow: ListRow? = null
 	private var suppressSelectionClearing = false
 	var hasMediaBarAtPosition0 = false
@@ -810,6 +812,20 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// HorizontalGridView eats DPAD_LEFT even at position 0, so the only
 			// way to transfer focus to the sidebar is to intercept first.
 			setOnKeyInterceptListener { event ->
+				// A long press of OK opens the card's menu; its repeats and release never reach the
+				// card, which would open on the release
+				when (okLongPress.onKey(event.action, event.keyCode, event.repeatCount, event.isLongPress)) {
+					OkLongPress.Verdict.OPEN_MENU -> {
+						val item = currentItem
+						if (item != null && showHomeCardMenu(item, currentRow)) {
+							findFocus()?.isPressed = false
+							return@setOnKeyInterceptListener true
+						}
+						okLongPress.noMenu()
+					}
+					OkLongPress.Verdict.SWALLOW -> return@setOnKeyInterceptListener true
+					OkLongPress.Verdict.PASS -> Unit
+				}
 				if (event.action == android.view.KeyEvent.ACTION_DOWN &&
 					event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT) {
 					val focusedView = findFocus()
@@ -860,6 +876,9 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 	override fun onKey(v: View?, keyCode: Int, event: KeyEvent?): Boolean {
 		if (event?.action != KeyEvent.ACTION_UP) return false
+		// The Menu key: the same menu as a long press of OK, where the card has one
+		val item = currentItem
+		if (keyCode == KeyEvent.KEYCODE_MENU && item != null && showHomeCardMenu(item, currentRow)) return true
 		return keyProcessor.handleKey(keyCode, currentItem, activity)
 	}
 

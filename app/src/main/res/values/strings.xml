@@ -1133,4 +1133,16 @@
     <string name="multiview_stopped">stopped</string>
     <string name="multiview_lost">The picture stopped. Press Back and start again.</string>
     <string name="multiview_ended">Multi-view ended</string>
+    <!-- Long-press menus (TvMenu) -->
+    <string name="lbl_watch_now">Watch now</string>
+    <string name="lbl_watch_live">Watch live</string>
+    <string name="lbl_record_this">Record this</string>
+    <string name="lbl_record_every_episode">Record every episode</string>
+    <string name="lbl_keep_it">Keep it</string>
+    <string name="msg_remove_channel_favorite">Remove %1$s from your Favorites?</string>
+    <string name="msg_added_to_favorites">Added to Favorites</string>
+    <string name="msg_removed_from_favorites">Removed from Favorites</string>
+    <string name="lbl_remove_from_continue_watching">Remove from Continue Watching</string>
+    <string name="lbl_play_from_start">Play from start</string>
+    <string name="msg_removed_from_continue_watching">Removed from Continue Watching</string>
 </resources>

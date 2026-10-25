@@ -58,6 +58,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
 import org.jellyfin.androidtv.R
+import org.jellyfin.androidtv.ui.shared.menu.TvMenu
+import org.jellyfin.androidtv.ui.shared.menu.TvMenuAction
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.preference.constant.WatchedIndicatorBehavior
 import org.jellyfin.androidtv.ui.base.Badge
@@ -1231,99 +1233,19 @@ data class TrackAction(
 )
 
 /**
- * Dialog showing available actions for a track item (play from here, play, add to queue, etc.).
- * Mirrors the old PopupMenu from ItemListFragment.
+ * The actions for a track item (play from here, play, add to queue, etc.), in the app's one menu
+ * ([TvMenu]): it opens on a long press of OK without acting on that press's release.
  */
 @Composable
 fun TrackActionDialog(
 	trackTitle: String,
 	actions: List<TrackAction>,
 	onDismiss: () -> Unit,
-) {
-	val initialFocusRequester = remember { FocusRequester() }
-
-	Dialog(
-		onDismissRequest = onDismiss,
-		properties = DialogProperties(usePlatformDefaultWidth = false),
-	) {
-		Box(
-			modifier = Modifier.fillMaxSize(),
-			contentAlignment = Alignment.Center,
-		) {
-			Column(
-				modifier = Modifier
-					.widthIn(min = 340.dp, max = 440.dp)
-					.clip(RoundedCornerShape(20.dp))
-					.background(Color(0xE6141414))
-					.border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(20.dp))
-					.padding(vertical = 20.dp),
-			) {
-				Text(
-					text = trackTitle,
-					fontSize = 20.sp,
-					fontWeight = FontWeight.W600,
-					color = Color.White,
-					maxLines = 1,
-					overflow = TextOverflow.Ellipsis,
-					modifier = Modifier
-						.padding(horizontal = 24.dp)
-						.padding(bottom = 12.dp),
-				)
-
-				Box(
-					modifier = Modifier
-						.fillMaxWidth()
-						.height(1.dp)
-						.background(Color.White.copy(alpha = 0.08f)),
-				)
-
-				Spacer(modifier = Modifier.height(8.dp))
-
-				actions.forEachIndexed { index, action ->
-					val interactionSource = remember { MutableInteractionSource() }
-					val isFocused by interactionSource.collectIsFocusedAsState()
-
-					val focusModifier = if (index == 0) {
-						Modifier.focusRequester(initialFocusRequester)
-					} else {
-						Modifier
-					}
-
-					Row(
-						modifier = focusModifier
-							.fillMaxWidth()
-							.clickable(
-								interactionSource = interactionSource,
-								indication = null,
-							) {
-								action.onClick()
-								onDismiss()
-							}
-							.focusable(interactionSource = interactionSource)
-							.background(
-								if (isFocused) Color.White.copy(alpha = 0.12f) else Color.Transparent,
-							)
-							.padding(horizontal = 24.dp, vertical = 14.dp),
-						verticalAlignment = Alignment.CenterVertically,
-					) {
-						Text(
-							text = action.label,
-							fontSize = 16.sp,
-							fontWeight = FontWeight.W400,
-							color = if (isFocused) Color.White else Color.White.copy(alpha = 0.8f),
-							maxLines = 1,
-							overflow = TextOverflow.Ellipsis,
-						)
-					}
-				}
-			}
-		}
-
-		LaunchedEffect(Unit) {
-			initialFocusRequester.requestFocus()
-		}
-	}
-}
+) = TvMenu(
+	title = trackTitle,
+	actions = actions.map { TvMenuAction(label = it.label, onClick = it.onClick) },
+	onDismiss = onDismiss,
+)
 
 /**
  * Shared overlay layer for item cards showing favorite, watched, and progress indicators.

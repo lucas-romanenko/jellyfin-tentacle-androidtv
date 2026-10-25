@@ -1,6 +1,5 @@
 package org.jellyfin.androidtv.ui.browsing.v2
 
-import android.app.AlertDialog
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -80,6 +79,7 @@ import org.jellyfin.androidtv.ui.itemdetail.programmeRecordClick
 import org.jellyfin.androidtv.ui.itemdetail.v2.resumeStartMs
 import org.jellyfin.androidtv.ui.itemhandling.BaseItemDtoBaseRowItem
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
+import org.jellyfin.androidtv.ui.shared.menu.TvMenus
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.playback.PlaybackLauncher
@@ -97,6 +97,7 @@ import org.jellyfin.sdk.model.serializer.toUUIDOrNull
 import org.koin.android.ext.android.inject
 import org.koin.androidx.viewmodel.ext.android.viewModel
 import java.time.LocalDateTime
+import java.util.UUID
 import org.jellyfin.sdk.model.api.ImageType as JellyfinImageType
 
 /**
@@ -471,7 +472,7 @@ class RecordingsBrowseFragment : Fragment() {
 								item = item,
 								recordingNow = now,
 								format = format,
-								onClick = { launchItem(item) },
+								onClick = { openRecording(item, now) },
 								onMenu = { onMenu(item) },
 								onFocused = {
 									onCardFocused(cardKey)
@@ -523,7 +524,7 @@ class RecordingsBrowseFragment : Fragment() {
 						item = item,
 						recordingNow = now,
 						format = format,
-						onClick = { launchItem(item) },
+						onClick = { openRecording(item, now) },
 						onMenu = { onMenu(item) },
 						onFocused = { viewModel.setFocused(RecordingFocus.Recording(item, now)) },
 						modifier = if (item.id == show.items.first().id) Modifier.focusRequester(firstFocus) else Modifier,
@@ -654,8 +655,14 @@ class RecordingsBrowseFragment : Fragment() {
 		val context = LocalContext.current
 		val resume = recordingResumeTicks(item)
 		val played = item.userData?.played == true
+		val now = viewModel.uiState.value.recordingNow[item.id]
 		val actions = buildList {
-			if (resume != null) {
+			if (now != null) {
+				// Still recording: live (shares the recording's stream), or the growing file from 0:00
+				val channelId = now.channelId
+				if (channelId != null) add(SheetAction(context.getString(R.string.lbl_watch_live)) { watchLive(channelId) })
+				add(SheetAction(context.getString(R.string.lbl_play_from_start)) { play(item, 0) })
+			} else if (resume != null) {
 				val prerollSeconds = userPreferences[UserPreferences.resumeSubtractDuration].toIntOrNull() ?: 0
 				val startMs = resumeStartMs(item, prerollSeconds)
 				add(SheetAction(context.getString(R.string.lbl_resume_from, TimeUtils.formatMillis(startMs.toLong()))) { play(item, startMs) })
@@ -680,21 +687,41 @@ class RecordingsBrowseFragment : Fragment() {
 	private fun confirmDelete(item: BaseItemDto, format: RecordingFormat) {
 		val context = requireContext()
 		val label = listOfNotNull(item.name, recordingAirStart(item)?.let { format.day(it) }).joinToString(" · ")
-		AlertDialog.Builder(context)
-			.setTitle(R.string.msg_delete_recording_title)
-			.setMessage(getString(R.string.msg_delete_recording, label))
-			.setNegativeButton(R.string.lbl_no, null)
-			.setPositiveButton(R.string.lbl_delete) { _, _ ->
-				val appContext = context.applicationContext
-				viewModel.delete(item) { ok ->
-					Toast.makeText(
-						appContext,
-						if (ok) appContext.getString(R.string.item_deleted, item.name.orEmpty()) else appContext.getString(R.string.msg_unable_to_delete_recording),
-						Toast.LENGTH_LONG,
-					).show()
-				}
+		TvMenus.confirm(
+			activity = requireActivity(),
+			message = getString(R.string.msg_delete_recording_title),
+			detail = getString(R.string.msg_delete_recording, label),
+			confirmLabel = getString(R.string.lbl_delete),
+			cancelLabel = getString(R.string.lbl_cancel),
+		) {
+			val appContext = context.applicationContext
+			viewModel.delete(item) { ok ->
+				Toast.makeText(
+					appContext,
+					if (ok) appContext.getString(R.string.item_deleted, item.name.orEmpty()) else appContext.getString(R.string.msg_unable_to_delete_recording),
+					Toast.LENGTH_LONG,
+				).show()
 			}
-			.show()
+		}
+	}
+
+	/** OK on a recording card ([recordingOk]). */
+	private fun openRecording(item: BaseItemDto, now: RecordingNowInfo?) {
+		when (recordingOk(now)) {
+			RecordingOk.WATCH_LIVE -> watchLive(requireNotNull(now?.channelId))
+			RecordingOk.PLAY_FROM_START -> play(item, 0)
+			RecordingOk.OPEN -> launchItem(item)
+		}
+	}
+
+	/**
+	 * The recording's channel, played the guide's way: Jellyfin joins the live stream the recording
+	 * already reads, so no new provider connection and nothing changes for the recording. Leaving
+	 * is the player's stop report alone (never also LiveStreams/Close, which would end the shared
+	 * stream under the recording).
+	 */
+	private fun watchLive(channelId: UUID) {
+		playbackHelper.retrieveAndPlay(channelId, false, requireContext())
 	}
 
 	/** Plays [item] from [positionMs] (0 is the user's own "from the beginning"). */
@@ -746,24 +773,25 @@ class RecordingsBrowseFragment : Fragment() {
 			now = LocalDateTime.now(),
 			book = {},
 			confirm = { message, onYes ->
-				AlertDialog.Builder(requireContext())
-					.setTitle(getString(R.string.lbl_cancel_recording))
-					.setMessage(getString(message))
-					.setNegativeButton(R.string.lbl_no, null)
-					.setPositiveButton(R.string.lbl_yes) { _, _ -> onYes() }
-					.show()
+				TvMenus.confirm(
+					activity = requireActivity(),
+					message = getString(message),
+					confirmLabel = getString(R.string.lbl_cancel_recording),
+					cancelLabel = getString(R.string.lbl_keep_it),
+					onConfirm = onYes,
+				)
 			},
 			cancel = { timerId -> scheduleViewModel.cancel(timerId, null, ::cancelled) },
 		)
 	}
 
 	private fun confirmCancelSeries(entry: ScheduleEntry) {
-		AlertDialog.Builder(requireContext())
-			.setTitle(getString(R.string.lbl_cancel_series))
-			.setMessage(getString(R.string.msg_cancel_entire_series))
-			.setNegativeButton(R.string.lbl_no, null)
-			.setPositiveButton(R.string.lbl_yes) { _, _ -> scheduleViewModel.cancel(null, entry.seriesTimerId, ::cancelled) }
-			.show()
+		TvMenus.confirm(
+			activity = requireActivity(),
+			message = getString(R.string.msg_cancel_entire_series),
+			confirmLabel = getString(R.string.lbl_cancel_series),
+			cancelLabel = getString(R.string.lbl_keep_it),
+		) { scheduleViewModel.cancel(null, entry.seriesTimerId, ::cancelled) }
 	}
 
 	private fun cancelled(ok: Boolean) {

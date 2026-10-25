@@ -1072,11 +1072,13 @@ class ItemDetailsFragment : Fragment() {
 							title = track.name ?: "",
 							artist = track.artists?.firstOrNull() ?: track.albumArtist,
 							runtime = track.runTimeTicks?.let { TimeUtils.formatMillis(it / 10_000) },
+							// OK plays, a long press of OK (or Menu) opens its menu, as everywhere else in
+							// the app; it was the other way round (holding OK played, seen on the Sony)
 							onClick = {
-								trackActionIndex = index
+								playbackHelper.retrieveAndPlay(track.id, false, requireContext())
 							},
 							onMenuAction = {
-								playbackHelper.retrieveAndPlay(track.id, false, requireContext())
+								trackActionIndex = index
 							},
 							onFocused = if (isPlaylist) {
 								{ focusedBackdropUrl = getBackdropUrl(track) }

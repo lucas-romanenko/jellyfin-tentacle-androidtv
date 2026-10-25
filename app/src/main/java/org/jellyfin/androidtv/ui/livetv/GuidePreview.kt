@@ -132,7 +132,7 @@ class GuidePreview(
 			viewOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
 				try {
 					while (isActive) {
-						val answer = tentacleRepository.getLivePreview()
+						val answer = tentacleRepository.getLivePreview(previewing = playing != null)
 						// No answer: keep what is shown rather than flap the header on a slow request
 						if (answer != null) setAllowed(answer.previews)
 						delay(GUIDE_PREVIEW_POLL_MS)

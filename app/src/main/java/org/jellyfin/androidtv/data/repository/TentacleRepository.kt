@@ -1432,10 +1432,13 @@ class TentacleRepository(
 		}
 	}
 
-	/** May the guide play a live preview now ([LivePreviewAnswer]); null when there is no answer. */
-	suspend fun getLivePreview(): LivePreviewAnswer? = withContext(Dispatchers.IO) {
+	/**
+	 * May the guide play a live preview now ([LivePreviewAnswer]); null when there is no answer.
+	 * [previewing]: this TV's own preview is running, so the server doesn't count it against itself.
+	 */
+	suspend fun getLivePreview(previewing: Boolean = false): LivePreviewAnswer? = withContext(Dispatchers.IO) {
 		try {
-			val url = buildUrl(LIVE_PREVIEW_PATH)
+			val url = buildUrl(LIVE_PREVIEW_PATH) + if (previewing) "&previewing=true" else ""
 			statusClient.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
 				parseLivePreview(response.code, response.body?.string())
 			}

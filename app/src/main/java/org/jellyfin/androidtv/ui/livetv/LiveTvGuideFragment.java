@@ -979,7 +979,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         private void focusEarly() {
             if (focusedEarly != null || firstFocusView == null || mKeepHeaderFocus || pendingPlace() != null) return;
             if (focusChannelFound || mFirstFocusChannelId == null || added >= screenful) {
-                firstFocusView.requestFocus();
+                onNowIn(firstFocusView).requestFocus();
                 focusedEarly = firstFocusView;
             }
         }
@@ -1020,7 +1020,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
             // Left for a channel while the rows went up: the place kept on leaving stays for the way back
             if (isResumed()) {
                 if (firstFocusView != null && !mKeepHeaderFocus && firstFocusView != focusedEarly) {
-                    firstFocusView.requestFocus();
+                    onNowIn(firstFocusView).requestFocus();
                 }
                 if (pendingPlace() != null) restorePlace();
                 // Something always has focus once the rows are up (after restorePlace's own post)
@@ -1798,6 +1798,24 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         mImage.setScaleType(logo ? android.widget.ImageView.ScaleType.FIT_CENTER : android.widget.ImageView.ScaleType.CENTER_CROP);
         mImage.load(url, null, ContextCompat.getDrawable(requireContext(), R.drawable.blank10x10), 0, 0);
 
+    }
+
+    /**
+     * A row's programme on now, else the view itself: the guide opens on what plays (and its preview),
+     * not on the row's first cell, which had ended up to half an hour before (seen on the Sony).
+     */
+    private View onNowIn(View view) {
+        if (!(view instanceof ViewGroup) || view instanceof ProgramGridCell) return view;
+        ViewGroup row = (ViewGroup) view;
+        LocalDateTime now = LocalDateTime.now();
+        for (int i = 0; i < row.getChildCount(); i++) {
+            View child = row.getChildAt(i);
+            if (!(child instanceof ProgramGridCell)) continue;
+            BaseItemDto program = ((ProgramGridCell) child).getProgram();
+            if (program != null && program.getStartDate() != null && program.getEndDate() != null
+                    && !program.getStartDate().isAfter(now) && program.getEndDate().isAfter(now)) return child;
+        }
+        return view;
     }
 
     /** The logo of a channel in the list shown, or null. */

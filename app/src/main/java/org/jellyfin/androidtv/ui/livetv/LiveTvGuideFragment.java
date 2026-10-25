@@ -1792,7 +1792,10 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         mDisplayDate.setText(TimeUtils.getFriendlyDate(requireContext(), mSelectedProgram.getStartDate()));
         String url = imageHelper.getValue().getPrimaryImageUrl(mSelectedProgram, null, ImageHelper.MAX_PRIMARY_IMAGE_HEIGHT);
         // No picture of its own (short or ended programmes often have none): the channel's logo, never an empty box
-        if (url == null) url = channelImageUrl(mSelectedProgram.getChannelId());
+        boolean logo = url == null;
+        if (logo) url = channelImageUrl(mSelectedProgram.getChannelId());
+        // A logo whole in the box (cropped to 16:9 it read "CN" cut in half); a programme's picture fills it
+        mImage.setScaleType(logo ? android.widget.ImageView.ScaleType.FIT_CENTER : android.widget.ImageView.ScaleType.CENTER_CROP);
         mImage.load(url, null, ContextCompat.getDrawable(requireContext(), R.drawable.blank10x10), 0, 0);
 
     }

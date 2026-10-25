@@ -151,7 +151,9 @@ The code wins where they differ.
   order (`FavoriteRowKind`, `favoriteRows` in `FavoritesLayout.kt`,
   `FavoritesLayoutTests`): Movies, Shows, Live TV (the guide's favourite
   channels, `LiveTv/Channels?isFavorite&addCurrentProgram`, in the guide's
-  order; OK tunes), YouTube (videos, then live channels tagged
+  order; OK tunes), YouTube (videos by `isFavoriteYouTubeVideo`: a `yt:`
+  tag, the YouTube genre, a video id or the .strm folder, never the bare
+  TMDB `youtube` tag; then live channels tagged
   `tentacle-youtube-*`), Recordings, Seasons, Episodes, Collections,
   Playlists, Videos, People; an empty row isn't shown. Three reads at once
   (one `Items?filters=IsFavorite` for every kind, the channels, the

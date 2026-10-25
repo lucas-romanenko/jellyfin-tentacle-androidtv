@@ -20,7 +20,7 @@ interface ItemMutationRepository {
 	 * Jellyfin's resume list is "has a position", and Jellyfin Web has no other way to take a title off
 	 * it (10.11).
 	 */
-	suspend fun clearResume(item: UUID): UserItemDataDto
+	suspend fun clearResume(item: UUID)
 }
 
 class ItemMutationRepositoryImpl(
@@ -46,11 +46,9 @@ class ItemMutationRepositoryImpl(
 		return response
 	}
 
-	override suspend fun clearResume(item: UUID): UserItemDataDto {
-		val response by api.ioCall {
+	override suspend fun clearResume(item: UUID) {
+		api.ioCall {
 			itemsApi.updateItemUserData(itemId = item, data = UpdateUserItemDataDto(playbackPositionTicks = 0))
 		}
-
-		return response
 	}
 }

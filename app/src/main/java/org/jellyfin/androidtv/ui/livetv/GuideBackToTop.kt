@@ -46,7 +46,11 @@ class GuideBackToTop(
 			if (new == null || !inGrid(new)) return@OnGlobalFocusChangeListener
 			gridReturn = null
 			val fromTop = old != null && !inGrid(old)
-			if (fromTop && new !== back && back.isAttachedToWindow && back.isShown && inGrid(back)) back.requestFocus()
+			// Posted: this runs inside the focus change, before the nearest cell's own onFocusChanged(true),
+			// so moving focus now left that cell drawn as focused (two purple cells on the Sony)
+			if (fromTop && new !== back && back.isAttachedToWindow && back.isShown && inGrid(back)) {
+				back.post { if (back.isAttachedToWindow && back.isShown) back.requestFocus() }
+			}
 		}
 		var observer: ViewTreeObserver? = null
 		owner.lifecycle.addObserver(LifecycleEventObserver { _, event ->

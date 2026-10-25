@@ -73,6 +73,14 @@ fun guideProgrammeChoices(
 	add(GuideProgrammeChoice.DETAILS)
 }
 
+/**
+ * Whether a programme can have Record every episode. Jellyfin marks series only when the guide
+ * data says so, and Tentacle's guide says nothing (no programme was a series or a movie on the Sony,
+ * 25 Oct), so it would never show. A series timer without a series id records every airing of the
+ * same name on that channel (checked on production), so it is offered for everything but films.
+ */
+fun guideProgrammeHasEpisodes(isSeries: Boolean?, isMovie: Boolean?): Boolean = isSeries == true || isMovie != true
+
 /** The focused programme's menu ([guideProgrammeChoices]), in the app's one menu style. */
 fun LiveTvGuideFragment.showProgramMenu() {
 	val cell = mSelectedProgramView as? ProgramGridCell ?: return
@@ -94,7 +102,7 @@ fun LiveTvGuideFragment.showProgramMenu() {
 		canManage = Utils.canManageRecordings(userRepository.currentUser.value),
 		timerId = program.timerId,
 		seriesTimerId = program.seriesTimerId,
-		isSeries = program.isSeries == true,
+		isSeries = guideProgrammeHasEpisodes(program.isSeries, program.isMovie),
 	)
 	val actions = choices.map { choice ->
 		when (choice) {

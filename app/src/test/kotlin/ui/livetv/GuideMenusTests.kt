@@ -45,6 +45,13 @@ class GuideMenusTests : FunSpec({
 		choices(start = now.minusHours(2), end = now.minusHours(1), isSeries = true) shouldBe listOf(TUNE_TO_CHANNEL, DETAILS)
 	}
 
+	test("every episode: for anything but a film, as the guide marks nothing a series") {
+		guideProgrammeHasEpisodes(isSeries = null, isMovie = null) shouldBe true
+		guideProgrammeHasEpisodes(isSeries = true, isMovie = null) shouldBe true
+		guideProgrammeHasEpisodes(isSeries = null, isMovie = true) shouldBe false
+		guideProgrammeHasEpisodes(isSeries = true, isMovie = true) shouldBe true
+	}
+
 	test("a channel's name: star at once, ask before taking it off") {
 		guideFavoriteStep(isFavorite = false) shouldBe GuideFavoriteStep.ADD
 		guideFavoriteStep(isFavorite = true) shouldBe GuideFavoriteStep.CONFIRM_REMOVE

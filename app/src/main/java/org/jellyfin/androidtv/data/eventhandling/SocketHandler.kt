@@ -203,9 +203,10 @@ class SocketHandler(
 			}
 		}
 
-		// Tentacle's push: its requests, activity or notifications changed (Jellyfin's own
-		// RefreshProgress, for library scans, carries a real item id and is ignored). The polls
-		// stay as the fallback for a push that never comes. Resubscribes like LibraryChanged.
+		// Tentacle's push: its requests, activity, notifications, recordings or status changed
+		// (Jellyfin's own RefreshProgress, for library scans, carries a real item id and is
+		// ignored). The polls stay as the fallback for a push that never comes. Resubscribes
+		// like LibraryChanged.
 		coroutineScope.launch {
 			while (isActive) {
 				try {
@@ -215,6 +216,7 @@ class SocketHandler(
 						if ("activity" in topics || "requests" in topics) activityPoller.pollNow()
 						if ("notifications" in topics) notificationFetches.trySend(Unit)
 						if ("recordings" in topics) RecordingChanges.changed()
+						if ("status" in topics) StatusChanges.changed()
 					}
 				} catch (e: CancellationException) {
 					throw e

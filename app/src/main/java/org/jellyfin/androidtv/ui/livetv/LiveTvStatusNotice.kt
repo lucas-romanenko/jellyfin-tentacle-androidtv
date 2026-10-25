@@ -14,18 +14,14 @@ import org.koin.core.component.inject
 /**
  * Live TV problems in plain words: the Tentacle server's Live TV message from
  * /TentacleDiscover/FamilyStatus ("Live TV is unavailable right now. Lucas knows and is on it.")
- * when the guide opens or Live TV fails. Without one (older server, no answer within 3 s) the
- * app's own message shows, as before.
+ * when Live TV fails. Without one (older server, no answer within 3 s) the app's own message
+ * shows, as before. The guide itself shows it as a line under its header ([GuideStatusBanner]).
  */
 object LiveTvStatusNotice : KoinComponent {
 	private val tentacleRepository by inject<TentacleRepository>()
 
 	private var lastText: String? = null
 	private var lastShownMs = 0L
-
-	/** The guide opened: the server's Live TV message, if it has one. */
-	@JvmStatic
-	fun onGuideOpened(fragment: Fragment) = show(fragment, fallback = null)
 
 	/** Live TV failed: the server's Live TV message instead of [fallback]; [fallback] null = only the server's. */
 	@JvmStatic

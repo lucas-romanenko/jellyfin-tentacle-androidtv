@@ -12,6 +12,12 @@ class TentaclePushTests : FunSpec({
 			setOf("notifications")
 	}
 
+	test("Tentacle's \"status\" push (its plain-words status changed) is a topic like the others") {
+		tentaclePushTopics(mapOf("ItemId" to "tentacle", "Progress" to "0", "Tentacle" to "recordings,Status")) shouldBe
+			setOf("recordings", "status")
+		("status" in tentaclePushTopics(mapOf("ItemId" to "tentacle", "Tentacle" to "status")).orEmpty()) shouldBe true
+	}
+
 	test("a push without topics changes nothing") {
 		tentaclePushTopics(mapOf("ItemId" to "tentacle", "Progress" to "0")) shouldBe emptySet()
 	}

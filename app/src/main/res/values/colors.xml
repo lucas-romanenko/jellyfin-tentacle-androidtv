@@ -44,6 +44,13 @@
     <color name="guide_chip_stroke">#2f2b4d</color>
     <color name="guide_text">#f1effa</color>
     <color name="guide_text_muted">#9b97b6</color>
+    <!-- The guide's Live TV line (GuideStatusBanner): a problem, or back again -->
+    <color name="guide_status_warning_bg">#2b2216</color>
+    <color name="guide_status_warning_stroke">#5a4422</color>
+    <color name="guide_status_warning_text">#f0d49c</color>
+    <color name="guide_status_back_bg">#15261e</color>
+    <color name="guide_status_back_stroke">#2a4d3b</color>
+    <color name="guide_status_back_text">#a9dcbd</color>
     <!-- ProgramGridCell Background Colors -->
     <color name="guide_movie_bg">#328E24AA</color>
     <color name="guide_sports_bg">#323949AB</color>

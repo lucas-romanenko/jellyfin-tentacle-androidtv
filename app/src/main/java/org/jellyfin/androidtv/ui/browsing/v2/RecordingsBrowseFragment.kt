@@ -2,21 +2,14 @@ package org.jellyfin.androidtv.ui.browsing.v2
 
 import android.app.AlertDialog
 import android.os.Bundle
-import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -26,7 +19,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
@@ -53,7 +45,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
@@ -61,7 +52,6 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.Fragment
@@ -198,6 +188,12 @@ class RecordingsBrowseFragment : Fragment() {
 			RecordingsTab.RECORDED -> uiState.isLoading
 			RecordingsTab.SCHEDULED -> scheduleState.isLoading
 			RecordingsTab.SERIES -> seriesState.isLoading
+		}
+
+		// Back on a card or a row: the switch first, as the guide's Back goes to its top row (a
+		// show's page goes back to the rows first, below); Back on the switch leaves.
+		BackHandler(enabled = contentHasFocus && uiState.openShow == null) {
+			runCatching { chipFocus.requestFocus() }
 		}
 
 		Column(
@@ -503,84 +499,6 @@ class RecordingsBrowseFragment : Fragment() {
 		}
 	}
 
-	/**
-	 * A 16:9 card as the mockup's: a purple outline when focused (no zoom, cheap on the Sony),
-	 * then the name and a grey line under it.
-	 */
-	@Composable
-	private fun CardFrame(
-		onClick: () -> Unit,
-		onMenu: (() -> Unit)?,
-		onFocused: () -> Unit,
-		title: String,
-		subtitle: String,
-		subtitleColor: Color = CardSubText,
-		modifier: Modifier = Modifier,
-		art: @Composable BoxScope.() -> Unit,
-	) {
-		val interactionSource = remember { MutableInteractionSource() }
-		val isFocused by interactionSource.collectIsFocusedAsState()
-
-		LaunchedEffect(isFocused) {
-			if (isFocused) onFocused()
-		}
-
-		Column(
-			modifier = modifier
-				.width(CARD_WIDTH.dp)
-				.onKeyEvent { event ->
-					// The Menu key opens the menu; a long press of OK does too (onLongClick).
-					val native = event.nativeKeyEvent
-					if (onMenu != null && native.action == KeyEvent.ACTION_UP && native.keyCode == KeyEvent.KEYCODE_MENU) {
-						onMenu()
-						true
-					} else false
-				}
-				.then(
-					if (onMenu != null) Modifier.combinedClickable(
-						interactionSource = interactionSource,
-						indication = null,
-						onClick = onClick,
-						onLongClick = onMenu,
-					) else Modifier.clickable(
-						interactionSource = interactionSource,
-						indication = null,
-						onClick = onClick,
-					)
-				),
-		) {
-			Box(
-				modifier = Modifier
-					.width(CARD_WIDTH.dp)
-					.height(CARD_HEIGHT.dp)
-					.clip(RoundedCornerShape(4.dp))
-					.background(CardArtBackground)
-					// Drawn over the picture's edge: focus doesn't move or resize anything
-					.then(if (isFocused) Modifier.border(2.5.dp, GuideAccent, RoundedCornerShape(4.dp)) else Modifier),
-			) {
-				art()
-			}
-			Text(
-				text = title,
-				fontSize = 13.sp,
-				fontWeight = FontWeight.Medium,
-				color = if (isFocused) Color.White else CardTitleText,
-				maxLines = 1,
-				overflow = TextOverflow.Ellipsis,
-				modifier = Modifier.padding(top = 6.dp),
-			)
-			if (subtitle.isNotEmpty()) {
-				Text(
-					text = subtitle,
-					fontSize = 11.sp,
-					color = subtitleColor,
-					maxLines = 1,
-					overflow = TextOverflow.Ellipsis,
-				)
-			}
-		}
-	}
-
 	@Composable
 	private fun RecordingCard(
 		item: BaseItemDto,
@@ -595,7 +513,9 @@ class RecordingsBrowseFragment : Fragment() {
 		val subtitle = remember(item, recordingNow, format) {
 			cardLine2(item, recordingNow, format) { context.getString(R.string.lbl_recording_since, it) }
 		}
-		CardFrame(
+		GuideCardFrame(
+			width = CARD_WIDTH,
+			height = CARD_HEIGHT,
 			onClick = onClick,
 			onMenu = onMenu,
 			onFocused = onFocused,
@@ -632,7 +552,9 @@ class RecordingsBrowseFragment : Fragment() {
 		modifier: Modifier = Modifier,
 	) {
 		val newest = recordingAirStart(show.newest)
-		CardFrame(
+		GuideCardFrame(
+			width = CARD_WIDTH,
+			height = CARD_HEIGHT,
 			onClick = onClick,
 			onMenu = null,
 			onFocused = onFocused,
@@ -849,7 +771,9 @@ class RecordingsBrowseFragment : Fragment() {
 						contentType = { "seriesTimerCard" },
 					) { index ->
 						val timer = distinct[index]
-						CardFrame(
+						GuideCardFrame(
+							width = CARD_WIDTH,
+							height = CARD_HEIGHT,
 							onClick = { launchSeriesTimer(timer) },
 							onMenu = null,
 							onFocused = { seriesViewModel.setFocusedTimer(timer) },
@@ -895,7 +819,3 @@ class RecordingsBrowseFragment : Fragment() {
 private const val CARD_WIDTH = 200
 private const val CARD_HEIGHT = 112
 
-// The cards' colours, from the mockup (recorded.png).
-private val CardArtBackground = Color(0xFF1A1D2E)
-private val CardTitleText = Color(0xFFE6E4F0)
-private val CardSubText = Color(0xFF8D8AA3)

@@ -1,13 +1,16 @@
 package org.jellyfin.androidtv.ui.browsing.v2
 
 import android.content.Context
+import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +33,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -63,6 +67,11 @@ val GuideChipBackground = Color(0xFF1D1A33)
 val GuideChipStroke = Color(0xFF2F2B4D)
 val GuideCellNow = Color(0xFF28234D)
 val GuideTextMuted = Color(0xFF9B97B6)
+
+// The cards' colours, from the Recordings mockup (recorded.png).
+val CardArtBackground = Color(0xFF1A1D2E)
+val CardTitleText = Color(0xFFE6E4F0)
+val CardSubText = Color(0xFF8D8AA3)
 
 /** Red of the "recording now" marks on the Recordings screen. */
 val RecordingRed = Color(0xFFE53935)
@@ -194,11 +203,11 @@ private fun SwitchChip(
 }
 
 @Composable
-private fun HomeButton(onClick: () -> Unit) {
+fun HomeButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
 	val interactionSource = remember { MutableInteractionSource() }
 	val isFocused by interactionSource.collectIsFocusedAsState()
 	Box(
-		modifier = Modifier
+		modifier = modifier
 			.size(width = 40.dp, height = 32.dp)
 			.clip(RoundedCornerShape(5.dp))
 			.background(if (isFocused) Color.White else GuideChipBackground)
@@ -226,6 +235,7 @@ fun GuideStyleHeader(
 	timeLine: String,
 	detail: String?,
 	detailColor: Color = GuideTextMuted,
+	imageScale: ContentScale = ContentScale.Crop,
 	modifier: Modifier = Modifier,
 ) {
 	Row(
@@ -395,5 +405,85 @@ fun RecChip(modifier: Modifier = Modifier) {
 			.padding(horizontal = 5.dp, vertical = 2.dp),
 	) {
 		Text(text = "● REC", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White)
+	}
+}
+
+/**
+ * A card as the Recordings mockup's: a purple outline when focused (no zoom, cheap on the Sony),
+ * then the name and a grey line under it. [width] x [height] (dp) is the picture's size.
+ */
+@Composable
+fun GuideCardFrame(
+	width: Int,
+	height: Int,
+	onClick: () -> Unit,
+	onMenu: (() -> Unit)?,
+	onFocused: () -> Unit,
+	title: String,
+	subtitle: String,
+	subtitleColor: Color = CardSubText,
+	modifier: Modifier = Modifier,
+	art: @Composable BoxScope.() -> Unit,
+) {
+	val interactionSource = remember { MutableInteractionSource() }
+	val isFocused by interactionSource.collectIsFocusedAsState()
+
+	LaunchedEffect(isFocused) {
+		if (isFocused) onFocused()
+	}
+
+	Column(
+		modifier = modifier
+			.width(width.dp)
+			.onKeyEvent { event ->
+				// The Menu key opens the menu; a long press of OK does too (onLongClick).
+				val native = event.nativeKeyEvent
+				if (onMenu != null && native.action == KeyEvent.ACTION_UP && native.keyCode == KeyEvent.KEYCODE_MENU) {
+					onMenu()
+					true
+				} else false
+			}
+			.then(
+				if (onMenu != null) Modifier.combinedClickable(
+					interactionSource = interactionSource,
+					indication = null,
+					onClick = onClick,
+					onLongClick = onMenu,
+				) else Modifier.clickable(
+					interactionSource = interactionSource,
+					indication = null,
+					onClick = onClick,
+				)
+			),
+	) {
+		Box(
+			modifier = Modifier
+				.width(width.dp)
+				.height(height.dp)
+				.clip(RoundedCornerShape(4.dp))
+				.background(CardArtBackground)
+				// Drawn over the picture's edge: focus doesn't move or resize anything
+				.then(if (isFocused) Modifier.border(2.5.dp, GuideAccent, RoundedCornerShape(4.dp)) else Modifier),
+		) {
+			art()
+		}
+		Text(
+			text = title,
+			fontSize = 13.sp,
+			fontWeight = FontWeight.Medium,
+			color = if (isFocused) Color.White else CardTitleText,
+			maxLines = 1,
+			overflow = TextOverflow.Ellipsis,
+			modifier = Modifier.padding(top = 6.dp),
+		)
+		if (subtitle.isNotEmpty()) {
+			Text(
+				text = subtitle,
+				fontSize = 11.sp,
+				color = subtitleColor,
+				maxLines = 1,
+				overflow = TextOverflow.Ellipsis,
+			)
+		}
 	}
 }

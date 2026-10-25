@@ -1,39 +1,39 @@
 package org.jellyfin.androidtv.ui.browsing.v2
 
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.jellyfin.androidtv.constant.PosterSize
 import org.jellyfin.androidtv.data.repository.ItemRepository
-import org.jellyfin.androidtv.preference.UserPreferences
+import org.jellyfin.androidtv.preference.LiveTvPreferences
+import org.jellyfin.androidtv.ui.livetv.withoutChannelSeparators
 import org.jellyfin.sdk.api.client.ApiClient
-import org.jellyfin.sdk.api.client.exception.ApiClientException
 import org.jellyfin.sdk.api.client.extensions.itemsApi
+import org.jellyfin.sdk.api.client.extensions.liveTvApi
 import org.jellyfin.sdk.api.client.extensions.personsApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
+import org.jellyfin.sdk.model.api.ItemFields
 import org.jellyfin.sdk.model.api.ItemFilter
 import org.jellyfin.sdk.model.api.ItemSortBy
+import org.jellyfin.sdk.model.api.SortOrder
 import timber.log.Timber
 
 data class FavoritesBrowseUiState(
 	val isLoading: Boolean = true,
-	val posterSize: PosterSize = PosterSize.MED,
-	val cast: List<BaseItemDto> = emptyList(),
-	val movies: List<BaseItemDto> = emptyList(),
-	val shows: List<BaseItemDto> = emptyList(),
-	val episodes: List<BaseItemDto> = emptyList(),
-	val playlists: List<BaseItemDto> = emptyList(),
+	val rows: List<FavoriteRow> = emptyList(),
 )
 
 class FavoritesBrowseViewModel(
-	private val api: ApiClient,
-	private val userPreferences: UserPreferences,
+	val api: ApiClient,
+	private val liveTvPreferences: LiveTvPreferences,
 ) : ViewModel() {
 
 	private val _uiState = MutableStateFlow(FavoritesBrowseUiState())
@@ -43,124 +43,122 @@ class FavoritesBrowseViewModel(
 	private val _focusedItem = MutableStateFlow<BaseItemDto?>(null)
 	val focusedItem: StateFlow<BaseItemDto?> = _focusedItem.asStateFlow()
 
+	// The screen's place, kept while a details page or the player is on top (the fragment's view
+	// goes, this ViewModel stays): the rows' scroll and the card to focus again.
+	val listState = LazyListState()
+	private val rowStates = HashMap<FavoriteRowKind, LazyListState>()
+	fun rowState(kind: FavoriteRowKind): LazyListState = rowStates.getOrPut(kind) { LazyListState() }
+	var lastFocusedId: String? = null
+		private set
+	var lastFocusedKind: FavoriteRowKind? = null
+		private set
+	var lastFocusedIndex = 0
+		private set
+
+	/** The ids shown as favourites, for [favoritesChanged]. */
+	var shownIds: Set<String> = emptySet()
+		private set
+
+	private var loadJob: Job? = null
+	private var started = false
+
+	// The last good read of each source: a failed read keeps what is shown
+	private var items = emptyList<BaseItemDto>()
+	private var channels = emptyList<BaseItemDto>()
+	private var people = emptyList<BaseItemDto>()
+
+	/** The first load; afterwards (back from a details page) the rows are read again in place. */
 	fun initialize() {
-		val savedSize = userPreferences[UserPreferences.favoritesPosterSize]
-		_uiState.value = FavoritesBrowseUiState(isLoading = true, posterSize = savedSize)
-		_focusedItem.value = null
-		loadAllRows()
+		started = true
+		refresh()
 	}
 
-	fun setPosterSize(size: PosterSize) {
-		userPreferences[UserPreferences.favoritesPosterSize] = size
-		_uiState.value = _uiState.value.copy(posterSize = size)
-	}
-
-	fun setFocusedItem(item: BaseItemDto) {
+	fun setFocusedItem(item: BaseItemDto, kind: FavoriteRowKind, index: Int) {
 		_focusedItem.value = item
+		lastFocusedId = item.id.toString()
+		lastFocusedKind = kind
+		lastFocusedIndex = index
 	}
 
-	private fun loadAllRows() {
-		viewModelScope.launch {
-			try {
-				val castJob = launch { loadCast() }
-				val moviesJob = launch { loadMovies() }
-				val showsJob = launch { loadShows() }
-				val episodesJob = launch { loadEpisodes() }
-				val playlistsJob = launch { loadPlaylists() }
-
-				castJob.join()
-				moviesJob.join()
-				showsJob.join()
-				episodesJob.join()
-				playlistsJob.join()
-
-				_uiState.value = _uiState.value.copy(isLoading = false)
-			} catch (err: Exception) {
-				Timber.e(err, "Failed to load favorites")
-				_uiState.value = _uiState.value.copy(isLoading = false)
-			}
+	/**
+	 * Reads every row again (three requests at once) and swaps them in: rows are keyed by item,
+	 * so cards that stay keep their place and focus. A read in flight is replaced.
+	 */
+	fun refresh() {
+		if (!started) return
+		loadJob?.cancel()
+		loadJob = viewModelScope.launch {
+			val newItems = async { loadItems() }
+			val newChannels = async { loadChannels() }
+			val newPeople = async { loadPeople() }
+			newItems.await()?.let { items = it }
+			newChannels.await()?.let { channels = it }
+			newPeople.await()?.let { people = it }
+			val rows = favoriteRows(items, channels, people)
+			shownIds = favoriteIds(rows)
+			_uiState.value = FavoritesBrowseUiState(isLoading = false, rows = rows)
 		}
 	}
 
-	private suspend fun loadCast() {
-		try {
-			val items = withContext(Dispatchers.IO) {
-				api.personsApi.getPersons(
-					isFavorite = true,
-					fields = ItemRepository.itemFields,
-				).content.items
-			}
-			_uiState.value = _uiState.value.copy(cast = items)
-		} catch (err: ApiClientException) {
-			Timber.e(err, "Failed to load favorite cast")
+	/** Every favourite item but channels and people, in one request. */
+	private suspend fun loadItems(): List<BaseItemDto>? = try {
+		withContext(Dispatchers.IO) {
+			api.itemsApi.getItems(
+				sortBy = setOf(ItemSortBy.SORT_NAME),
+				filters = setOf(ItemFilter.IS_FAVORITE),
+				includeItemTypes = setOf(
+					BaseItemKind.MOVIE,
+					BaseItemKind.SERIES,
+					BaseItemKind.SEASON,
+					BaseItemKind.EPISODE,
+					BaseItemKind.BOX_SET,
+					BaseItemKind.PLAYLIST,
+					BaseItemKind.VIDEO,
+					BaseItemKind.MUSIC_VIDEO,
+				),
+				recursive = true,
+				fields = ItemRepository.browseFields + ItemFields.TAGS + ItemFields.STUDIOS,
+				imageTypeLimit = 1,
+			).content.items
 		}
+	} catch (err: kotlinx.coroutines.CancellationException) {
+		throw err
+	} catch (err: Exception) {
+		Timber.e(err, "Failed to load favorite items")
+		null
 	}
 
-	private suspend fun loadMovies() {
-		try {
-			val response = withContext(Dispatchers.IO) {
-				api.itemsApi.getItems(
-					sortBy = setOf(ItemSortBy.SORT_NAME),
-					filters = setOf(ItemFilter.IS_FAVORITE),
-					includeItemTypes = setOf(BaseItemKind.MOVIE),
-					recursive = true,
-					fields = ItemRepository.itemFields,
-				).content
-			}
-			_uiState.value = _uiState.value.copy(movies = response.items)
-		} catch (err: ApiClientException) {
-			Timber.e(err, "Failed to load favorite movies")
+	/**
+	 * The person's favourite channels, the guide's Favorites (Jellyfin's favourites, in the guide's
+	 * order), with what is on now.
+	 */
+	private suspend fun loadChannels(): List<BaseItemDto>? = try {
+		val sortDatePlayed = liveTvPreferences[LiveTvPreferences.channelOrder] == ItemSortBy.DATE_PLAYED.serialName
+		withContext(Dispatchers.IO) {
+			api.liveTvApi.getLiveTvChannels(
+				isFavorite = true,
+				addCurrentProgram = true,
+				enableUserData = true,
+				fields = listOf(ItemFields.TAGS),
+				sortBy = if (sortDatePlayed) setOf(ItemSortBy.DATE_PLAYED) else setOf(ItemSortBy.SORT_NAME),
+				sortOrder = if (sortDatePlayed) SortOrder.DESCENDING else SortOrder.ASCENDING,
+			).content.items.let(::withoutChannelSeparators)
 		}
+	} catch (err: kotlinx.coroutines.CancellationException) {
+		throw err
+	} catch (err: Exception) {
+		Timber.e(err, "Failed to load favorite channels")
+		null
 	}
 
-	private suspend fun loadShows() {
-		try {
-			val response = withContext(Dispatchers.IO) {
-				api.itemsApi.getItems(
-					sortBy = setOf(ItemSortBy.SORT_NAME),
-					filters = setOf(ItemFilter.IS_FAVORITE),
-					includeItemTypes = setOf(BaseItemKind.SERIES),
-					recursive = true,
-					fields = ItemRepository.itemFields,
-				).content
-			}
-			_uiState.value = _uiState.value.copy(shows = response.items)
-		} catch (err: ApiClientException) {
-			Timber.e(err, "Failed to load favorite shows")
+	private suspend fun loadPeople(): List<BaseItemDto>? = try {
+		withContext(Dispatchers.IO) {
+			api.personsApi.getPersons(isFavorite = true).content.items
 		}
-	}
-
-	private suspend fun loadEpisodes() {
-		try {
-			val response = withContext(Dispatchers.IO) {
-				api.itemsApi.getItems(
-					sortBy = setOf(ItemSortBy.SORT_NAME),
-					filters = setOf(ItemFilter.IS_FAVORITE),
-					includeItemTypes = setOf(BaseItemKind.EPISODE),
-					recursive = true,
-					fields = ItemRepository.itemFields,
-				).content
-			}
-			_uiState.value = _uiState.value.copy(episodes = response.items)
-		} catch (err: ApiClientException) {
-			Timber.e(err, "Failed to load favorite episodes")
-		}
-	}
-
-	private suspend fun loadPlaylists() {
-		try {
-			val response = withContext(Dispatchers.IO) {
-				api.itemsApi.getItems(
-					sortBy = setOf(ItemSortBy.SORT_NAME),
-					filters = setOf(ItemFilter.IS_FAVORITE),
-					includeItemTypes = setOf(BaseItemKind.PLAYLIST),
-					recursive = true,
-					fields = ItemRepository.itemFields,
-				).content
-			}
-			_uiState.value = _uiState.value.copy(playlists = response.items)
-		} catch (err: ApiClientException) {
-			Timber.e(err, "Failed to load favorite playlists")
-		}
+	} catch (err: kotlinx.coroutines.CancellationException) {
+		throw err
+	} catch (err: Exception) {
+		Timber.e(err, "Failed to load favorite people")
+		null
 	}
 }

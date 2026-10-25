@@ -139,6 +139,28 @@ The code wins where they differ.
   `onResume` re-reads once. Rows change in place
   (`LiveTvGuideFragment.applyLiveChannels`): focus stays on its row and
   programme (the nearest row when its row goes), the screen doesn't scroll.
+  Back with focus in the grid (channel names, programmes, the paging
+  buttons) moves focus to the top row's shown switch (`GuideBackToTop.kt`),
+  as Back on Home goes to the navbar; Back there leaves the guide. The grid
+  keeps its place, and the first Down from the top row returns to the cell
+  Back left. The Recordings screen does the same (Back on a card → its
+  switch).
+- **Favorites** (`ui/browsing/v2/FavoritesBrowseFragment.kt`, the navbar's
+  heart; plain Jellyfin, no plugin call): built like the Recordings screen
+  (title, Home, clock, the focused card's header), rows in Tentacle web's
+  order (`FavoriteRowKind`, `favoriteRows` in `FavoritesLayout.kt`,
+  `FavoritesLayoutTests`): Movies, Shows, Live TV (the guide's favourite
+  channels, `LiveTv/Channels?isFavorite&addCurrentProgram`, in the guide's
+  order; OK tunes), YouTube (videos, then live channels tagged
+  `tentacle-youtube-*`), Recordings, Seasons, Episodes, Collections,
+  Playlists, Videos, People; an empty row isn't shown. Three reads at once
+  (one `Items?filters=IsFavorite` for every kind, the channels, the
+  people). Live, in place: `UserDataChanged` that adds or removes a
+  favourite (`favoritesChanged`), `LibraryChanged` after 1.5 s, a socket
+  reconnect, every minute (what's on now), and back from a details page.
+  The ViewModel keeps the rows' scroll and the last card (back from a
+  details page focus returns to it; a removed card's neighbour takes it).
+  Back on a card → Home button; Back there leaves.
 - **Episode picker** (`ui/discover/EpisodePickerDialog.kt`,
   `EpisodePickerMode`): `ADD_NEW` (add a series with chosen episodes),
   `DOWNLOAD_MORE` (VOD series: download missing episodes), `MANAGE` (change

@@ -271,6 +271,13 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         return binding.getRoot();
     }
 
+    @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        // Back in the grid: the top row first (the switch shown), as on Home; Back again leaves
+        new GuideBackToTop(this, this::isInGrid, () -> mView == GuideView.ALL ? mViewAll : mViewFavorites).attach(view);
+    }
+
     private int getGuideHours() {
         return mFilters.any() ? FILTERED_HOURS : NORMAL_HOURS;
     }

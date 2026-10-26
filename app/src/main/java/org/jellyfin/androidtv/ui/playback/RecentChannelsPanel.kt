@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -233,6 +234,16 @@ class RecentChannelsPanel(
 			rowState.scrollToItem(0)
 			firstFocus.requestFocusSettled(isFocused = { firstFocused })
 			android.util.Log.i("PlayerTiming", "channel row shown +${android.os.SystemClock.uptimeMillis() - openedAtMs} ms, ${shown.channels.size} channels")
+		}
+
+		// A card comes in front while the row is open (a channel played elsewhere): the row follows the
+		// focused card and the new first one went off screen on the left, as if it were gone. At the
+		// start before, it stays at the start; focus stays on its card. Read before the new list is laid out
+		val wasAtStart = remember(firstId) {
+			Snapshot.withoutReadObservation { rowState.firstVisibleItemIndex == 0 && rowState.firstVisibleItemScrollOffset == 0 }
+		}
+		LaunchedEffect(firstId) {
+			if (wasAtStart && firstId != null && rowState.firstVisibleItemIndex != 0) rowState.scrollToItem(0)
 		}
 
 		var now by remember { mutableStateOf(LocalDateTime.now()) }

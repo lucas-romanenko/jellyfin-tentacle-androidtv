@@ -149,6 +149,8 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
 
     // Favourite and lineup changes while the guide is open, applied in place (GuideLiveUpdates)
     private GuideLiveUpdates mLiveUpdates;
+    // The line under the header saying what is wrong with Live TV (GuideStatusBanner)
+    private TextView mStatusBanner;
     private ObservableScrollView mProgramVScroller;
     // Programmes of a page are on their way (paging, a new day): the rows are about to be replaced
     private boolean mProgramsLoading = false;
@@ -257,8 +259,7 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         mPreview = new GuidePreview(this, binding.programImage, binding.previewSurface, binding.title, this::isInGrid);
         mPreview.start();
 
-        // A known Live TV problem, in the server's words (Tentacle FamilyStatus)
-        LiveTvStatusNotice.onGuideOpened(this);
+        mStatusBanner = binding.statusBanner;
 
         return binding.getRoot();
     }
@@ -270,6 +271,9 @@ public class LiveTvGuideFragment extends Fragment implements LiveTvGuide, View.O
         new GuideBackToTop(this, this::isInGrid, () -> mView == GuideView.ALL ? mViewAll : mViewFavorites).attach(view);
         // Added after it, so while picking channels for multi-view Back cancels the pick first
         mMultiView.attach(getViewLifecycleOwner());
+        // A known Live TV problem, in the server's words (Tentacle FamilyStatus), read while the
+        // guide is in front
+        new GuideStatusBanner(mStatusBanner).start(getViewLifecycleOwner());
     }
 
     private int getGuideHours() {

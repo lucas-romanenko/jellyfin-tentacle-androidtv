@@ -39,6 +39,18 @@ data class FamilyStatusMessage(
 	/** "livetv", "requests" or "library". */
 	val area: String = "",
 	val text: String = "",
+	/**
+	 * Live TV only, from newer servers (null on older ones): down, blocked, account, offline,
+	 * other, channels (some channels only) or back (it works again, shown for 30 minutes).
+	 */
+	val kind: String? = null,
+	/** The provider's name, e.g. "IPTV Bears". */
+	val provider: String? = null,
+	/** When it started and ended (ISO 8601 with offset), as the server sent them. */
+	val since: String? = null,
+	val until: String? = null,
+	/** A short headline; [text] is the full sentence. */
+	val title: String? = null,
 )
 
 /** GET /TentacleDiscover/FamilyStatus: what is broken right now, in plain words, per area. */
@@ -64,6 +76,36 @@ fun familyStatusText(status: FamilyStatus?, area: String): String? =
  */
 fun liveTvNotice(status: FamilyStatus?, fallback: String?): String? =
 	familyStatusText(status, "livetv") ?: fallback
+
+/** How the guide's Live TV line looks: a warning, good news, or a plain note. */
+enum class GuideBannerTone { WARNING, BACK, NEUTRAL }
+
+/** The line under the guide's header: the server's words and how it looks. */
+data class GuideBanner(val text: String, val tone: GuideBannerTone)
+
+/**
+ * The guide's Live TV line: the first Live TV message with words (the server puts the most
+ * serious first); null when there is none. "back" is good news, "channels" (a few channels
+ * only) a plain note; anything else, also an older server's message without a kind, is a warning.
+ */
+fun liveTvBanner(status: FamilyStatus?): GuideBanner? {
+	val message = status?.messages
+		?.firstOrNull { it.area.equals("livetv", ignoreCase = true) && it.text.isNotBlank() }
+		?: return null
+	val tone = when (message.kind?.trim()?.lowercase()) {
+		"back" -> GuideBannerTone.BACK
+		"channels" -> GuideBannerTone.NEUTRAL
+		else -> GuideBannerTone.WARNING
+	}
+	return GuideBanner(message.text.trim(), tone)
+}
+
+/**
+ * The line after a status read: no answer ([status] null: an older server, a failed or slow
+ * request) keeps what is [shown]; an answer replaces it (no Live TV message = no line).
+ */
+fun nextGuideBanner(shown: GuideBanner?, status: FamilyStatus?): GuideBanner? =
+	if (status == null) shown else liveTvBanner(status)
 
 /** Shown when a request waits for approval and the server didn't say more. */
 const val SENT_FOR_APPROVAL = "Sent for approval"

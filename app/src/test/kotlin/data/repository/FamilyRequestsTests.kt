@@ -66,4 +66,62 @@ class FamilyRequestsTests : FunSpec({
 		shouldShowNotice("Live TV is down", "Live TV is down", 1_000, 31_000) shouldBe true
 		shouldShowNotice("Unable to load channels", "Live TV is down", 1_000, 2_000) shouldBe true
 	}
+
+	val down = "IPTV Bears is down right now (their server isn't answering) since 6:30 PM. " +
+		"Not a problem with your account or your setup. Live TV comes back by itself."
+
+	test("a newer server's Live TV message carries its kind, provider and times") {
+		val status = parseFamilyStatus(
+			200,
+			"""{"messages":[{"area":"livetv","kind":"down","provider":"IPTV Bears",
+				"since":"2026-10-25T18:30:00-04:00","title":"IPTV Bears is down right now",
+				"text":"$down","severity":3}]}""",
+		)
+		val message = status!!.messages.single()
+		message.kind shouldBe "down"
+		message.provider shouldBe "IPTV Bears"
+		message.since shouldBe "2026-10-25T18:30:00-04:00"
+		message.until shouldBe null
+		message.title shouldBe "IPTV Bears is down right now"
+		message.text shouldBe down
+	}
+
+	test("an older server's message (area and text only) still reads, as a warning") {
+		val status = parseFamilyStatus(200, """{"messages":[{"area":"livetv","text":"Live TV is unavailable right now. Lucas knows."}]}""")
+		status!!.messages.single().kind shouldBe null
+		liveTvBanner(status) shouldBe GuideBanner("Live TV is unavailable right now. Lucas knows.", GuideBannerTone.WARNING)
+	}
+
+	test("the guide's line: a warning for a problem, good news for back, a plain note for some channels") {
+		fun tone(kind: String?) = liveTvBanner(FamilyStatus(listOf(FamilyStatusMessage("livetv", "Words", kind = kind))))?.tone
+		listOf("down", "blocked", "account", "offline", "other", "DOWN", "something new").forEach { tone(it) shouldBe GuideBannerTone.WARNING }
+		tone("back") shouldBe GuideBannerTone.BACK
+		tone("channels") shouldBe GuideBannerTone.NEUTRAL
+	}
+
+	test("the guide's line is the first Live TV message; other areas and empty words don't count") {
+		val status = FamilyStatus(
+			listOf(
+				FamilyStatusMessage("requests", "Requests are paused."),
+				FamilyStatusMessage("livetv", "  ", kind = "down"),
+				FamilyStatusMessage("LiveTV", " $down ", kind = "down"),
+				FamilyStatusMessage("livetv", "A few channels aren't coming through.", kind = "channels"),
+			),
+		)
+		liveTvBanner(status) shouldBe GuideBanner(down, GuideBannerTone.WARNING)
+		liveTvBanner(FamilyStatus(listOf(FamilyStatusMessage("library", "Scanning.")))) shouldBe null
+		liveTvBanner(FamilyStatus()) shouldBe null
+		liveTvBanner(parseFamilyStatus(200, """{"messages":[]}""")) shouldBe null
+		liveTvBanner(null) shouldBe null
+	}
+
+	test("no answer keeps the line; an answer replaces it, an empty one hides it") {
+		val shown = GuideBanner(down, GuideBannerTone.WARNING)
+		val back = "IPTV Bears is back: Live TV works again (it was down, 6:30–7:45 PM)."
+		nextGuideBanner(shown, null) shouldBe shown
+		nextGuideBanner(null, null) shouldBe null
+		nextGuideBanner(shown, FamilyStatus()) shouldBe null
+		nextGuideBanner(shown, FamilyStatus(listOf(FamilyStatusMessage("livetv", back, kind = "back")))) shouldBe
+			GuideBanner(back, GuideBannerTone.BACK)
+	}
 })

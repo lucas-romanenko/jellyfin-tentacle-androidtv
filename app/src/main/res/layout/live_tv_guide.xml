@@ -102,12 +102,37 @@
             android:layout_marginStart="16dp" />
     </LinearLayout>
 
+    <!-- What is wrong with Live TV, in the server's words (GuideStatusBanner): one calm line,
+         gone when there is nothing to say. What sits under the header sits under it. -->
+    <TextView
+        android:id="@+id/statusBanner"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/header"
+        android:layout_marginStart="24dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginEnd="24dp"
+        android:background="@drawable/guide_status_warning_bg"
+        android:ellipsize="end"
+        android:focusable="false"
+        android:fontFamily="sans-serif"
+        android:paddingStart="12dp"
+        android:paddingTop="4dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="4dp"
+        android:singleLine="true"
+        android:textColor="@color/guide_status_warning_text"
+        android:textSize="14sp"
+        android:visibility="gone"
+        tools:text="IPTV Bears is down right now (their server isn't answering) since 6:30 PM. Not a problem with your account or your setup."
+        tools:visibility="visible" />
+
     <!-- Multi-view pick mode: what is picked and how to go on; over the focused programme -->
     <LinearLayout
         android:id="@+id/multiViewBar"
         android:layout_width="match_parent"
         android:layout_height="90dp"
-        android:layout_below="@id/header"
+        android:layout_below="@id/statusBanner"
         android:layout_marginStart="24dp"
         android:layout_marginTop="12dp"
         android:layout_marginEnd="24dp"
@@ -152,7 +177,7 @@
         android:id="@+id/previewSurface"
         android:layout_width="160dp"
         android:layout_height="90dp"
-        android:layout_below="@id/header"
+        android:layout_below="@id/statusBanner"
         android:layout_alignParentStart="true"
         android:layout_marginStart="24dp"
         android:layout_marginTop="12dp"
@@ -164,7 +189,7 @@
         android:id="@+id/programImage"
         android:layout_width="160dp"
         android:layout_height="90dp"
-        android:layout_below="@id/header"
+        android:layout_below="@id/statusBanner"
         android:layout_alignParentStart="true"
         android:layout_marginStart="24dp"
         android:layout_marginTop="12dp"
@@ -379,7 +404,7 @@
         android:id="@+id/emptyFavorites"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_below="@id/header"
+        android:layout_below="@id/statusBanner"
         android:background="@color/tentacle_bg"
         android:gravity="center_horizontal"
         android:orientation="vertical"
@@ -410,7 +435,7 @@
         android:id="@+id/spinner"
         android:layout_width="fill_parent"
         android:layout_height="fill_parent"
-        android:layout_below="@id/header"
+        android:layout_below="@id/statusBanner"
         android:background="@color/tentacle_bg"
         android:clickable="true"
         android:focusable="true">

@@ -25,7 +25,8 @@ import java.util.UUID
 /**
  * Multi-view in the guide: the Multi-view button (next to Recordings) puts the guide in pick
  * mode. OK on a channel or one of its programmes ticks it (a numbered mark 1-4 on its row; OK
- * again unticks), the button becomes "2 of 4 · Start", Back cancels. The server says first
+ * again unticks), the button becomes "2 of 4 · Start". Back goes straight to that button (no
+ * scrolling back up the guide), Back again there cancels. The server says first
  * whether there are free connections (the button explains why not) and how many channels fit.
  */
 class GuideMultiViewPick(
@@ -39,7 +40,13 @@ class GuideMultiViewPick(
 	private var serverMax = MultiViewPicks.MAX_TILES
 	private var starting = false
 	private val back = object : OnBackPressedCallback(false) {
-		override fun handleOnBackPressed() = cancel()
+		override fun handleOnBackPressed() {
+			val start = binding.multiViewButton
+			when (pickBack(start.hasFocus())) {
+				PickBack.TO_START -> if (!start.requestFocus()) cancel()
+				PickBack.CANCEL -> cancel()
+			}
+		}
 	}
 
 	val isActive: Boolean get() = back.isEnabled

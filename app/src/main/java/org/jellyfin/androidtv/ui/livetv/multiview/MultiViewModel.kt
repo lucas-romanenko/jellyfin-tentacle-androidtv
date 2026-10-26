@@ -90,3 +90,38 @@ fun withSwapped(itemIds: List<String>, index: Int, newId: String): List<String>?
 
 /** Jellyfin's ids with or without dashes, compared as Tentacle stores them. */
 fun sameId(a: String, b: String): Boolean = a.replace("-", "").equals(b.replace("-", ""), ignoreCase = true)
+
+/** How the grid's picture is moved so one tile fills the view: scale about (0,0), then shift. */
+data class Zoom(val scale: Float, val x: Float, val y: Float) {
+	companion object {
+		val NONE = Zoom(1f, 0f, 0f)
+	}
+}
+
+/**
+ * The tile [box] (fractions of the picture) zoomed to fill a [viewWidth] x [viewHeight] view whose
+ * picture ([pictureWidth] x [pictureHeight]) is fitted in the middle, like the player shows it.
+ * The tile keeps its shape and sits in the middle (a 16:9 tile on a 16:9 screen fills it whole).
+ */
+fun zoomOnto(box: TileBox, viewWidth: Float, viewHeight: Float, pictureWidth: Int, pictureHeight: Int): Zoom {
+	if (viewWidth <= 0f || viewHeight <= 0f || pictureWidth <= 0 || pictureHeight <= 0) return Zoom.NONE
+	val fit = minOf(viewWidth / pictureWidth, viewHeight / pictureHeight)
+	val pw = pictureWidth * fit
+	val ph = pictureHeight * fit
+	val left = (viewWidth - pw) / 2 + box.left * pw
+	val top = (viewHeight - ph) / 2 + box.top * ph
+	val w = (box.right - box.left) * pw
+	val h = (box.bottom - box.top) * ph
+	if (w <= 0f || h <= 0f) return Zoom.NONE
+	val scale = minOf(viewWidth / w, viewHeight / h)
+	return Zoom(scale, (viewWidth - w * scale) / 2 - left * scale, (viewHeight - h * scale) / 2 - top * scale)
+}
+
+/** Full screen: the D-pad goes to the next or previous channel, round (like the web). */
+fun nextZoomed(from: Int, count: Int, forward: Boolean): Int =
+	if (count <= 0) 0 else (from + if (forward) 1 else count - 1) % count
+
+/** Back while picking channels: to Start first (no scrolling up the guide), then cancel. */
+enum class PickBack { TO_START, CANCEL }
+
+fun pickBack(startFocused: Boolean): PickBack = if (startFocused) PickBack.CANCEL else PickBack.TO_START

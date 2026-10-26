@@ -7,16 +7,21 @@ import io.kotest.matchers.shouldBe
 import org.jellyfin.androidtv.data.repository.answer
 import org.jellyfin.androidtv.data.repository.detailOf
 import org.jellyfin.androidtv.ui.livetv.multiview.MultiViewPicks
+import org.jellyfin.androidtv.ui.livetv.multiview.PickBack
+import org.jellyfin.androidtv.ui.livetv.multiview.Zoom
 import org.jellyfin.androidtv.ui.livetv.multiview.TileGrid
 import org.jellyfin.androidtv.ui.livetv.multiview.TileGrid.Direction.DOWN
 import org.jellyfin.androidtv.ui.livetv.multiview.TileGrid.Direction.LEFT
 import org.jellyfin.androidtv.ui.livetv.multiview.TileGrid.Direction.RIGHT
 import org.jellyfin.androidtv.ui.livetv.multiview.TileGrid.Direction.UP
+import org.jellyfin.androidtv.ui.livetv.multiview.nextZoomed
+import org.jellyfin.androidtv.ui.livetv.multiview.pickBack
 import org.jellyfin.androidtv.ui.livetv.multiview.sameId
 import org.jellyfin.androidtv.ui.livetv.multiview.startLabel
 import org.jellyfin.androidtv.ui.livetv.multiview.tileBox
 import org.jellyfin.androidtv.ui.livetv.multiview.withSwapped
 import org.jellyfin.androidtv.ui.livetv.multiview.withoutTile
+import org.jellyfin.androidtv.ui.livetv.multiview.zoomOnto
 
 /** Multi-view: picking in the guide, moving between tiles, changing them, the server's answers. */
 class MultiViewTests : FunSpec({
@@ -133,6 +138,49 @@ class MultiViewTests : FunSpec({
 			detailOf("""{"detail":""}""").shouldBeNull()
 			detailOf("""{"detail":[{"loc":["body"]}]}""").shouldBeNull()
 			answer(502, "").error.shouldBeNull()
+		}
+	}
+
+	context("full screen: the tile zoomed within the grid's picture") {
+		test("a 2x2 tile fills a 1080p screen: twice the size, its corner moved to the screen's") {
+			// The server's 4-tile layout: 960x540 each; the 4th at the bottom right
+			zoomOnto(tileBox(960, 540, 960, 540), 1920f, 1080f, 1920, 1080) shouldBe Zoom(2f, -1920f, -1080f)
+			zoomOnto(tileBox(0, 0, 960, 540), 1920f, 1080f, 1920, 1080) shouldBe Zoom(2f, 0f, 0f)
+		}
+
+		test("2 side by side (the strip in the middle of the picture): the right one fills the screen") {
+			zoomOnto(tileBox(960, 270, 960, 540), 1920f, 1080f, 1920, 1080) shouldBe Zoom(2f, -1920f, -540f)
+		}
+
+		test("the same on a 720p screen (the picture is scaled to the view)") {
+			zoomOnto(tileBox(960, 540, 960, 540), 1280f, 720f, 1920, 1080) shouldBe Zoom(2f, -1280f, -720f)
+		}
+
+		test("a view taller than 16:9: the tile keeps its shape, in the middle") {
+			// The picture sits 60 px down (letterbox); the tile ends up 60 px from the top again
+			zoomOnto(tileBox(0, 0, 960, 540), 1920f, 1200f, 1920, 1080) shouldBe Zoom(2f, 0f, -60f)
+		}
+
+		test("before the view has a size, or a tile without one: no zoom") {
+			zoomOnto(tileBox(0, 0, 960, 540), 0f, 0f, 1920, 1080) shouldBe Zoom.NONE
+			zoomOnto(tileBox(0, 0, 0, 0), 1920f, 1080f, 1920, 1080) shouldBe Zoom.NONE
+		}
+
+		test("the D-pad goes to the next or previous channel, round") {
+			nextZoomed(0, 4, forward = true) shouldBe 1
+			nextZoomed(3, 4, forward = true) shouldBe 0
+			nextZoomed(0, 3, forward = false) shouldBe 2
+			nextZoomed(1, 2, forward = false) shouldBe 0
+		}
+	}
+
+	context("Back while picking channels") {
+		test("anywhere in the guide: to the Start button first, not out of pick mode") {
+			pickBack(startFocused = false) shouldBe PickBack.TO_START
+		}
+
+		test("on Start: cancels pick mode, as before") {
+			pickBack(startFocused = true) shouldBe PickBack.CANCEL
 		}
 	}
 })

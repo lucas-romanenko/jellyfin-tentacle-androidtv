@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The channel of a row of the player's guide (CustomPlaybackOverlayFragment) -->
+    <item name="guide_row_channel" type="id" />
+</resources>

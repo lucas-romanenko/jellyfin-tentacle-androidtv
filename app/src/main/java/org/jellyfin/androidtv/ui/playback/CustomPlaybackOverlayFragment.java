@@ -9,6 +9,7 @@ import android.media.AudioManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.SystemClock;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -56,6 +57,7 @@ import org.jellyfin.androidtv.ui.itemhandling.BaseItemPersonBaseRowItem;
 import org.jellyfin.androidtv.ui.itemhandling.ChapterItemInfoBaseRowItem;
 import org.jellyfin.androidtv.ui.itemhandling.ItemRowAdapter;
 import org.jellyfin.androidtv.ui.livetv.ChannelStep;
+import org.jellyfin.androidtv.ui.livetv.GuidePageSizeKt;
 import org.jellyfin.androidtv.ui.livetv.LiveTvGuide;
 import org.jellyfin.androidtv.ui.livetv.LiveTvGuideFragment;
 import org.jellyfin.androidtv.ui.livetv.LiveTvGuideFragmentHelperKt;
@@ -64,7 +66,6 @@ import org.jellyfin.androidtv.ui.navigation.Destinations;
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository;
 import org.jellyfin.androidtv.ui.playback.overlay.LeanbackOverlayFragment;
 import org.jellyfin.androidtv.ui.presentation.CardPresenter;
-import org.jellyfin.androidtv.ui.presentation.ChannelCardPresenter;
 import org.jellyfin.androidtv.ui.presentation.MutableObjectAdapter;
 import org.jellyfin.androidtv.ui.presentation.PositionableListRowPresenter;
 import org.jellyfin.androidtv.util.CoroutineUtils;
@@ -99,8 +100,20 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     private PositionableListRowPresenter mPopupRowPresenter;
 
     //Live guide items
-    private static final int PAGE_SIZE = 75;
     private static final int GUIDE_HOURS = 9;
+    // Channels per page: a shorter page on a small TV (guidePageSize), quick to build
+    private int mGuidePageSize = GuidePageSizeKt.GUIDE_PAGE_SIZE_SMALL;
+    // The channel list is on its way (built ahead or opened): a second ask waits for it
+    private boolean mGuideChannelsLoading = false;
+    // A page is on its way (programmes, then rows): an open waits for it, it focuses when done
+    private boolean mGuidePageBuilding = false;
+    // The row to focus on open: the playing channel's, from the page built last
+    private View mGuideFocusRow;
+    // When the guide was asked for (PlayerTiming in logcat), 0 when not timing
+    private long mGuideOpenMs = 0;
+    // Recent channels (the channels button, or Down while a channel plays)
+    private RecentChannelsPanel mRecentChannels;
+    private final Runnable mLivePrewarm = this::prewarmLive;
 
     BaseItemDto mSelectedProgram;
     RelativeLayout mSelectedProgramView;
@@ -221,7 +234,23 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         // And the Live Guide element
         tvGuideBinding = OverlayTvGuideBinding.inflate(inflater, container, false);
         binding.getRoot().addView(tvGuideBinding.getRoot());
-        tvGuideBinding.getRoot().setVisibility(View.GONE);
+        // Hidden as INVISIBLE, not GONE: the page built ahead is measured and laid out while
+        // hidden, so the first open only draws it (GONE left all of it to the open: 2.2 s on the Sony)
+        tvGuideBinding.getRoot().setVisibility(View.INVISIBLE);
+        mGuidePageSize = GuidePageSizeKt.guidePageSize(requireContext());
+
+        mRecentChannels = new RecentChannelsPanel(this, binding.getRoot(), id -> {
+            hideRecentChannels();
+            switchChannel(id, false);
+            return kotlin.Unit.INSTANCE;
+        }, () -> {
+            hideRecentChannels();
+            return kotlin.Unit.INSTANCE;
+        }, up -> {
+            hideRecentChannels();
+            stepChannel(up);
+            return kotlin.Unit.INSTANCE;
+        });
 
         binding.getRoot().setOnTouchListener((v, event) -> {
             //and then manage our fade timer
@@ -257,6 +286,9 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
 
         // A guide page still being built would add its rows to a fragment that is gone (#182)
         if (mDisplayProgramsTask != null) mDisplayProgramsTask.cancel(true);
+        mHandler.removeCallbacks(mLivePrewarm);
+        mRecentChannels = null;
+        mGuideFocusRow = null;
         binding = null;
         // To fix race condition in hide timer
         mIsVisible = false;
@@ -328,7 +360,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         leanbackOverlayFragment.updatePlayState();
 
         // Set initial skip overlay state
-        binding.skipOverlay.setSkipUiEnabled(!mIsVisible && !mGuideVisible && !mPopupPanelVisible);
+        updateSkipUi();
     }
 
     @Override
@@ -424,7 +456,9 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     private OnBackPressedCallback backPressedCallback = new OnBackPressedCallback(true) {
         @Override
         public void handleOnBackPressed() {
-            if (mPopupPanelVisible) {
+            if (isRecentChannelsShowing()) {
+                hideRecentChannels();
+            } else if (mPopupPanelVisible) {
                 // back should just hide the popup panel
                 hidePopupPanel();
                 leanbackOverlayFragment.hideOverlay();
@@ -441,6 +475,20 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
 
     @Override
     public boolean onKey(View v, int keyCode, KeyEvent event) {
+        if (isRecentChannelsShowing()) {
+            // The row handles its own keys (RecentChannelsPanel); one that gets here anyway closes it.
+            // On the press: the release of the Down that opened the row comes here too
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                if (keyCode == KeyEvent.KEYCODE_CHANNEL_UP || keyCode == KeyEvent.KEYCODE_CHANNEL_DOWN) {
+                    hideRecentChannels();
+                    stepChannel(keyCode == KeyEvent.KEYCODE_CHANNEL_UP);
+                } else if (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                        || keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_BUTTON_B || keyCode == KeyEvent.KEYCODE_ESCAPE) {
+                    hideRecentChannels();
+                }
+            }
+            return true;
+        }
         if (event.isLongPress()) {
             if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
                 if (mSelectedProgramView instanceof ProgramGridCell)
@@ -835,7 +883,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
 
         binding.topPanel.startAnimation(slideDown);
         mIsVisible = true;
-        binding.skipOverlay.setSkipUiEnabled(!mIsVisible && !mGuideVisible && !mPopupPanelVisible);
+        updateSkipUi();
     }
 
     public void hide() {
@@ -844,79 +892,156 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
 
         mIsVisible = false;
         binding.topPanel.startAnimation(fadeOut);
-        binding.skipOverlay.setSkipUiEnabled(!mIsVisible && !mGuideVisible && !mPopupPanelVisible);
+        updateSkipUi();
     }
 
     private void showChapterPanel() {
         setFadingEnabled(false);
         binding.popupArea.startAnimation(showPopup);
-        binding.skipOverlay.setSkipUiEnabled(!mIsVisible && !mGuideVisible && !mPopupPanelVisible);
+        updateSkipUi();
     }
 
     private void hidePopupPanel() {
         startFadeTimer();
         binding.popupArea.startAnimation(hidePopup);
         mPopupPanelVisible = false;
-        binding.skipOverlay.setSkipUiEnabled(!mIsVisible && !mGuideVisible && !mPopupPanelVisible);
+        updateSkipUi();
     }
 
     public void showGuide() {
+        mGuideOpenMs = SystemClock.uptimeMillis();
+        if (isRecentChannelsShowing()) hideRecentChannels();
         hide();
         leanbackOverlayFragment.setShouldShowOverlay(false);
         leanbackOverlayFragment.hideOverlay();
         playbackControllerContainer.getValue().getPlaybackController().mVideoManager.contractVideo(Utils.convertDpToPixel(requireContext(), 300));
         tvGuideBinding.getRoot().setVisibility(View.VISIBLE);
         mGuideVisible = true;
-        LocalDateTime now = LocalDateTime.now();
-        boolean needLoad = mCurrentGuideStart == null;
-        if (!needLoad) {
-            LocalDateTime needLoadTime = mCurrentGuideStart.plusMinutes(30);
-            needLoad = now.isAfter(needLoadTime);
-            if (mSelectedProgramView != null)
-                mSelectedProgramView.requestFocus();
+        if (guideNeedsLoad()) {
+            // Nothing built yet (or an old page): read it now, unless it is already on its way
+            if (!mGuideChannelsLoading && !mGuidePageBuilding) loadGuide();
+        } else if (!mGuidePageBuilding) {
+            // Built ahead: the playing channel's row (or where the person was on it) at once
+            View target = guideFocusTarget(playingChannelId());
+            if (target != null) {
+                target.requestFocus();
+                logGuideShown("built ahead");
+            } else {
+                // Its channel isn't on this page (switched since): the page around it
+                displayChannels(guidePageStartFor(playingChannelId()), mGuidePageSize);
+            }
         }
-        if (needLoad) {
-            loadGuide();
-        }
-        binding.skipOverlay.setSkipUiEnabled(!mIsVisible && !mGuideVisible && !mPopupPanelVisible);
+        updateSkipUi();
     }
 
     private void hideGuide() {
-        tvGuideBinding.getRoot().setVisibility(View.GONE);
+        tvGuideBinding.getRoot().setVisibility(View.INVISIBLE);
         playbackControllerContainer.getValue().getPlaybackController().mVideoManager.setVideoFullSize(true);
         mGuideVisible = false;
-        binding.skipOverlay.setSkipUiEnabled(!mIsVisible && !mGuideVisible && !mPopupPanelVisible);
+        mGuideOpenMs = 0;
+        updateSkipUi();
     }
 
+    /** No page, a page from before this half hour, or the channel list changed since it was built. */
+    private boolean guideNeedsLoad() {
+        return mAllChannels == null
+                || mAllChannels != TvManager.getAllChannels()
+                || PlayerGuideKt.playerGuideStale(mCurrentGuideStart, LocalDateTime.now());
+    }
+
+    @Nullable
+    private UUID playingChannelId() {
+        PlaybackController playbackController = playbackControllerContainer.getValue().getPlaybackController();
+        if (playbackController == null || playbackController.getCurrentlyPlayingItem() == null) return null;
+        return playbackController.getCurrentlyPlayingItem().getId();
+    }
+
+    @Nullable
+    private static UUID channelOf(@Nullable View view) {
+        if (view instanceof ProgramGridCell) {
+            BaseItemDto program = ((ProgramGridCell) view).getProgram();
+            return program != null ? program.getChannelId() : null;
+        }
+        if (view instanceof GuideChannelHeader) return ((GuideChannelHeader) view).getChannel().getId();
+        return null;
+    }
+
+    /** Where focus goes on open: where the person was, if it is the playing channel; else its row. */
+    @Nullable
+    private View guideFocusTarget(@Nullable UUID channelId) {
+        if (channelId == null) return null;
+        if (mSelectedProgramView != null && mSelectedProgramView.isAttachedToWindow() && channelId.equals(channelOf(mSelectedProgramView)))
+            return mSelectedProgramView;
+        if (mGuideFocusRow != null && mGuideFocusRow.isAttachedToWindow() && channelId.equals(mGuideFocusRow.getTag(R.id.guide_row_channel)))
+            return mGuideFocusRow;
+        for (int i = 0; i < tvGuideBinding.channels.getChildCount(); i++) {
+            View header = tvGuideBinding.channels.getChildAt(i);
+            if (header instanceof GuideChannelHeader && channelId.equals(((GuideChannelHeader) header).getChannel().getId())) {
+                return tvGuideBinding.programRows.getChildAt(i);
+            }
+        }
+        return null;
+    }
+
+    private int guidePageStartFor(@Nullable UUID channelId) {
+        int ndx = channelId != null ? TvManager.getAllChannelsIndex(channelId) : -1;
+        if (ndx < 0) ndx = TvManager.getAllChannelsIndex(TvManager.getLastLiveTvChannel());
+        return PlayerGuideKt.playerGuidePageStart(Math.max(ndx, 0), mAllChannels.size(), mGuidePageSize);
+    }
+
+    private void logGuideShown(String how) {
+        if (mGuideOpenMs == 0) return;
+        final long start = mGuideOpenMs;
+        mGuideOpenMs = 0;
+        // Logged two frames on: the next frame lays out and draws the rows, the one after starts once it is done
+        android.view.Choreographer.getInstance().postFrameCallback(frame ->
+                android.view.Choreographer.getInstance().postFrameCallback(drawn ->
+                        android.util.Log.i("PlayerTiming", "guide shown (" + how + ") +" + (SystemClock.uptimeMillis() - start) + " ms")));
+    }
+
+    /**
+     * Fills the guide: the channel list the app already has (the guide's, or read when the player
+     * started), else read once; then the page around the playing channel. Runs ahead, hidden, when
+     * a channel starts ([prewarmLive]) and when the guide opens with nothing built.
+     */
     private void loadGuide() {
         tvGuideBinding.spinner.setVisibility(View.VISIBLE);
         fillTimeLine(GUIDE_HOURS);
+        List<BaseItemDto> cached = TvManager.getCachedAllChannels();
+        if (cached != null && !cached.isEmpty()) {
+            showGuideChannels(cached);
+            return;
+        }
+        if (mGuideChannelsLoading) return;
+        mGuideChannelsLoading = true;
+        final long readStart = SystemClock.uptimeMillis();
         TvManager.loadAllChannels(this, ndx -> {
-            if (!isAdded()) return null;
+            mGuideChannelsLoading = false;
+            if (!isAdded() || binding == null) return null;
             if (ndx < 0 || TvManager.getAllChannels() == null) {
                 tvGuideBinding.spinner.setVisibility(View.GONE);
-                Toast.makeText(requireContext(), R.string.msg_unable_load_channels, Toast.LENGTH_LONG).show();
+                // Said only to someone looking; built ahead, the next open tries again
+                if (mGuideVisible) Toast.makeText(requireContext(), R.string.msg_unable_load_channels, Toast.LENGTH_LONG).show();
                 return null;
             }
-            if (ndx >= PAGE_SIZE) {
-                // last channel is not in first page so grab a set where it will be in the middle
-                ndx = ndx - (PAGE_SIZE / 2);
-            } else {
-                ndx = 0; // just start at beginning
-            }
-
-            mAllChannels = TvManager.getAllChannels();
-            if (!mAllChannels.isEmpty()) {
-                displayChannels(ndx, PAGE_SIZE);
-            } else {
+            android.util.Log.i("PlayerTiming", "guide channels read: " + TvManager.getAllChannels().size() + " +" + (SystemClock.uptimeMillis() - readStart) + " ms");
+            if (TvManager.getAllChannels().isEmpty()) {
                 tvGuideBinding.spinner.setVisibility(View.GONE);
+                return null;
             }
-
+            showGuideChannels(TvManager.getAllChannels());
             return null;
         });
     }
 
+    private void showGuideChannels(List<BaseItemDto> channels) {
+        mAllChannels = channels;
+        displayChannels(guidePageStartFor(playingChannelId()), mGuidePageSize);
+    }
+
     public void displayChannels(int start, int max) {
+        // GuidePagingButton asks for the main guide's page: never more than this TV's page
+        if (max > mGuidePageSize) max = mGuidePageSize;
         int end = start + max;
         if (end > mAllChannels.size()) end = mAllChannels.size();
 
@@ -924,6 +1049,8 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         mCurrentDisplayChannelEndNdx = end - 1;
         Timber.d("*** Display channels pre-execute");
         tvGuideBinding.spinner.setVisibility(View.VISIBLE);
+        mGuidePageBuilding = true;
+        mGuideFocusRow = null;
 
         tvGuideBinding.channels.removeAllViews();
         tvGuideBinding.programRows.removeAllViews();
@@ -940,7 +1067,48 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
                 mDisplayProgramsTask.execute(mCurrentDisplayChannelStartNdx, mCurrentDisplayChannelEndNdx);
             }
         });
-        binding.skipOverlay.setSkipUiEnabled(!mIsVisible && !mGuideVisible && !mPopupPanelVisible);
+        updateSkipUi();
+    }
+
+    /**
+     * A channel started: a few seconds on (the tune comes first), the recent channels are read and
+     * the guide's page is built, hidden, so both open at once. Built again when the half hour
+     * turns, and around a new channel that isn't on the page.
+     */
+    private void scheduleLivePrewarm() {
+        mHandler.removeCallbacks(mLivePrewarm);
+        mHandler.postDelayed(mLivePrewarm, PlayerGuideKt.PLAYER_GUIDE_PREWARM_MS);
+    }
+
+    private void prewarmLive() {
+        if (!isAdded() || binding == null || tvGuideBinding == null) return;
+        PlaybackController playbackController = playbackControllerContainer.getValue().getPlaybackController();
+        if (playbackController == null || !playbackController.isLiveTv()) return;
+        if (mRecentChannels != null) mRecentChannels.prefetch();
+        if (!mGuideVisible && !mGuideChannelsLoading && !mGuidePageBuilding) {
+            if (guideNeedsLoad()) {
+                loadGuide();
+            } else if (guideFocusTarget(playingChannelId()) == null) {
+                displayChannels(guidePageStartFor(playingChannelId()), mGuidePageSize);
+            }
+        }
+        // Again when the half hour turns (the page's first column goes by)
+        mHandler.removeCallbacks(mLivePrewarm);
+        mHandler.postDelayed(mLivePrewarm, PlayerGuideKt.msUntilPlayerGuideStale(mCurrentGuideStart, LocalDateTime.now()) + 5_000);
+    }
+
+    private boolean isRecentChannelsShowing() {
+        return mRecentChannels != null && mRecentChannels.isShowing();
+    }
+
+    private void hideRecentChannels() {
+        if (mRecentChannels != null) mRecentChannels.hide();
+        updateSkipUi();
+    }
+
+    private void updateSkipUi() {
+        if (binding == null) return;
+        binding.skipOverlay.setSkipUiEnabled(!mIsVisible && !mGuideVisible && !mPopupPanelVisible && !isRecentChannelsShowing());
     }
 
     DisplayProgramsTask mDisplayProgramsTask;
@@ -964,7 +1132,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
 
             if (mCurrentDisplayChannelStartNdx > 0) {
                 // Show a paging row for channels above
-                int pageUpStart = mCurrentDisplayChannelStartNdx - PAGE_SIZE;
+                int pageUpStart = mCurrentDisplayChannelStartNdx - mGuidePageSize;
                 if (pageUpStart < 0) pageUpStart = 0;
 
                 TextView placeHolder = new TextView(requireContext());
@@ -991,6 +1159,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
                 final BaseItemDto channel = TvManager.getChannel(i);
                 List<BaseItemDto> programs = TvManager.getProgramsForChannel(channel.getId());
                 final LinearLayout row = getProgramRow(programs, channel.getId());
+                row.setTag(R.id.guide_row_channel, channel.getId());
                 if (first) {
                     first = false;
                     firstRow = row;
@@ -1029,7 +1198,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
             Timber.d("*** Display programs post execute");
             if (mCurrentDisplayChannelEndNdx < mAllChannels.size() - 1) {
                 // Show a paging row for channels below
-                int pageDnEnd = mCurrentDisplayChannelEndNdx + PAGE_SIZE;
+                int pageDnEnd = mCurrentDisplayChannelEndNdx + mGuidePageSize;
                 if (pageDnEnd >= mAllChannels.size()) pageDnEnd = mAllChannels.size() - 1;
 
                 TextView placeHolder = new TextView(requireContext());
@@ -1044,8 +1213,14 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
             tvGuideBinding.filterStatus.setText(getResources().getString(R.string.lbl_tv_filter_status, GUIDE_HOURS));
 
             tvGuideBinding.spinner.setVisibility(View.GONE);
+            mGuidePageBuilding = false;
+            mGuideFocusRow = firstRow;
 
-            if (firstRow != null) firstRow.requestFocus();
+            // Built ahead, hidden: focus waits for the open (showGuide)
+            if (mGuideVisible && firstRow != null) {
+                firstRow.requestFocus();
+                logGuideShown("read on open");
+            }
         }
     }
 
@@ -1254,17 +1429,14 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         }
     };
 
+    /** The channels button (or Down while a channel plays): the person's recent channels. */
     public void showQuickChannelChanger() {
-        showChapterPanel();
-        mHandler.postDelayed(() -> {
-            if (!getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.STARTED)) return;
-
-            int ndx = TvManager.getAllChannelsIndex(TvManager.getLastLiveTvChannel());
-            if (ndx > 0) {
-                mPopupRowPresenter.setPosition(ndx);
-            }
-            mPopupPanelVisible = true;
-        }, 500);
+        if (mRecentChannels == null || mGuideVisible) return;
+        hide();
+        leanbackOverlayFragment.setShouldShowOverlay(false);
+        leanbackOverlayFragment.hideOverlay();
+        mRecentChannels.show();
+        updateSkipUi();
     }
 
     public void showChapterSelector() {
@@ -1414,7 +1586,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
             }
 
             if (playbackControllerContainer.getValue().getPlaybackController().isLiveTv()) {
-                prepareChannelAdapter();
+                scheduleLivePrewarm();
             } else {
                 prepareChapterAdapter();
             }
@@ -1442,20 +1614,6 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
             mPopupRowAdapter.add(mChapterRow);
         }
 
-    }
-
-    private void prepareChannelAdapter() {
-        // create quick channel change row
-        TvManager.loadAllChannels(this, response -> {
-            List<BaseItemDto> channels = TvManager.getAllChannels();
-            if (channels == null || !isAdded()) return null;
-            ArrayObjectAdapter channelAdapter = new ArrayObjectAdapter(new ChannelCardPresenter());
-            channelAdapter.addAll(0, channels);
-            if (mChapterRow != null) mPopupRowAdapter.remove(mChapterRow);
-            mChapterRow = new ListRow(new HeaderItem(requireContext().getString(R.string.channels)), channelAdapter);
-            mPopupRowAdapter.add(mChapterRow);
-            return null;
-        });
     }
 
     private void prepareCastAdapter() {

@@ -71,6 +71,20 @@ programme shows its picture. Without one the box goes and the text moves left; t
 when the guide opens and when the answer changes, not per programme. OK on the previewed channel
 hands its stream to the player. `ui/livetv/GuidePreview.kt`.
 
+## Live TV player
+
+- **Guide button** (or Menu): the guide with the channel in the top-left corner. Its page (25
+  channels on a small TV) is built ahead, hidden, 4 s after a channel starts, from the channel
+  list the app already has (read once if it has none), and again when the half hour turns, so
+  the first open is as quick as the later ones. It opens on the playing channel's row.
+  `ui/playback/PlayerGuide.kt`, logcat `PlayerTiming`.
+- **Channels button** (or Down): the person's recent channels, most recent first, without the
+  one playing, so OK on the first card goes back to the last channel. From Jellyfin's per-person
+  last played date, so it follows them across devices; their favourites when they have no
+  recents yet. Cards as Favorites' channels (logo, number, what's on, progress, purple focus).
+  Read when each channel starts and again on open; while open it follows changes from anywhere.
+  `ui/playback/RecentChannelsPanel.kt`, `ui/livetv/RecentChannels.kt`.
+
 ## Refresh rate
 
 The TV's own **Match content frame rate** setting decides (Android 12 and later, in

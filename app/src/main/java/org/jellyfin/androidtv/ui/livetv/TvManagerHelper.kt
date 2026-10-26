@@ -322,12 +322,12 @@ suspend fun fetchGuideDaysEnd(api: ApiClient, channelIds: List<UUID>?, furthestE
 }
 
 /**
- * Bench builds only: `adb shell setprop debug.tentacle.guidedays N` offers N days whatever the
- * data says, to try a long run of dates on a TV whose provider sends two. Null otherwise.
+ * Bench and debug builds only: `adb shell setprop debug.tentacle.guidedays N` offers N days
+ * whatever the data says, to try a long run of dates on a TV whose provider sends two. Null otherwise.
  */
 @android.annotation.SuppressLint("PrivateApi")
 private fun benchGuideDays(): Int? {
-	if (BuildConfig.BUILD_TYPE != "bench") return null
+	if (BuildConfig.BUILD_TYPE == "release") return null
 	return runCatching {
 		Class.forName("android.os.SystemProperties").getMethod("get", String::class.java)
 			.invoke(null, "debug.tentacle.guidedays") as String

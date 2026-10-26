@@ -42,6 +42,7 @@ of the version that removed the options.
   before it), so one event listing a week ahead adds no empty days.
 - Live TV multi-view (try-out): Multi-view in the guide, tick 2-4 channels, Start. One
   picture from Tentacle; the highlighted tile is heard, OK = full screen, Back = the grid.
+  No screensaver while it plays, like the normal player.
 
 Playback choices made on the TV before (maximum bitrate and resolution, refresh-rate
 switching, audio output, external player) are kept as they were; new installs get the

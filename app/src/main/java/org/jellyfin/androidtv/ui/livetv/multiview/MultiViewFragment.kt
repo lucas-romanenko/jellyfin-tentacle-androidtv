@@ -53,12 +53,15 @@ import org.jellyfin.androidtv.R
 import org.jellyfin.androidtv.data.repository.MultiViewRepository
 import org.jellyfin.androidtv.data.repository.MultiViewSession
 import org.jellyfin.androidtv.data.repository.multiViewJson
+import org.jellyfin.androidtv.ui.InteractionTrackerViewModel
+import org.jellyfin.androidtv.ui.KeepAwakeWhilePlaying
 import org.jellyfin.androidtv.ui.browsing.v2.SheetAction
 import org.jellyfin.androidtv.ui.livetv.TvManager
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.util.PlaybackHelper
 import org.jellyfin.sdk.model.serializer.toUUIDOrNull
 import org.koin.android.ext.android.inject
+import org.koin.androidx.viewmodel.ext.android.activityViewModel
 import timber.log.Timber
 
 /**
@@ -78,6 +81,10 @@ class MultiViewFragment : Fragment() {
 	private val repository: MultiViewRepository by inject()
 	private val navigationRepository: NavigationRepository by inject()
 	private val playbackHelper: PlaybackHelper by inject()
+	private val interactionTracker: InteractionTrackerViewModel by activityViewModel()
+
+	/** No screensaver while the grid plays (Lucas, 25 Oct: it came on during multi-view). */
+	private val keepAwake = KeepAwakeWhilePlaying { interactionTracker.addLifecycleLock(lifecycle) }
 
 	private lateinit var session: MultiViewSession
 	private var highlighted = 0
@@ -174,8 +181,7 @@ class MultiViewFragment : Fragment() {
 
 	override fun onStop() {
 		super.onStop()
-		player?.release()
-		player = null
+		releasePlayer()
 	}
 
 	override fun onDestroyView() {
@@ -196,7 +202,7 @@ class MultiViewFragment : Fragment() {
 	@OptIn(UnstableApi::class)
 	private fun play() {
 		val playerView = (view as? ViewGroup)?.getChildAt(0) as? PlayerView ?: return
-		player?.release()
+		releasePlayer()
 		spinner?.isVisible = true
 		val extractors = DefaultExtractorsFactory()
 		val exo = ExoPlayer.Builder(requireContext())
@@ -215,11 +221,19 @@ class MultiViewFragment : Fragment() {
 
 			override fun onPlayerError(error: PlaybackException) = retry(error.errorCodeName)
 		})
+		exo.addListener(keepAwake)
 		exo.setMediaItem(MediaItem.Builder().setUri(repository.streamUrl(session.id)).setMimeType(MimeTypes.VIDEO_MP2T).build())
 		exo.playWhenReady = true
 		exo.prepare()
 		playerView.player = exo
 		player = exo
+	}
+
+	/** The player goes, and with it the screen's hold on staying awake. */
+	private fun releasePlayer() {
+		player?.release()
+		player = null
+		keepAwake.release()
 	}
 
 	/** The picture stopped: open it again (the server keeps its last seconds), a few times. */
@@ -399,8 +413,7 @@ class MultiViewFragment : Fragment() {
 		if (closed) return
 		closed = true
 		keepAlive?.cancel()
-		player?.release()
-		player = null
+		releasePlayer()
 		val id = session.id
 		leaveScope.launch { withContext(NonCancellable) { repository.close(id) } }
 	}

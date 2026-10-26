@@ -234,7 +234,9 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         // And the Live Guide element
         tvGuideBinding = OverlayTvGuideBinding.inflate(inflater, container, false);
         binding.getRoot().addView(tvGuideBinding.getRoot());
-        tvGuideBinding.getRoot().setVisibility(View.GONE);
+        // Hidden as INVISIBLE, not GONE: the page built ahead is measured and laid out while
+        // hidden, so the first open only draws it (GONE left all of it to the open: 2.2 s on the Sony)
+        tvGuideBinding.getRoot().setVisibility(View.INVISIBLE);
         mGuidePageSize = GuidePageSizeKt.guidePageSize(requireContext());
 
         mRecentChannels = new RecentChannelsPanel(this, binding.getRoot(), id -> {
@@ -932,7 +934,7 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     }
 
     private void hideGuide() {
-        tvGuideBinding.getRoot().setVisibility(View.GONE);
+        tvGuideBinding.getRoot().setVisibility(View.INVISIBLE);
         playbackControllerContainer.getValue().getPlaybackController().mVideoManager.setVideoFullSize(true);
         mGuideVisible = false;
         mGuideOpenMs = 0;
@@ -990,9 +992,10 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
         if (mGuideOpenMs == 0) return;
         final long start = mGuideOpenMs;
         mGuideOpenMs = 0;
-        // Logged on the next frame: the rows are drawn by then
+        // Logged two frames on: the next frame lays out and draws the rows, the one after starts once it is done
         android.view.Choreographer.getInstance().postFrameCallback(frame ->
-                android.util.Log.i("PlayerTiming", "guide shown (" + how + ") +" + (SystemClock.uptimeMillis() - start) + " ms"));
+                android.view.Choreographer.getInstance().postFrameCallback(drawn ->
+                        android.util.Log.i("PlayerTiming", "guide shown (" + how + ") +" + (SystemClock.uptimeMillis() - start) + " ms")));
     }
 
     /**

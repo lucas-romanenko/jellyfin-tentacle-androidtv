@@ -1121,7 +1121,7 @@
     <!-- Multi-view: 2-4 Live TV channels at once -->
     <string name="lbl_multiview">Multi-view</string>
     <string name="multiview_pick_title">Multi-view: pick 2 to 4 channels</string>
-    <string name="multiview_pick_hint">OK on a channel ticks it (OK again unticks) · Up to Start · Back cancels</string>
+    <string name="multiview_pick_hint">OK on a channel ticks it (OK again unticks) · Back goes to Start · Back again cancels</string>
     <string name="multiview_picked_none">Nothing picked yet</string>
     <string name="multiview_full">Up to %1$d channels</string>
     <string name="multiview_full_connections">Only %1$d channels: that is how many connections are free</string>
@@ -1129,6 +1129,8 @@
     <string name="multiview_unavailable">Multi-view isn\'t available on this server</string>
     <string name="multiview_failed">Multi-view didn\'t start. Try again in a moment.</string>
     <string name="multiview_full_screen">Watch full screen</string>
+    <string name="multiview_all_channels">Back to all channels</string>
+    <string name="multiview_open_player">Open in the player</string>
     <string name="multiview_swap">Swap channel</string>
     <string name="multiview_remove">Remove from multi-view</string>
     <string name="multiview_swap_title">Swap for</string>

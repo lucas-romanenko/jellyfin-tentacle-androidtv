@@ -89,6 +89,24 @@ class GuideModelTests : FunSpec({
 			guideDays(now, now.plusYears(1)).size shouldBe MAX_GUIDE_DAYS
 		}
 
+		test("one event channel far ahead adds no days (25 Oct: 1,768 today, 4,946 tomorrow, 0 the 27th, 1 on 1 Nov)") {
+			realGuideDayCount(listOf(1768, 4946, 0, 0, 0, 0, 0, 1)) shouldBe 2
+			realGuideDayCount(listOf(1768, 4946, 1)) shouldBe 2
+		}
+
+		test("a handful of channels with longer listings add no days; a real share does") {
+			realGuideDayCount(listOf(40000, 40000, 300)) shouldBe 2
+			realGuideDayCount(listOf(40000, 40000, 10000, 30000)) shouldBe 4
+			realGuideDayCount(listOf(40000, 40000, 9999, 30000)) shouldBe 2
+		}
+
+		test("late at night today has few programmes left: a full tomorrow still counts, today always") {
+			realGuideDayCount(listOf(2000, 40000, 40000)) shouldBe 3
+			realGuideDayCount(listOf(0, 40000)) shouldBe 2
+			realGuideDayCount(listOf(5)) shouldBe 1
+			realGuideDayCount(emptyList()) shouldBe 0
+		}
+
 		test("paging ahead stops where the data stops; unknown data never blocks it") {
 			hasGuideDataAfter(LocalDateTime.of(2026, 10, 22, 0, 0), LocalDateTime.of(2026, 10, 22, 5, 0)) shouldBe true
 			hasGuideDataAfter(LocalDateTime.of(2026, 10, 22, 5, 0), LocalDateTime.of(2026, 10, 22, 5, 0)) shouldBe false

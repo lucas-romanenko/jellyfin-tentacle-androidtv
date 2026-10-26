@@ -260,7 +260,8 @@ class GuideLiveUpdates(private val fragment: LiveTvGuideFragment) {
 			// The dates on offer stop where this view's guide data stops
 			val ids = if (fragment.getGuideView() == GuideView.FAVORITES) target.map { it.id } else null
 			val furthest = runCatching { fetchFurthestProgramEnd(api, ids) }.getOrNullUnlessCancelled()
-			if (furthest != null && fragment.getLoadGeneration() == generation) fragment.onLiveGuideEnd(furthest)
+			val daysEnd = runCatching { fetchGuideDaysEnd(api, ids, furthest) }.getOrNullUnlessCancelled() ?: furthest
+			if (furthest != null && daysEnd != null && fragment.getLoadGeneration() == generation) fragment.onLiveGuideEnd(furthest, daysEnd)
 		}
 	}
 

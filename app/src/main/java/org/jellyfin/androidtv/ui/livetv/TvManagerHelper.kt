@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.jellyfin.androidtv.BuildConfig
 import org.jellyfin.androidtv.auth.repository.SessionRepository
 import org.jellyfin.androidtv.preference.LiveTvPreferences
 import org.jellyfin.sdk.api.client.ApiClient
@@ -175,18 +176,20 @@ fun loadFavoriteLiveTvChannels(
 
 /**
  * When the guide data ends: the end of the furthest programme ([channelIds] only, or every
- * channel when null), so the date choice stops where the data stops. Null when unknown.
+ * channel when null), for paging, and where the days with real guide data end, for the date
+ * choice ([fetchGuideDaysEnd]). Null when unknown.
  */
 fun loadFurthestProgramEnd(
 	fragment: Fragment,
 	channelIds: List<UUID>?,
-	callback: (end: LocalDateTime?) -> Unit,
+	callback: (end: LocalDateTime?, daysEnd: LocalDateTime?) -> Unit,
 ) {
 	val api by fragment.inject<ApiClient>()
 
 	fragment.lifecycleScope.launch {
-		runCatching { fetchFurthestProgramEnd(api, channelIds) }
-			.let { callback(it.getOrNullUnlessCancelled()) }
+		val end = runCatching { fetchFurthestProgramEnd(api, channelIds) }.getOrNullUnlessCancelled()
+		val daysEnd = runCatching { fetchGuideDaysEnd(api, channelIds, end) }.getOrNullUnlessCancelled()
+		callback(end, daysEnd ?: end)
 	}
 }
 
@@ -286,6 +289,49 @@ suspend fun fetchGuidePrograms(
 /** The end of the furthest programme of [channelIds] (every channel when null); null when unknown. */
 suspend fun fetchFurthestProgramEnd(api: ApiClient, channelIds: List<UUID>?): LocalDateTime? = withContext(Dispatchers.IO) {
 	api.liveTvApi.getPrograms(furthestProgramRequest(channelIds)).content.items.firstOrNull()?.endDate
+}
+
+/** POST /LiveTv/Programs for how many programmes of [channelIds] are on during [day] (count only). */
+internal fun dayProgramCountRequest(channelIds: List<UUID>?, day: LocalDate) = GetProgramsDto(
+	channelIds = channelIds,
+	minEndDate = day.atStartOfDay(),
+	maxStartDate = day.plusDays(1).atStartOfDay(),
+	limit = 0,
+	enableImages = false,
+	enableUserData = false,
+	enableTotalRecordCount = true,
+)
+
+/**
+ * Where the days with real guide data end (the start of the day after the last one), so one
+ * long event listing far ahead can't add empty days to the date choice: the days are counted
+ * one by one from today and stop at the first with too few programmes ([realGuideDayCount]).
+ * [furthestEnd] when every day up to it has real data.
+ */
+suspend fun fetchGuideDaysEnd(api: ApiClient, channelIds: List<UUID>?, furthestEnd: LocalDateTime?): LocalDateTime? = withContext(Dispatchers.IO) {
+	benchGuideDays()?.let { return@withContext LocalDate.now().plusDays(it.toLong()).atStartOfDay() }
+	val days = guideDays(LocalDateTime.now(), furthestEnd)
+	if (days.size < 2) return@withContext furthestEnd
+	val counts = mutableListOf<Int>()
+	for (day in days) {
+		counts += api.liveTvApi.getPrograms(dayProgramCountRequest(channelIds, day)).content.totalRecordCount ?: 0
+		if (realGuideDayCount(counts) < counts.size) break
+	}
+	val kept = realGuideDayCount(counts)
+	if (kept >= days.size) furthestEnd else days[kept - 1].plusDays(1).atStartOfDay()
+}
+
+/**
+ * Bench and debug builds only: `adb shell setprop debug.tentacle.guidedays N` offers N days
+ * whatever the data says, to try a long run of dates on a TV whose provider sends two. Null otherwise.
+ */
+@android.annotation.SuppressLint("PrivateApi")
+private fun benchGuideDays(): Int? {
+	if (BuildConfig.BUILD_TYPE == "release") return null
+	return runCatching {
+		Class.forName("android.os.SystemProperties").getMethod("get", String::class.java)
+			.invoke(null, "debug.tentacle.guidedays") as String
+	}.getOrNull()?.toIntOrNull()?.takeIf { it in 1..MAX_GUIDE_DAYS }
 }
 
 fun getScheduleRows(

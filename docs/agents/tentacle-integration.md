@@ -171,6 +171,12 @@ The code wins where they differ.
   foreground (the activity's `ON_STOP`: Home, another input or app; coming
   back opens the guide, not a grid the server was about to drop). The
   server closes a session alone after 45 s without a reader or keepalive.
+  While the grid's player plays it holds a screensaver lock
+  (`KeepAwakeWhilePlaying` → `InteractionTrackerViewModel.addLifecycleLock`,
+  as VideoManager does for the normal player), given back when it stops,
+  fails or is released (Back, Home, full screen). The guide header's live
+  preview takes no lock on purpose: it's a muted box while browsing, and the
+  screensaver coming on (the app stops) is what closes its connection.
 - **Favorites** (`ui/browsing/v2/FavoritesBrowseFragment.kt`, the navbar's
   heart; plain Jellyfin, no plugin call): Lucas wants only three rows, no
   header ("row for favorite movies, row for favorite shows and row for

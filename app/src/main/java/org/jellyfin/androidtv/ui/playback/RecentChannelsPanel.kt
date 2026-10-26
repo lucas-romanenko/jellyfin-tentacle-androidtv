@@ -2,6 +2,7 @@ package org.jellyfin.androidtv.ui.playback
 
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.compose.foundation.background
@@ -109,6 +110,12 @@ class RecentChannelsPanel(
 	private var readJob: Job? = null
 	private var liveJob: Job? = null
 	private var openedAtMs = 0L
+	// The key pressed down inside the row: its release acts. The Down that opens the row is pressed
+	// in the player, and its release must not close the row again
+	private var keyDownInRow = 0
+	// Where focus was before the row opened: it goes back there on close, else nothing has focus
+	// and the player's keys stop working
+	private var focusBefore: View? = null
 
 	private val view = ComposeView(parent.context).apply {
 		layoutParams = FrameLayout.LayoutParams(
@@ -125,6 +132,8 @@ class RecentChannelsPanel(
 	fun show() {
 		if (isShowing) return
 		openedAtMs = android.os.SystemClock.uptimeMillis()
+		keyDownInRow = 0
+		focusBefore = fragment.activity?.currentFocus
 		list = RecentChannelsStore.cached() ?: list
 		opened++
 		view.isVisible = true
@@ -137,6 +146,9 @@ class RecentChannelsPanel(
 		liveJob?.cancel()
 		liveJob = null
 		view.isVisible = false
+		val before = focusBefore
+		focusBefore = null
+		if (before == null || !before.isAttachedToWindow || !before.requestFocus()) fragment.view?.requestFocus()
 	}
 
 	/** A channel started: read the row now, so the next open shows it at once. */
@@ -196,6 +208,17 @@ class RecentChannelsPanel(
 		}
 	}
 
+	/** True on the release of a key that was also pressed in the row. */
+	private fun releasedInRow(event: KeyEvent): Boolean {
+		if (event.action == KeyEvent.ACTION_DOWN) {
+			if (event.repeatCount == 0) keyDownInRow = event.keyCode
+			return false
+		}
+		if (event.action != KeyEvent.ACTION_UP || keyDownInRow != event.keyCode) return false
+		keyDownInRow = 0
+		return true
+	}
+
 	@Composable
 	private fun Panel() {
 		val shown = list
@@ -230,11 +253,11 @@ class RecentChannelsPanel(
 					when (native.keyCode) {
 						KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
 						KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_BUTTON_B, KeyEvent.KEYCODE_ESCAPE -> {
-							if (native.action == KeyEvent.ACTION_UP) onClose()
+							if (releasedInRow(native)) onClose()
 							true
 						}
 						KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_CHANNEL_DOWN -> {
-							if (native.action == KeyEvent.ACTION_UP) onChannelKey(native.keyCode == KeyEvent.KEYCODE_CHANNEL_UP)
+							if (releasedInRow(native)) onChannelKey(native.keyCode == KeyEvent.KEYCODE_CHANNEL_UP)
 							true
 						}
 						else -> false

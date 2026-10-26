@@ -476,8 +476,9 @@ public class CustomPlaybackOverlayFragment extends Fragment implements LiveTvGui
     @Override
     public boolean onKey(View v, int keyCode, KeyEvent event) {
         if (isRecentChannelsShowing()) {
-            // The row handles its own keys (RecentChannelsPanel); one that gets here anyway closes it
-            if (event.getAction() == KeyEvent.ACTION_UP) {
+            // The row handles its own keys (RecentChannelsPanel); one that gets here anyway closes it.
+            // On the press: the release of the Down that opened the row comes here too
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
                 if (keyCode == KeyEvent.KEYCODE_CHANNEL_UP || keyCode == KeyEvent.KEYCODE_CHANNEL_DOWN) {
                     hideRecentChannels();
                     stepChannel(keyCode == KeyEvent.KEYCODE_CHANNEL_UP);

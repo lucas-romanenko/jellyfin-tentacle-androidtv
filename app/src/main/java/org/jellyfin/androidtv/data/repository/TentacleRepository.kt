@@ -132,7 +132,7 @@ class TentacleRepository(
 		try {
 			val body = readHomeCache("sections.json") ?: return@withContext null
 			val result = json.decodeFromString<TentacleSectionsResponse>(body)
-			if (result.enabled) result else null
+			if (result.enabled) result.withTentacleListRows() else null
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to parse cached sections")
 			null
@@ -308,7 +308,7 @@ class TentacleRepository(
 				}
 
 				writeHomeCache("sections.json", body)
-				SectionsAnswer.On(result)
+				SectionsAnswer.On(result.withTentacleListRows())
 			}
 		} catch (e: Exception) {
 			Timber.w(e, "Failed to fetch Tentacle sections")
@@ -333,7 +333,7 @@ class TentacleRepository(
 	suspend fun fetchSectionItems(playlistId: String): SectionFetch = withContext(Dispatchers.IO) {
 		sectionFetchPermits.withPermit {
 			try {
-				val url = buildUrl("/TentacleHome/Section/$playlistId")
+				val url = buildUrl(sectionItemsPath(playlistId))
 				val request = Request.Builder().url(url).get().build()
 				httpClient.newCall(request).execute().use { response ->
 					when {
@@ -1519,10 +1519,42 @@ data class TentacleSection(
 	// "poster" (2:3) or "wide" (16:9), chosen per row in the dashboard. Some
 	// content has no portrait artwork at all — a YouTube thumbnail in a poster
 	// slot is cropped to a strip of its middle — so the row says which it wants.
-	val shape: String = "poster",
+	// On Now says "onnow" (its own card); empty from an older plugin's built-in rows.
+	val shape: String = "",
 	/** The row's item limit (plugin >= 2.267); 0 from an older plugin, meaning unknown. */
 	val maxItems: Int = 0,
 )
+
+/**
+ * Tentacle's own rows the plugin works out once for every client (2026-10-26): Continue
+ * Watching (with next episodes) and Recordings, by section id, and where their items are.
+ * They are drawn like playlist rows, under a row id of their own ([TENTACLE_ROW_PREFIX]).
+ */
+internal val TENTACLE_LIST_ROWS = mapOf(
+	"resumevideo" to "/TentacleHome/ContinueWatching",
+	"recordings" to "/TentacleHome/Recordings",
+)
+const val TENTACLE_ROW_PREFIX = "tentacle-"
+
+/**
+ * The sections with Continue Watching and Recordings as rows (type "row", row id
+ * "tentacle-<section>"), so they load, refresh in place and change shape like any playlist
+ * row. Only from a plugin that serves them: it gives them a shape; an older plugin's
+ * built-in sections stay as they are.
+ */
+fun TentacleSectionsResponse.withTentacleListRows(): TentacleSectionsResponse = copy(
+	sections = sections.map { s ->
+		if (s.type == "builtin" && s.sectionId in TENTACLE_LIST_ROWS && (s.shape == "poster" || s.shape == "wide")) {
+			s.copy(type = "row", playlistId = TENTACLE_ROW_PREFIX + s.sectionId, sectionId = null)
+		} else s
+	},
+)
+
+/** Where a home row's items are: a playlist's, or one of Tentacle's own list rows. */
+internal fun sectionItemsPath(playlistId: String): String =
+	playlistId.takeIf { it.startsWith(TENTACLE_ROW_PREFIX) }
+		?.let { TENTACLE_LIST_ROWS[it.removePrefix(TENTACLE_ROW_PREFIX)] }
+		?: "/TentacleHome/Section/$playlistId"
 
 /** Where a home row's items came from (see TentacleRepository.fetchSectionItems). */
 enum class SectionSource { SERVER, SAVED_COPY, GONE }

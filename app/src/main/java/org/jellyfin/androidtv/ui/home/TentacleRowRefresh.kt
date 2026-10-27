@@ -33,11 +33,15 @@ object TentacleRowRefresh {
 		limit: Int,
 		emptyAnswersInARow: Int,
 		sameShrunkAnswerAgain: Boolean = false,
+		listRow: Boolean = false,
 	): RowRefreshAction = when {
 		// A 4xx: the user can no longer see the playlist.
 		fetch.source == SectionSource.GONE -> RowRefreshAction.DROP
 		// The server did not answer: what is on screen is at least as fresh as the saved copy.
 		fetch.source == SectionSource.SAVED_COPY -> RowRefreshAction.KEEP
+		// Continue Watching and Recordings are no playlist being rebuilt: the plugin's answer
+		// is the row, however much it shrank (one watched to the end, the last one removed).
+		listRow -> if (fetch.items.isEmpty()) RowRefreshAction.DROP else RowRefreshAction.REPLACE
 		// An empty answer is usually a playlist the backend is clearing and re-filling; a row
 		// emptied on purpose answers empty again, and then it goes (#54).
 		fetch.items.isEmpty() ->

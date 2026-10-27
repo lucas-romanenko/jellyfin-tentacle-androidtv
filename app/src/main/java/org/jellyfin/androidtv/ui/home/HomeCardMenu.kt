@@ -75,11 +75,12 @@ fun isContinueWatchingQuery(queryType: QueryType?): Boolean =
  * watched mark elsewhere changes on its card. Jellyfin's UserDataChanged then refreshes the rows
  * as before, for every other screen and device.
  */
-fun Fragment.showHomeCardMenu(rowItem: BaseRowItem, row: ListRow?): Boolean {
+fun Fragment.showHomeCardMenu(rowItem: BaseRowItem, row: ListRow?, tentacleContinueWatching: Boolean = false): Boolean {
 	val item = rowItem.baseItem ?: return false
 	if (!homeCardHasMenu(item.type)) return false
 	val adapter = row?.adapter as? ItemRowAdapter
-	val inContinueWatching = isContinueWatchingQuery(adapter?.queryType)
+	// Tentacle's own Continue Watching row (a row of the plugin's items) or Jellyfin's
+	val inContinueWatching = tentacleContinueWatching || isContinueWatchingQuery(adapter?.queryType)
 	val hasPosition = (item.userData?.playbackPositionTicks ?: 0L) > 0L
 	val played = item.userData?.played == true
 

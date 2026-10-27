@@ -47,6 +47,7 @@ import org.jellyfin.androidtv.data.repository.HomeVersionTracker
 import org.jellyfin.androidtv.data.repository.SectionsAnswer
 import org.jellyfin.androidtv.data.repository.NotificationsRepository
 import org.jellyfin.androidtv.data.repository.SectionSource
+import org.jellyfin.androidtv.data.repository.TENTACLE_ROW_PREFIX
 import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.data.repository.TentacleSectionsResponse
 import org.jellyfin.androidtv.data.repository.UserViewsRepository
@@ -179,6 +180,10 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 
 	// Track current Tentacle section structure for detecting structural changes
 	private var currentTentacleSectionKeys = listOf<String>()
+
+	/** Tentacle's list rows (Continue Watching, Recordings) in the layout shown, by row id. */
+	private val listRowIds get() = currentTentacleSectionKeys
+		.mapNotNull { key -> key.removePrefix("playlist:").substringBefore(':').takeIf { it.startsWith(TENTACLE_ROW_PREFIX) } }
 
 	// Dirty flag: set true when a WebSocket event fires while the fragment is paused.
 	// On resume, only refresh if something actually changed — avoids full re-fetch
@@ -817,7 +822,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 				when (okLongPress.onKey(event.action, event.keyCode, event.repeatCount, event.isLongPress)) {
 					OkLongPress.Verdict.OPEN_MENU -> {
 						val item = currentItem
-						if (item != null && showHomeCardMenu(item, currentRow)) {
+						if (item != null && showHomeCardMenu(item, currentRow, inTentacleContinueWatching(currentRow))) {
 							findFocus()?.isPressed = false
 							return@setOnKeyInterceptListener true
 						}
@@ -878,7 +883,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 		if (event?.action != KeyEvent.ACTION_UP) return false
 		// The Menu key: the same menu as a long press of OK, where the card has one
 		val item = currentItem
-		if (keyCode == KeyEvent.KEYCODE_MENU && item != null && showHomeCardMenu(item, currentRow)) return true
+		if (keyCode == KeyEvent.KEYCODE_MENU && item != null && showHomeCardMenu(item, currentRow, inTentacleContinueWatching(currentRow))) return true
 		return keyProcessor.handleKey(keyCode, currentItem, activity)
 	}
 
@@ -918,6 +923,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// arrives while the player is in front, when Home doesn't listen (RESUMED only),
 			// so without this the row kept the old items until a later library change.
 			refreshRows(force = false, delayed = true)
+			refreshTentacleListRows()
 			if (tentacleDirty) {
 				// A change without a version came while we were away — catch up now.
 				tentacleDirty = false
@@ -988,6 +994,42 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 	}
 
 	override fun onQueueReplaced() = Unit
+
+	/** Whether [row] is Tentacle's own Continue Watching row (its card menu: Remove from Continue Watching). */
+	private fun inTentacleContinueWatching(row: ListRow?): Boolean {
+		val shown = tentacleRowAdapters[TENTACLE_ROW_PREFIX + "resumevideo"] ?: return false
+		return row?.adapter === shown
+	}
+
+	/**
+	 * Back on Home (from the player, details, another screen): Continue Watching and Recordings
+	 * change without a home version (a playback stopped, a recording ended), so they are asked
+	 * again, alone. A row that filled or emptied makes the home refresh (it comes or goes).
+	 */
+	private fun refreshTentacleListRows() {
+		val ids = listRowIds
+		if (!showingTentacleHome || ids.isEmpty()) return
+		lifecycleScope.launch {
+			// As for the stock rows: the server has saved the playback stop by then
+			delay(1.5.seconds)
+			val fetched = ids.map { id -> id to withContext(Dispatchers.IO) { tentacleRepository.fetchSectionItems(id) } }
+			var comesOrGoes = false
+			for ((id, fetch) in fetched) {
+				if (fetch.source != SectionSource.SERVER) continue
+				val rowAdapter = tentacleRowAdapters[id]
+				when {
+					rowAdapter == null -> comesOrGoes = comesOrGoes || fetch.items.isNotEmpty()
+					fetch.items.isEmpty() -> comesOrGoes = true
+					else -> {
+						rowAdapter.replaceStaticItems(fetch.items)
+						Timber.d("Refreshed $id with ${fetch.items.size} items")
+					}
+				}
+			}
+			if (comesOrGoes) homeRefresher.request(HomeRefreshRequest(force = true))
+			else resyncSelectedItem()
+		}
+	}
 
 	private fun refreshRows(force: Boolean = false, delayed: Boolean = true) {
 		lifecycleScope.launch {
@@ -1077,6 +1119,18 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// fetch failed or came back empty. Nothing re-fetched them, so a row that timed out
 			// once stayed missing until the app restarted (#49). Asked again on every refresh.
 			val missing = limits.keys - tentacleRowAdapters.keys
+			// Continue Watching and Recordings first, on their own: one quick answer each and
+			// what a "Next episodes" switch changes. Waiting for every playlist row (4 at a
+			// time) put that change on screen only after 10-11 s on the Sony.
+			val listFirst = tentacleRowAdapters.keys.filter { it.startsWith(TENTACLE_ROW_PREFIX) }
+				.map { id -> id to withContext(Dispatchers.IO) { tentacleRepository.fetchSectionItems(id) } }
+			withContext(Dispatchers.Main) {
+				for ((id, fetch) in listFirst) {
+					if (fetch.source == SectionSource.SERVER && fetch.items.isNotEmpty()) {
+						tentacleRowAdapters[id]?.replaceStaticItems(fetch.items)
+					}
+				}
+			}
 			val (updates, returning) = kotlinx.coroutines.coroutineScope {
 				val shown = tentacleRowAdapters.keys.map { playlistId ->
 					async(Dispatchers.IO) { playlistId to tentacleRepository.fetchSectionItems(playlistId) }
@@ -1100,6 +1154,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					val action = TentacleRowRefresh.decide(
 						rowAdapter.size(), fetch, limits[playlistId] ?: 0, empties,
 						sameShrunkAnswerAgain = fromServer && shrunkRowAnswers[playlistId] == answerIds,
+						listRow = playlistId.startsWith(TENTACLE_ROW_PREFIX),
 					)
 					if (action == RowRefreshAction.KEEP && fromServer) shrunkRowAnswers[playlistId] = answerIds
 					else shrunkRowAnswers.remove(playlistId)
@@ -1348,7 +1403,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			val focused = focusedCard { null }
 			rows.flatMap { data ->
 				val shown = tentacleRowAdapters[data.playlistId] ?: return@flatMap emptyList()
-				val presenter = HomeFragmentTentacleRow.presenterFor(data.wide, sharedCardPresenter)
+				val presenter = HomeFragmentTentacleRow.presenterFor(data, sharedCardPresenter)
 				if (presenter === shown.cardPresenter) return@flatMap emptyList()
 				val focusedHere = focused?.takeIf { it.row.adapter === shown }?.index
 				cardImageUrls(ctx, presenter, shown, cardsToWarm(shown.size(), focusedHere))
@@ -1540,7 +1595,7 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 					Timber.w("On Now: ${items.size} cards for this build")
 					if (items.isNotEmpty()) {
 						rows.add(HomeFragmentTentacleRow(
-							listOf(TentacleRowData(getString(R.string.lbl_tentacle_on_now), ON_NOW_ROW_KEY, items, wide = true)),
+							listOf(TentacleRowData(getString(R.string.lbl_tentacle_on_now), ON_NOW_ROW_KEY, items, square = true)),
 							onNowAdapters,
 						))
 					}

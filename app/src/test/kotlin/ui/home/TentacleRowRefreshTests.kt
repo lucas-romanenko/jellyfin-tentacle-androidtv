@@ -50,4 +50,11 @@ class TentacleRowRefreshTests : FunSpec({
 	test("a playlist the user can no longer see leaves") {
 		TentacleRowRefresh.decide(20, SectionFetch(emptyList(), SectionSource.GONE), 20, 0) shouldBe RowRefreshAction.DROP
 	}
+
+	test("Continue Watching and Recordings take every answer: they shrink and empty for real") {
+		TentacleRowRefresh.decide(12, server(2), limit = 20, emptyAnswersInARow = 0, listRow = true) shouldBe RowRefreshAction.REPLACE
+		TentacleRowRefresh.decide(3, server(0), limit = 20, emptyAnswersInARow = 1, listRow = true) shouldBe RowRefreshAction.DROP
+		// No answer: what is shown stays
+		TentacleRowRefresh.decide(12, SectionFetch(items(2), SectionSource.SAVED_COPY), 20, 0, listRow = true) shouldBe RowRefreshAction.KEEP
+	}
 })

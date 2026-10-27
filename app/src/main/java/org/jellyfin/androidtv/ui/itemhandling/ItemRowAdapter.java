@@ -781,11 +781,15 @@ public class ItemRowAdapter extends MutableObjectAdapter<Object> {
 
     private java.util.List<Object> buildStaticRowItems(List<BaseItemDto> items) {
         java.util.List<Object> rowItems = new java.util.ArrayList<>(items.size());
+        // An episode on a poster card shows its show's poster (Continue Watching in poster
+        // shape): its own picture is a 16:9 still
+        org.jellyfin.androidtv.ui.presentation.CardPresenter cards = getCardPresenter();
+        boolean seriesPosters = cards != null && cards.getImageType() == org.jellyfin.androidtv.constant.ImageType.POSTER;
         for (org.jellyfin.sdk.model.api.BaseItemDto item : items) {
             if (serverId != null && item.getServerId() == null) {
                 item = JavaCompat.copyWithServerId(item, serverId);
             }
-            rowItems.add(new BaseItemDtoBaseRowItem(item, false, false, BaseRowItemSelectAction.ShowDetails, false));
+            rowItems.add(new BaseItemDtoBaseRowItem(item, false, false, BaseRowItemSelectAction.ShowDetails, seriesPosters));
         }
         return rowItems;
     }

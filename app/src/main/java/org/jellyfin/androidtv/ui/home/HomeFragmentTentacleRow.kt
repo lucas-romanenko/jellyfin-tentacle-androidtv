@@ -35,9 +35,18 @@ class HomeFragmentTentacleRow(
 			CardPresenter(true, org.jellyfin.androidtv.constant.ImageType.THUMB, 150, true)
 		}
 
+		// On Now's own card: a square tile with the channel's logo whole (the web draws the same)
+		private val squarePresenter by lazy {
+			CardPresenter(true, org.jellyfin.androidtv.constant.ImageType.SQUARE, 150, true)
+		}
+
 		/** The presenter of a row's cards: the shared wide one, or Home's [cardPresenter] for posters. */
 		fun presenterFor(wide: Boolean, cardPresenter: CardPresenter): CardPresenter =
 			if (wide) widePresenter else cardPresenter
+
+		/** The presenter of [rowData]'s cards: On Now's square ones, else by shape. */
+		fun presenterFor(rowData: TentacleRowData, cardPresenter: CardPresenter): CardPresenter =
+			if (rowData.square) squarePresenter else presenterFor(rowData.wide, cardPresenter)
 	}
 
 	override fun addToRowsAdapter(
@@ -50,7 +59,7 @@ class HomeFragmentTentacleRow(
 
 			// Share a presenter per shape, so the RecycledViewPool is still shared
 			// across rows of the same shape rather than one per row.
-			val presenter = presenterFor(rowData.wide, cardPresenter)
+			val presenter = presenterFor(rowData, cardPresenter)
 			val rowAdapter = ItemRowAdapter(
 				context,
 				rowData.items,
@@ -82,4 +91,6 @@ data class TentacleRowData(
 	val items: List<BaseItemDto>,
 	/** 16:9 cards instead of 2:3. Set from the row's shape in the dashboard. */
 	val wide: Boolean = false,
+	/** On Now's own square channel cards (no shape to choose). */
+	val square: Boolean = false,
 )

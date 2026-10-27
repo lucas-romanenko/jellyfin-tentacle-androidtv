@@ -33,16 +33,22 @@ The code wins where they differ.
 - **Home** (`ui/home/`): `HomeFragment` hosts the Compose overlay (navbar,
   hero, media bar) over the Leanback `HomeRowsFragment`, which asks
   `/TentacleHome/Sections` and renders them in the API's order: `"row"`
-  sections are Tentacle playlists (`HomeFragmentTentacleRow`), `"builtin"`
-  ones map to Jellyfin's own sections by id (`constant/HomeSectionType.kt`:
-  `latestmedia`, `smalllibrarytiles`, `librarybuttons`, `resume`,
-  `resumeaudio`, `activerecordings`, `nextup`, `livetv`), except `onnow`,
-  Tentacle's own (`ui/home/OnNow.kt`): the person's favourite channels with
-  what's on now (`/LiveTv/Channels?isFavorite&addCurrentProgram` as them, so
-  kids get kids channels only), one card per channel named after the
-  programme with the channel and time left below; it tunes in like any
-  channel, leaves out when nothing is on, and is refilled on every home
-  refresh.
+  sections are Tentacle playlists (`HomeFragmentTentacleRow`). Every row is
+  Tentacle's (no Jellyfin home sections since 2026-10-26): Continue Watching
+  (`resumevideo`, with next episodes when on) and Recordings come as
+  `"builtin"` sections with a `shape`; `withTentacleListRows()` turns them
+  into rows with the id `tentacle-<section>` whose items are the plugin's
+  `/TentacleHome/ContinueWatching` and `/Recordings`, so they load, refresh
+  in place and change shape like playlist rows, and are asked again on every
+  return to Home (`refreshTentacleListRows`: a playback changes them without
+  a home version). `onnow` is Tentacle's On Now (`ui/home/OnNow.kt`): the
+  person's favourite channels with what's on now
+  (`/LiveTv/Channels?isFavorite&addCurrentProgram` as them, so kids get kids
+  channels only), one square card per channel (`ImageType.SQUARE`, the logo
+  whole) named after the programme with the channel and time left below; it
+  tunes in like any channel, leaves out when nothing is on, and is refilled
+  on every home refresh. An older plugin's `"builtin"` sections (no shape)
+  still map to Jellyfin's own rows (`constant/HomeSectionType.kt`).
 - **Home's first load** (audit H4): `/Sections` is asked once, alongside
   `/UserViews` (no separate availability probe; `fetchSections()` settles
   it). Its `"hero"` section decides the media bar, which fetches
@@ -318,10 +324,12 @@ and has no callers: don't wire it to a button for ordinary users.
 | GET | `/TentacleDiscover/Streaming` | user |
 | GET | `/TentacleDiscover/VodEpisodes/{tmdbId}` | user |
 | POST | `/TentacleDiscover/WrongMatch/movie/{tmdbId}` | user |
+| GET | `/TentacleHome/ContinueWatching` | user |
 | GET | `/TentacleHome/Hero` | user |
 | POST | `/TentacleHome/Hero` | user |
 | GET | `/TentacleHome/HeroConfig` | user |
 | GET | `/TentacleHome/Playlists` | user |
+| GET | `/TentacleHome/Recordings` | user |
 | POST | `/TentacleHome/Reorder` | user |
 | GET | `/TentacleHome/Section/{playlistId}` | user |
 | GET | `/TentacleHome/Sections` | user |

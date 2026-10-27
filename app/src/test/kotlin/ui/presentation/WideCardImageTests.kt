@@ -66,4 +66,14 @@ class WideCardImageTests : FunSpec({
 	test("no image at all: nothing, so the card shows its type icon") {
 		item(primary = false).wide().shouldBeNull()
 	}
+
+	test("an episode with no picture of its own: its show's thumb, else its show's backdrop") {
+		val show = UUID.randomUUID()
+		val withThumb = item(type = BaseItemKind.EPISODE, primary = false)
+			.copy(parentThumbItemId = show, parentThumbImageTag = "st", parentBackdropItemId = show, parentBackdropImageTags = listOf("sb"))
+		withThumb.wide()!!.let { it.type shouldBe ImageType.THUMB; it.item shouldBe show }
+		val backdropOnly = item(type = BaseItemKind.EPISODE, primary = false)
+			.copy(parentBackdropItemId = show, parentBackdropImageTags = listOf("sb"))
+		backdropOnly.wide()!!.let { it.type shouldBe ImageType.BACKDROP; it.item shouldBe show }
+	}
 })

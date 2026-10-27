@@ -676,6 +676,8 @@ private fun BaseRowItem.getDisplayConfig(imageType: ImageType, uniformAspect: Bo
 		aspectRatio = when (imageType) {
 			ImageType.BANNER -> ImageHelper.ASPECT_RATIO_16_9.toFloat()
 			ImageType.THUMB -> ImageHelper.ASPECT_RATIO_16_9.toFloat()
+			// On Now's own card: the logo whole on a square tile, whatever its shape
+			ImageType.SQUARE -> 1f
 			else -> baseItem?.primaryImageAspectRatio?.toFloat() ?: 1f
 		},
 		image = getImage(imageType),

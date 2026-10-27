@@ -1119,6 +1119,18 @@ class HomeRowsFragment : RowsSupportFragment(), AudioEventListener, View.OnKeyLi
 			// fetch failed or came back empty. Nothing re-fetched them, so a row that timed out
 			// once stayed missing until the app restarted (#49). Asked again on every refresh.
 			val missing = limits.keys - tentacleRowAdapters.keys
+			// Continue Watching and Recordings first, on their own: one quick answer each and
+			// what a "Next episodes" switch changes. Waiting for every playlist row (4 at a
+			// time) put that change on screen only after 10-11 s on the Sony.
+			val listFirst = tentacleRowAdapters.keys.filter { it.startsWith(TENTACLE_ROW_PREFIX) }
+				.map { id -> id to withContext(Dispatchers.IO) { tentacleRepository.fetchSectionItems(id) } }
+			withContext(Dispatchers.Main) {
+				for ((id, fetch) in listFirst) {
+					if (fetch.source == SectionSource.SERVER && fetch.items.isNotEmpty()) {
+						tentacleRowAdapters[id]?.replaceStaticItems(fetch.items)
+					}
+				}
+			}
 			val (updates, returning) = kotlinx.coroutines.coroutineScope {
 				val shown = tentacleRowAdapters.keys.map { playlistId ->
 					async(Dispatchers.IO) { playlistId to tentacleRepository.fetchSectionItems(playlistId) }

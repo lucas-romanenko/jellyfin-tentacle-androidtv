@@ -35,10 +35,12 @@ The code wins where they differ.
   `/TentacleHome/Sections` and renders them in the API's order: `"row"`
   sections are Tentacle playlists (`HomeFragmentTentacleRow`). Every row is
   Tentacle's (no Jellyfin home sections since 2026-10-26): Continue Watching
-  (`resumevideo`, with next episodes when on) and Recordings come as
-  `"builtin"` sections with a `shape`; `withTentacleListRows()` turns them
-  into rows with the id `tentacle-<section>` whose items are the plugin's
-  `/TentacleHome/ContinueWatching` and `/Recordings`, so they load, refresh
+  (`resumevideo`, with next episodes when on), Next Up (`nextup`, the next
+  episodes on their own row, only while Continue Watching's are off) and
+  Recordings come as `"builtin"` sections with a `shape`;
+  `withTentacleListRows()` turns them into rows with the id
+  `tentacle-<section>` whose items are the plugin's
+  `/TentacleHome/ContinueWatching`, `/NextUp` and `/Recordings`, so they load, refresh
   in place and change shape like playlist rows, and are asked again on every
   return to Home (`refreshTentacleListRows`: a playback changes them without
   a home version). `onnow` is Tentacle's On Now (`ui/home/OnNow.kt`): the
@@ -326,6 +328,7 @@ and has no callers: don't wire it to a button for ordinary users.
 | POST | `/TentacleDiscover/WrongMatch/movie/{tmdbId}` | user |
 | GET | `/TentacleHome/ContinueWatching` | user |
 | GET | `/TentacleHome/Hero` | user |
+| GET | `/TentacleHome/NextUp` | user |
 | POST | `/TentacleHome/Hero` | user |
 | GET | `/TentacleHome/HeroConfig` | user |
 | GET | `/TentacleHome/Playlists` | user |

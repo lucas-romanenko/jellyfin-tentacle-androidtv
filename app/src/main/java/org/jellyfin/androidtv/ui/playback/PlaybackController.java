@@ -124,6 +124,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     // Its stream ended after the recording finished: a normal stop, which marks it watched
     private boolean growingFinished = false;
     private int growingRestarts = 0;
+    // Watch live on a recording still recording: start at its live end (GROWING_LIVE_EDGE_MS)
+    private boolean growingStartAtLive = false;
     private final LiveTuneAttempts liveTunes = new LiveTuneAttempts();
     private boolean directStreamLiveTv;
     private int playbackRetries = 0;
@@ -605,6 +607,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     protected void play(long position, @Nullable Integer forcedSubtitleIndex) {
         String forcedAudioLanguage = videoQueueManager.getValue().getLastPlayedAudioLanguageIsoCode();
+        growingStartAtLive = GrowingRecordingKt.isLiveEdgeStart(position);
+        if (growingStartAtLive) position = 0;
         Timber.i("Play called from state: %s with pos: %d, sub index: %d and forced audio: %s", mPlaybackState, position, forcedSubtitleIndex, forcedAudioLanguage);
 
         if (mFragment == null) {
@@ -991,7 +995,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                     Timber.d("PlaybackController: Using server-specific API for subtitles: %s user: %s", mCurrentOptions.getServerId(), currentUserId);
                 }
             }
-            mVideoManager.setMediaStreamInfo(subtitleApi, response, growingRecording);
+            // From its start, or (Watch live) at the live end the player picks by default
+            mVideoManager.setMediaStreamInfo(subtitleApi, response, growingRecording && !growingStartAtLive);
         }
         if (isLiveTv) startLiveStallWatch();
 
@@ -1629,6 +1634,44 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     private static final int GROWING_RESTARTS = 3;
 
+    /**
+     * Watch live on a recording still recording: the player starts at the end of what the server
+     * has remuxed so far, which on a long recording is still catching up (it reads the file from
+     * 0:00). Once it grows at about real time, go to the live end ([GrowingRecordingKt#growingCaughtUp]).
+     */
+    private void growingSeekToLive() {
+        final long askedAt = Instant.now().toEpochMilli();
+        mHandler.post(new Runnable() {
+            long sinceAt = 0;
+            long sinceDuration = 0;
+
+            @Override
+            public void run() {
+                if (mVideoManager == null || !growingRecording) return;
+                long now = Instant.now().toEpochMilli();
+                long duration = mVideoManager.getDuration();
+                if (sinceAt == 0 || duration <= 0) {
+                    sinceAt = now;
+                    sinceDuration = duration;
+                } else if (now - sinceAt >= 5000) {
+                    if (GrowingRecordingKt.growingCaughtUp(duration - sinceDuration, now - sinceAt) || now - askedAt >= GrowingRecordingKt.GROWING_RESUME_WAIT_MS) {
+                        Timber.i("Growing recording: %d ms written, going live after %d ms", duration, now - askedAt);
+                        jumpToLive();
+                        return;
+                    }
+                    sinceAt = now;
+                    sinceDuration = duration;
+                }
+                mHandler.postDelayed(this, 500);
+            }
+        });
+    }
+
+    /** Jump to live on a recording still recording: its live end, in this player (#239). */
+    public void jumpToLive() {
+        if (growingRecording) seek(GrowingRecordingKt.GROWING_LIVE_EDGE_MS);
+    }
+
     private void itemComplete() {
         interactionTracker.onEpisodeWatched();
         stop();
@@ -1869,7 +1912,10 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 liveReprepareTried = false;
             }
             if (!spinnerOff) {
-                if (mStartPosition > 0) {
+                if (growingStartAtLive) {
+                    growingStartAtLive = false;
+                    if (growingRecording) growingSeekToLive();
+                } else if (mStartPosition > 0) {
                     initialSeek(mStartPosition);
                     mStartPosition = 0;
                 } else {

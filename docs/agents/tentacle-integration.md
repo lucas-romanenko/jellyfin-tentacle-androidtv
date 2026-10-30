@@ -139,7 +139,11 @@ The code wins where they differ.
   no StartDate. Holding OK on a channel name favourites it.
   A recording still recording (#239, `ui/playback/GrowingRecording.kt`,
   `GrowingRecordingTests`): OK asks Watch live / Resume / Play from start
-  (`recordingNowChoices`). Jellyfin swaps in its own source while it
+  (`recordingNowChoices`), all on the recording's file in one player
+  (Lucas, 30 Oct): Watch live starts at its live end (start position
+  `GROWING_LIVE_EDGE_MS`; once the remux grows at about real time,
+  `growingCaughtUp`, the player seeks to the end), Jump to live seeks there
+  again. Jellyfin swaps in its own source while it
   records (another id, File, infinite, no runtime), only as HLS: an EVENT
   `live.m3u8` that ffmpeg remuxes (copy) from 0:00 of the growing .ts and
   appends to. PlaybackInfo gets no MediaSourceId (the item's own id gives
@@ -151,8 +155,8 @@ The code wins where they differ.
   (PlaylistStuckException) and the normal retry gets the finished file. Reports carry no
   position and the stop is `Failed` (else Jellyfin marks a no-runtime item
   watched at the first report); the position is saved with
-  `UserItems/{id}/UserData`. Jump to live is the timer's channel via
-  `switchChannel`. Needs the server's EnableSegmentDeletion off (default).
+  `UserItems/{id}/UserData`. Needs the server's EnableSegmentDeletion off
+  (default).
   Live updates (`ui/livetv/GuideLiveUpdates.kt`, pure logic in `GuideModel.kt`,
   `GuideLiveModelTests`), while the guide is started: the websocket's
   `UserDataChanged` (Jellyfin sends it ~1 s after any favourite change,

@@ -33,8 +33,23 @@ private const val STATUS_IN_PROGRESS = "InProgress"
 /** How far from the end of what's written a seek may land, so the player has segments to play. */
 const val GROWING_EDGE_MARGIN_MS = 10_000L
 
-/** How long a resume waits for the server's remux to reach the saved position. */
+/** How long a resume (or Watch live) waits for the server's remux to reach the position. */
 const val GROWING_RESUME_WAIT_MS = 45_000L
+
+/**
+ * The start position that asks for the live end of a recording still recording (Watch live,
+ * Lucas 30 Oct: one player, cable-box style). No recording is 24 days long.
+ */
+const val GROWING_LIVE_EDGE_MS: Long = 2_147_483_647L
+
+fun isLiveEdgeStart(positionMs: Long): Boolean = positionMs >= GROWING_LIVE_EDGE_MS
+
+/**
+ * Whether the server's remux has caught up with the recording: what's written grew no faster
+ * than 2.5x real time over [overMs]. While it catches up with a long recording it grows minutes
+ * per second; once caught up, a segment (3 s) every 3 s.
+ */
+fun growingCaughtUp(grewMs: Long, overMs: Long): Boolean = overMs > 0 && grewMs * 2 < overMs * 5
 
 /** A recording that is still recording, by the item alone (before any PlaybackInfo). */
 fun isRecordingInProgress(item: BaseItemDto?): Boolean =

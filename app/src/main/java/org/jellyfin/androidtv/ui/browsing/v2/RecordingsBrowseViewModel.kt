@@ -40,25 +40,24 @@ enum class RecordingOk {
 /** OK on a recording card: one still recording asks first (#239), a finished one opens as before. */
 fun recordingOk(now: RecordingNowInfo?): RecordingOk = if (now == null) RecordingOk.OPEN else RecordingOk.CHOOSE
 
-/** The ways to watch a recording that is still recording. */
+/**
+ * The ways to watch a recording that is still recording, all in the same player on its file
+ * (Lucas, 30 Oct: one player, cable-box style; the recording's own provider connection).
+ */
 enum class RecordingNowChoice {
-	/** The channel live, joining the stream the recording already reads (no new provider connection). */
+	/** Its live end; seek back into what's recorded, Jump to live returns to the end. */
 	WATCH_LIVE,
 
-	/** Its file from the saved position; offered when there is one. */
+	/** The saved position; offered when there is one. */
 	RESUME,
 
-	/** Its file from 0:00, seekable in the part already recorded, growing as it records. */
+	/** 0:00, seekable in the part already recorded, growing as it records. */
 	FROM_START,
 }
 
-/**
- * What a recording still recording offers (Lucas, 30 Oct: Watch live / Play from start), in this
- * order: live first (today's OK), the saved position, the start. Live needs the channel (from
- * its timer); [resumeTicks] is the saved position, if any.
- */
-fun recordingNowChoices(channelKnown: Boolean, resumeTicks: Long?): List<RecordingNowChoice> = buildList {
-	if (channelKnown) add(RecordingNowChoice.WATCH_LIVE)
+/** What a recording still recording offers, in this order; [resumeTicks] is the saved position. */
+fun recordingNowChoices(resumeTicks: Long?): List<RecordingNowChoice> = buildList {
+	add(RecordingNowChoice.WATCH_LIVE)
 	if (resumeTicks != null && resumeTicks > 0) add(RecordingNowChoice.RESUME)
 	add(RecordingNowChoice.FROM_START)
 }

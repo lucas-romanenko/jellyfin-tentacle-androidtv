@@ -66,6 +66,22 @@ class GrowingRecordingTests : FunSpec({
 		growingResumeReady(targetMs = 1_800_000, writtenMs = 600_000, waitedMs = 45_000) shouldBe true
 	}
 
+	test("Watch live asks for the live end with a position no recording reaches") {
+		isLiveEdgeStart(GROWING_LIVE_EDGE_MS) shouldBe true
+		isLiveEdgeStart(Int.MAX_VALUE.toLong()) shouldBe true
+		isLiveEdgeStart(4 * 3_600_000L) shouldBe false
+		isLiveEdgeStart(0) shouldBe false
+		growingSeekTarget(GROWING_LIVE_EDGE_MS, 3_600_000) shouldBe 3_590_000
+	}
+
+	test("the remux has caught up once it grows at about real time") {
+		growingCaughtUp(grewMs = 600_000, overMs = 5_000) shouldBe false
+		growingCaughtUp(grewMs = 6_000, overMs = 5_000) shouldBe true
+		growingCaughtUp(grewMs = 0, overMs = 5_000) shouldBe true
+		growingCaughtUp(grewMs = 12_500, overMs = 5_000) shouldBe false
+		growingCaughtUp(grewMs = 3_000, overMs = 0) shouldBe false
+	}
+
 	test("the position saved at a stop: under a minute is not started") {
 		growingStopPosition(30_000) shouldBe 0
 		growingStopPosition(0) shouldBe 0

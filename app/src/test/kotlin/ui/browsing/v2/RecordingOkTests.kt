@@ -17,15 +17,12 @@ class RecordingOkTests : FunSpec({
 		recordingOk(null) shouldBe RecordingOk.OPEN
 	}
 
-	test("the choices: Watch live first, then the saved position, then the start") {
-		recordingNowChoices(channelKnown = true, resumeTicks = null) shouldBe
+	test("the choices: Watch live first, then the saved position, then the start (one player, #239)") {
+		recordingNowChoices(resumeTicks = null) shouldBe
 			listOf(RecordingNowChoice.WATCH_LIVE, RecordingNowChoice.FROM_START)
-		recordingNowChoices(channelKnown = true, resumeTicks = 12_000_000_000) shouldBe
+		recordingNowChoices(resumeTicks = 0) shouldBe
+			listOf(RecordingNowChoice.WATCH_LIVE, RecordingNowChoice.FROM_START)
+		recordingNowChoices(resumeTicks = 12_000_000_000) shouldBe
 			listOf(RecordingNowChoice.WATCH_LIVE, RecordingNowChoice.RESUME, RecordingNowChoice.FROM_START)
-	}
-
-	test("channel unknown (no timer matched): no Watch live, so OK plays from the start at once") {
-		recordingNowChoices(channelKnown = false, resumeTicks = null) shouldBe listOf(RecordingNowChoice.FROM_START)
-		recordingNowChoices(channelKnown = false, resumeTicks = 0) shouldBe listOf(RecordingNowChoice.FROM_START)
 	}
 })

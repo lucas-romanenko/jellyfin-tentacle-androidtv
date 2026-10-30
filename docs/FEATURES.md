@@ -60,8 +60,11 @@ picks its first choice (`OkKeyGate`); confirmations use it too.
 - **Home**: in Continue Watching, Remove from Continue Watching (the saved place goes, watched
   stays), Play from start, Mark watched, Details; other cards Mark watched / unwatched, Details.
   The row changes at once. A long press never also opens the card (`OkLongPress`).
-- **Recordings**: a recording still recording plays on OK (live, on the stream the recording
-  already uses); its menu has Watch live and Play from start.
+- **Recordings**: OK on a recording still recording asks Watch live (on the stream the
+  recording already uses), Resume from … (when you stopped in it before) or Play from start.
+  From the start it plays the part recorded so far: seek anywhere in it, it keeps growing while
+  you watch, and Jump to live in the player switches to the channel. Watching it doesn't mark
+  it watched; where you stop is kept for Resume.
 
 ## Live preview in the guide
 

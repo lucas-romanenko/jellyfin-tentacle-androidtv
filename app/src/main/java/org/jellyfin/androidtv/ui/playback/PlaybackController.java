@@ -119,6 +119,11 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     private LocalDateTime mCurrentProgramStart = null;
     private long mCurrentTranscodeStartTime;
     private boolean isLiveTv = false;
+    // A recording still recording, played from its start (#239, GrowingRecording.kt)
+    private boolean growingRecording = false;
+    // Its stream ended after the recording finished: a normal stop, which marks it watched
+    private boolean growingFinished = false;
+    private int growingRestarts = 0;
     private final LiveTuneAttempts liveTunes = new LiveTuneAttempts();
     private boolean directStreamLiveTv;
     private int playbackRetries = 0;
@@ -383,6 +388,10 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     public boolean canSeek() {
         return !isLiveTv || !directStreamLiveTv;
+    }
+
+    public boolean isGrowingRecording() {
+        return growingRecording;
     }
 
     public boolean isLiveTv() {
@@ -795,7 +804,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         if (internalOptions.getMediaSourceId() == null) {
             MediaSourceInfo currentMediaSource = getCurrentMediaSource();
             if (!isLiveTv && currentMediaSource != null) {
-                internalOptions.setMediaSourceId(currentMediaSource.getId());
+                // Not while it records: Jellyfin then offers another source (#239)
+                internalOptions.setMediaSourceId(GrowingRecordingKt.playbackMediaSourceId(item, currentMediaSource.getId()));
             }
         }
         // Once direct play AND direct stream have both been disabled by earlier retries (i.e. we
@@ -844,7 +854,10 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 }
             });
         } else {
-            playbackManager.getValue().getVideoStreamInfo(mFragment, internalOptions, position * 10000, new Response<StreamInfo>(mFragment.getLifecycle()) {
+            // A recording still recording is asked from 0:00 and the player seeks itself, so the
+            // part before the position stays in the stream (#239)
+            long startTicks = GrowingRecordingKt.isRecordingInProgress(item) ? 0 : position * 10000;
+            playbackManager.getValue().getVideoStreamInfo(mFragment, internalOptions, startTicks, new Response<StreamInfo>(mFragment.getLifecycle()) {
                 @Override
                 public void onResponse(StreamInfo internalResponse) {
                     if (!isActive()) return;
@@ -910,6 +923,9 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         mStartPosition = position;
         mCurrentStreamInfo = response;
         streamHasPlayed = false;
+        growingRecording = GrowingRecordingKt.isGrowingRecordingSource(item.getType(), response.getMediaSource());
+        growingFinished = false;
+        if (growingRecording) Timber.i("Playing a recording still recording from its start, then %d ms", position);
         mCurrentOptions.setMediaSourceId(response.getMediaSource().getId());
 
         if (response.getMediaUrl() == null) {
@@ -971,7 +987,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                     Timber.d("PlaybackController: Using server-specific API for subtitles: %s user: %s", mCurrentOptions.getServerId(), currentUserId);
                 }
             }
-            mVideoManager.setMediaStreamInfo(subtitleApi, response);
+            mVideoManager.setMediaStreamInfo(subtitleApi, response, growingRecording);
         }
         if (isLiveTv) startLiveStallWatch();
 
@@ -1200,7 +1216,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             if (mVideoManager != null && mVideoManager.isPlaying()) mVideoManager.stopPlayback();
             if (getCurrentlyPlayingItem() != null && mCurrentStreamInfo != null) {
                 Long mbPos = mCurrentPosition * 10000;
-                reportingHelper.getValue().reportStopped(mFragment, getCurrentlyPlayingItem(), mCurrentStreamInfo, mbPos);
+                reportingHelper.getValue().reportStopped(mFragment, getCurrentlyPlayingItem(), mCurrentStreamInfo, mbPos, growingRecording && !growingFinished);
             }
             clearPlaybackSessionOptions();
         }
@@ -1339,6 +1355,11 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     public void seek(long pos, boolean skipToNext) {
         if (pos <= 0) pos = 0;
+        if (growingRecording && hasInitializedVideoManager()) {
+            // Only within what's written so far; the end plays the latest part, it isn't the end
+            pos = GrowingRecordingKt.growingSeekTarget(pos, mVideoManager.getDuration());
+            skipToNext = false;
+        }
 
         Timber.i("Trying to seek from %s to %d", mCurrentPosition, pos);
         Timber.d("Container: %s", mCurrentStreamInfo == null ? "unknown" : mCurrentStreamInfo.getContainer());
@@ -1395,6 +1416,12 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
         // rebuild the stream
         // if an older device uses exoplayer to play a transcoded stream but falls back to the generic http stream instead of hls, rebuild the stream
+        if (!mVideoManager.isSeekable() && growingRecording) {
+            // Asking the server again from the position would drop the part before it
+            Timber.w("Growing recording not seekable yet - seek to %d dropped", pos);
+            wasSeeking = false;
+            return;
+        }
         if (!mVideoManager.isSeekable()) {
             Timber.d("Seek method - rebuilding the stream");
             //mkv transcodes require re-start of stream for seek
@@ -1574,12 +1601,16 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     private void initialSeek(final long position) {
+        final long askedAt = Instant.now().toEpochMilli();
         mHandler.post(new Runnable() {
             @Override
             public void run() {
                 if (mVideoManager == null)
                     return;
-                if (mVideoManager.getDuration() <= 0) {
+                if (growingRecording && !GrowingRecordingKt.growingResumeReady(position, mVideoManager.getDuration(), Instant.now().toEpochMilli() - askedAt)) {
+                    // The server's remux of the growing file hasn't reached the position yet
+                    mHandler.postDelayed(this, 500);
+                } else if (mVideoManager.getDuration() <= 0) {
                     // use mVideoManager.getDuration here for accurate results
                     // wait until we have valid duration
                     mHandler.postDelayed(this, 25);
@@ -1591,6 +1622,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             }
         });
     }
+
+    private static final int GROWING_RESTARTS = 3;
 
     private void itemComplete() {
         interactionTracker.onEpisodeWatched();
@@ -1779,6 +1812,25 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     @Override
     public void onCompletion() {
         Timber.i("On Completion fired");
+        if (growingRecording && !growingFinished && mPlaybackState != PlaybackState.IDLE) {
+            // The server's remux ended: the recording finished, or its file stopped growing for
+            // a while (Jellyfin stops reading after 30 s). Still recording: open it again there.
+            final long at = hasInitializedVideoManager() ? Math.max(mCurrentPosition, mVideoManager.getCurrentPosition()) : mCurrentPosition;
+            PlaybackControllerHelperKt.isStillRecording(this, getCurrentlyPlayingItem(), stillRecording -> {
+                if (mFragment == null || mPlaybackState == PlaybackState.IDLE) return null;
+                if (stillRecording && growingRestarts < GROWING_RESTARTS) {
+                    growingRestarts++;
+                    Timber.w("Growing recording's stream ended at %d ms while it records - opening it again (%d)", at, growingRestarts);
+                    mCurrentPosition = at;
+                    refreshStream();
+                } else {
+                    growingFinished = true;
+                    itemComplete();
+                }
+                return null;
+            });
+            return;
+        }
         if (isLiveTv && (mPlaybackState == PlaybackState.PLAYING || mPlaybackState == PlaybackState.BUFFERING)) {
             // A live channel doesn't end: an ended playlist means the server's remux stopped
             // (the provider dropped out). Retry like any stream error instead of closing the

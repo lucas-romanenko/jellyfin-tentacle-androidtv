@@ -35,6 +35,7 @@ import org.jellyfin.androidtv.ui.playback.overlay.action.ClosedCaptionsAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.CustomAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.FastForwardAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.GuideAction;
+import org.jellyfin.androidtv.ui.playback.overlay.action.JumpToLiveAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.PlayPauseAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.PlaybackSpeedAction;
 import org.jellyfin.androidtv.ui.playback.overlay.action.PreviousLiveTvChannelAction;
@@ -74,6 +75,7 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
     private PreviousLiveTvChannelAction previousLiveTvChannelAction;
     private ChannelBarChannelAction channelBarChannelAction;
     private GuideAction guideAction;
+    private JumpToLiveAction jumpToLiveAction;
     private RecordAction recordAction;
 
     private final PlaybackController playbackController;
@@ -224,6 +226,8 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
         channelBarChannelAction.setLabels(new String[]{context.getString(R.string.lbl_other_channels)});
         guideAction = new GuideAction(context, this);
         guideAction.setLabels(new String[]{context.getString(R.string.lbl_live_tv_guide)});
+        jumpToLiveAction = new JumpToLiveAction(context, this);
+        jumpToLiveAction.setLabels(new String[]{context.getString(R.string.lbl_jump_to_live)});
         recordAction = new RecordAction(context, this);
         recordAction.setLabels(new String[]{
                 context.getString(R.string.lbl_record),
@@ -267,6 +271,11 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
         if (playerAdapter.isLiveTv()) {
             primaryActionsAdapter.add(channelBarChannelAction);
             primaryActionsAdapter.add(guideAction);
+        }
+
+        // A recording still recording, played from its start: its channel live (#239)
+        if (playerAdapter.isGrowingRecording()) {
+            primaryActionsAdapter.add(jumpToLiveAction);
         }
 
         // Secondary Items

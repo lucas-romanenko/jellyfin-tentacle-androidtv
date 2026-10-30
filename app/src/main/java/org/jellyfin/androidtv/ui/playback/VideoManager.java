@@ -478,6 +478,14 @@ public class VideoManager {
     }
 
     public void setMediaStreamInfo(ApiClient api, StreamInfo streamInfo) {
+        setMediaStreamInfo(api, streamInfo, false);
+    }
+
+    /**
+     * @param fromStart start at the beginning of the stream's window, not at its live edge: a
+     *                  recording still recording is a live (EVENT) playlist from 0:00 (#239)
+     */
+    public void setMediaStreamInfo(ApiClient api, StreamInfo streamInfo, boolean fromStart) {
         mLastPlayerError = null;
         String path = streamInfo.getMediaUrl();
         if (path == null) {
@@ -514,7 +522,8 @@ public class VideoManager {
             }
             MediaItem mediaItem = mediaItemBuilder.build();
 
-            mExoPlayer.setMediaItem(mediaItem);
+            if (fromStart) mExoPlayer.setMediaItem(mediaItem, 0);
+            else mExoPlayer.setMediaItem(mediaItem);
             mExoPlayer.prepare();
         } catch (IllegalStateException e) {
             Timber.e(e, "Unable to set video path.  Probably backing out.");

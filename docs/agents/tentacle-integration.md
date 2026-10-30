@@ -137,6 +137,18 @@ The code wins where they differ.
   (`RecordingsLayout.kt`, `RecordingsLayoutTests`); a recording's air time
   comes from its file name (`yyyy_MM_dd_HH_mm_ss`), since recordings carry
   no StartDate. Holding OK on a channel name favourites it.
+  A recording still recording (#239, `ui/playback/GrowingRecording.kt`,
+  `GrowingRecordingTests`): OK asks Watch live / Resume / Play from start
+  (`recordingNowChoices`). Jellyfin swaps in its own source while it
+  records (another id, File, infinite, no runtime), only as HLS: an EVENT
+  `live.m3u8` that ffmpeg remuxes (copy) from 0:00 of the growing .ts and
+  appends to. PlaybackInfo gets no MediaSourceId (the item's own id gives
+  NoCompatibleStream) and StartTimeTicks 0; the player starts at the
+  window's 0 and seeks itself, never past what's written. Reports carry no
+  position and the stop is `Failed` (else Jellyfin marks a no-runtime item
+  watched at the first report); the position is saved with
+  `UserItems/{id}/UserData`. Jump to live is the timer's channel via
+  `switchChannel`. Needs the server's EnableSegmentDeletion off (default).
   Live updates (`ui/livetv/GuideLiveUpdates.kt`, pure logic in `GuideModel.kt`,
   `GuideLiveModelTests`), while the guide is started: the websocket's
   `UserDataChanged` (Jellyfin sends it ~1 s after any favourite change,

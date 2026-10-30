@@ -1,5 +1,6 @@
 package org.jellyfin.androidtv.ui.browsing.v2
 
+import android.content.Context
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -83,6 +84,7 @@ import org.jellyfin.androidtv.ui.shared.menu.TvMenus
 import org.jellyfin.androidtv.ui.navigation.Destinations
 import org.jellyfin.androidtv.ui.navigation.NavigationRepository
 import org.jellyfin.androidtv.ui.playback.PlaybackLauncher
+import org.jellyfin.androidtv.ui.playback.isRecordingInProgress
 import org.jellyfin.androidtv.preference.UserPreferences
 import org.jellyfin.androidtv.util.PlaybackHelper
 import org.jellyfin.androidtv.util.TimeUtils
@@ -130,6 +132,9 @@ class RecordingsBrowseFragment : Fragment() {
 	private val userPreferences: UserPreferences by inject()
 
 	private val canManage: Boolean get() = Utils.canManageRecordings(userRepository.currentUser.value)
+
+	/** OK's question on a recording still recording (its item read again, and its timer's channel). */
+	private var recordingNowChoice by mutableStateOf<Pair<BaseItemDto, RecordingNowInfo>?>(null)
 
 	override fun onCreateView(
 		inflater: LayoutInflater,
@@ -300,6 +305,14 @@ class RecordingsBrowseFragment : Fragment() {
 
 		recordingSheet?.let { item ->
 			RecordedActionSheet(item = item, format = format, onDismiss = { recordingSheet = null })
+		}
+		recordingNowChoice?.let { (item, now) ->
+			val context = LocalContext.current
+			RecordingActionSheet(
+				title = item.name.orEmpty(),
+				actions = recordingNowActions(context, item, now),
+				onDismiss = { recordingNowChoice = null },
+			)
 		}
 		scheduleSheet?.let { entry ->
 			ScheduleActionSheet(entry = entry, onDismiss = { scheduleSheet = null })
@@ -658,13 +671,10 @@ class RecordingsBrowseFragment : Fragment() {
 		val now = viewModel.uiState.value.recordingNow[item.id]
 		val actions = buildList {
 			if (now != null) {
-				// Still recording: live, sharing the recording's stream (Jellyfin won't stream the
-				// growing file, so there is no Play from start until it has finished)
-				val channelId = now.channelId
-				if (channelId != null) add(SheetAction(context.getString(R.string.lbl_watch_live)) { watchLive(channelId) })
+				// Still recording: live (sharing the recording's stream), or its file so far (#239)
+				addAll(recordingNowActions(context, item, now))
 			} else if (resume != null) {
-				val prerollSeconds = userPreferences[UserPreferences.resumeSubtractDuration].toIntOrNull() ?: 0
-				val startMs = resumeStartMs(item, prerollSeconds)
+				val startMs = resumeMs(item)
 				add(SheetAction(context.getString(R.string.lbl_resume_from, TimeUtils.formatMillis(startMs.toLong()))) { play(item, startMs) })
 				add(SheetAction(context.getString(R.string.lbl_from_beginning)) { play(item, 0) })
 			} else {
@@ -708,9 +718,47 @@ class RecordingsBrowseFragment : Fragment() {
 	/** OK on a recording card ([recordingOk]). */
 	private fun openRecording(item: BaseItemDto, now: RecordingNowInfo?) {
 		when (recordingOk(now)) {
-			RecordingOk.WATCH_LIVE -> watchLive(requireNotNull(now?.channelId))
+			RecordingOk.CHOOSE -> lifecycleScope.launch {
+				// Read again: the saved position for Resume, and whether it still records
+				val fresh = viewModel.forMenu(item)
+				if (!isRecordingInProgress(fresh) || now == null) {
+					launchItem(fresh)
+				} else {
+					val choices = recordingNowChoices(now.channelId != null, recordingResumeTicks(fresh))
+					if (choices.size == 1) recordingNowAction(fresh, now, choices.single())
+					else recordingNowChoice = fresh to now
+				}
+			}
 			RecordingOk.OPEN -> launchItem(item)
 		}
+	}
+
+	/** Watch live, Resume from …, Play from start ([recordingNowChoices]) as menu entries. */
+	private fun recordingNowActions(context: Context, item: BaseItemDto, now: RecordingNowInfo): List<SheetAction> {
+		val resume = recordingResumeTicks(item)
+		return recordingNowChoices(now.channelId != null, resume).map { choice ->
+			val label = when (choice) {
+				RecordingNowChoice.WATCH_LIVE -> context.getString(R.string.lbl_watch_live)
+				RecordingNowChoice.RESUME -> context.getString(R.string.lbl_resume_from, TimeUtils.formatMillis(resumeMs(item).toLong()))
+				RecordingNowChoice.FROM_START -> context.getString(R.string.lbl_play_from_start)
+			}
+			SheetAction(label) { recordingNowAction(item, now, choice) }
+		}
+	}
+
+	private fun recordingNowAction(item: BaseItemDto, now: RecordingNowInfo, choice: RecordingNowChoice) {
+		when (choice) {
+			RecordingNowChoice.WATCH_LIVE -> now.channelId?.let { watchLive(it) }
+			// The player plays the growing file (GrowingRecording.kt): seekable in the part recorded
+			RecordingNowChoice.RESUME -> play(item, resumeMs(item))
+			RecordingNowChoice.FROM_START -> play(item, 0)
+		}
+	}
+
+	/** The saved position less the resume preroll, as Resume on a finished recording. */
+	private fun resumeMs(item: BaseItemDto): Int {
+		val prerollSeconds = userPreferences[UserPreferences.resumeSubtractDuration].toIntOrNull() ?: 0
+		return resumeStartMs(item, prerollSeconds)
 	}
 
 	/**

@@ -124,6 +124,10 @@ public class VideoPlayerAdapter extends PlayerAdapter {
         return playbackController.isLiveTv();
     }
 
+    boolean isGrowingRecording() {
+        return playbackController.isGrowingRecording();
+    }
+
     void setMasterOverlayFragment(CustomPlaybackOverlayFragment customPlaybackOverlayFragment) {
         this.customPlaybackOverlayFragment = customPlaybackOverlayFragment;
     }

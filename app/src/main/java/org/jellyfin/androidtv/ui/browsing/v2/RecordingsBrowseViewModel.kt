@@ -30,24 +30,37 @@ data class RecordingNowInfo(val since: LocalDateTime?, val channelName: String?,
 
 /** What OK does on a recording card. */
 enum class RecordingOk {
-	/** Recording now: join the channel's live stream, the one the recording reads (no new provider connection). */
-	WATCH_LIVE,
+	/** Recording now: ask how to watch it ([recordingNowChoices]). */
+	CHOOSE,
 
 	/** Recorded: as before (the item's own launch). */
 	OPEN,
 }
 
+/** OK on a recording card: one still recording asks first (#239), a finished one opens as before. */
+fun recordingOk(now: RecordingNowInfo?): RecordingOk = if (now == null) RecordingOk.OPEN else RecordingOk.CHOOSE
+
+/** The ways to watch a recording that is still recording. */
+enum class RecordingNowChoice {
+	/** The channel live, joining the stream the recording already reads (no new provider connection). */
+	WATCH_LIVE,
+
+	/** Its file from the saved position; offered when there is one. */
+	RESUME,
+
+	/** Its file from 0:00, seekable in the part already recorded, growing as it records. */
+	FROM_START,
+}
+
 /**
- * OK on a recording that is still recording plays it (Lucas, 24 Oct): live, on the channel the
- * recording already streams, which Jellyfin shares (one provider connection for both, see
- * tentacle-share-streams). Not the growing file: Jellyfin offers no stream of a recording still
- * being written (PlaybackInfo: NoCompatibleStream, seen on the Sony 25 Oct), so with its channel
- * unknown, and once finished, it opens as before.
+ * What a recording still recording offers (Lucas, 30 Oct: Watch live / Play from start), in this
+ * order: live first (today's OK), the saved position, the start. Live needs the channel (from
+ * its timer); [resumeTicks] is the saved position, if any.
  */
-fun recordingOk(now: RecordingNowInfo?): RecordingOk = when {
-	now == null -> RecordingOk.OPEN
-	now.channelId != null -> RecordingOk.WATCH_LIVE
-	else -> RecordingOk.OPEN
+fun recordingNowChoices(channelKnown: Boolean, resumeTicks: Long?): List<RecordingNowChoice> = buildList {
+	if (channelKnown) add(RecordingNowChoice.WATCH_LIVE)
+	if (resumeTicks != null && resumeTicks > 0) add(RecordingNowChoice.RESUME)
+	add(RecordingNowChoice.FROM_START)
 }
 
 data class RecordingsBrowseUiState(

@@ -522,7 +522,10 @@ public class VideoManager {
             }
             MediaItem mediaItem = mediaItemBuilder.build();
 
-            if (fromStart) mExoPlayer.setMediaItem(mediaItem, 0);
+            // 1 ms, not 0: Media3's MaskingMediaSource takes a start of 0 for "the default
+            // position", which on a live playlist is its live edge (3:42 into a 13 min recording
+            // on the Sony, 30 Oct)
+            if (fromStart) mExoPlayer.setMediaItem(mediaItem, 1);
             else mExoPlayer.setMediaItem(mediaItem);
             mExoPlayer.prepare();
         } catch (IllegalStateException e) {

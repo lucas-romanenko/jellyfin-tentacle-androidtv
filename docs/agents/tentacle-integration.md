@@ -144,7 +144,11 @@ The code wins where they differ.
   `live.m3u8` that ffmpeg remuxes (copy) from 0:00 of the growing .ts and
   appends to. PlaybackInfo gets no MediaSourceId (the item's own id gives
   NoCompatibleStream) and StartTimeTicks 0; the player starts at the
-  window's 0 and seeks itself, never past what's written. Reports carry no
+  window's 1 ms (Media3 takes 0 for "default", the live edge) and seeks
+  itself, never past what's written; its length is the player's window,
+  never the item's runtime (a scan can probe one from the half-written
+  file). When the recording stops, the playlist stops growing
+  (PlaylistStuckException) and the normal retry gets the finished file. Reports carry no
   position and the stop is `Failed` (else Jellyfin marks a no-runtime item
   watched at the first report); the position is saved with
   `UserItems/{id}/UserData`. Jump to live is the timer's channel via

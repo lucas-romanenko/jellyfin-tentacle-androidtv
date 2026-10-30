@@ -27,7 +27,7 @@ class JumpToLiveAction(
 	customPlaybackTransportControlGlue: CustomPlaybackTransportControlGlue,
 ) : CustomAction(context, customPlaybackTransportControlGlue) {
 	init {
-		initializeWithIcon(R.drawable.ic_tv)
+		initializeWithIcon(R.drawable.ic_tv_play)
 	}
 
 	override fun handleClickAction(

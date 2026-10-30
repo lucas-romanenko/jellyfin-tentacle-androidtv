@@ -925,7 +925,11 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         streamHasPlayed = false;
         growingRecording = GrowingRecordingKt.isGrowingRecordingSource(item.getType(), response.getMediaSource());
         growingFinished = false;
-        if (growingRecording) Timber.i("Playing a recording still recording from its start, then %d ms", position);
+        if (growingRecording) {
+            Timber.i("Playing a recording still recording from its start, then %d ms", position);
+            // Its length is what the player has of it, never a runtime probed from the half-written file
+            if (mVideoManager != null) mVideoManager.setMetaDuration(-1);
+        }
         mCurrentOptions.setMediaSourceId(response.getMediaSource().getId());
 
         if (response.getMediaUrl() == null) {

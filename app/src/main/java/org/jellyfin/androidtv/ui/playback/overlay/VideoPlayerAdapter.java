@@ -65,12 +65,13 @@ public class VideoPlayerAdapter extends PlayerAdapter {
 
     @Override
     public long getDuration() {
+        // A recording still recording: the part written so far, which grows (#239). Its item may
+        // carry a runtime from a probe of the half-written file; that isn't its length.
+        if (playbackController.isGrowingRecording()) return playbackController.getDuration();
         Long runTimeTicks = null;
         if (getCurrentMediaSource() != null) runTimeTicks = getCurrentMediaSource().getRunTimeTicks();
         if (runTimeTicks == null && getCurrentlyPlayingItem() != null) runTimeTicks = getCurrentlyPlayingItem().getRunTimeTicks();
         if (runTimeTicks != null) return runTimeTicks / 10000;
-        // A recording still recording has no runtime: the part written so far, which grows (#239)
-        if (playbackController.isGrowingRecording()) return playbackController.getDuration();
         return -1;
     }
 

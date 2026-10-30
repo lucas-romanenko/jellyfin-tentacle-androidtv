@@ -82,6 +82,25 @@ class GrowingRecordingTests : FunSpec({
 		growingCaughtUp(grewMs = 3_000, overMs = 0) shouldBe false
 	}
 
+	test("the length a recording should have by now, from its start") {
+		val now = java.time.LocalDateTime.of(2026, 10, 31, 19, 35)
+		growingExpectedMs(java.time.LocalDateTime.of(2026, 10, 31, 19, 0), now) shouldBe 35 * 60_000L
+		growingExpectedMs(null, now) shouldBe 0
+		growingExpectedMs(now.plusMinutes(5), now) shouldBe 0
+		growingExpectedMs(now.minusDays(2), now) shouldBe 0
+	}
+
+	test("Watch live goes to the live end once the remux has caught up") {
+		// Production, 30 Oct: the first playlist held 2:25 of a 35 min recording, the next all of it
+		growingAtLiveEnd(writtenMs = 145_000, expectedMs = 2_100_000, grewMs = -1, overMs = -1, waitedMs = 500) shouldBe false
+		growingAtLiveEnd(writtenMs = 2_096_000, expectedMs = 2_100_000, grewMs = 1_951_000, overMs = 3_000, waitedMs = 3_500) shouldBe true
+		// Started late (expected too long): the growth at real time tells instead
+		growingAtLiveEnd(writtenMs = 2_096_000, expectedMs = 5_100_000, grewMs = 1_951_000, overMs = 3_000, waitedMs = 3_500) shouldBe false
+		growingAtLiveEnd(writtenMs = 2_099_000, expectedMs = 5_100_000, grewMs = 3_000, overMs = 3_000, waitedMs = 6_500) shouldBe true
+		// Never longer than 45 s
+		growingAtLiveEnd(writtenMs = 600_000, expectedMs = 5_100_000, grewMs = 60_000, overMs = 3_000, waitedMs = 45_000) shouldBe true
+	}
+
 	test("the position saved at a stop: under a minute is not started") {
 		growingStopPosition(30_000) shouldBe 0
 		growingStopPosition(0) shouldBe 0

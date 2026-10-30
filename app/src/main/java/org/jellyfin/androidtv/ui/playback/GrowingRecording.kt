@@ -4,6 +4,8 @@ import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.MediaProtocol
 import org.jellyfin.sdk.model.api.MediaSourceInfo
+import java.time.Duration
+import java.time.LocalDateTime
 
 /*
  * A recording Jellyfin is still writing, played from its start (#239).
@@ -50,6 +52,25 @@ fun isLiveEdgeStart(positionMs: Long): Boolean = positionMs >= GROWING_LIVE_EDGE
  * per second; once caught up, a segment (3 s) every 3 s.
  */
 fun growingCaughtUp(grewMs: Long, overMs: Long): Boolean = overMs > 0 && grewMs * 2 < overMs * 5
+
+/**
+ * How long the recording should be by now, from its start ([BaseItemDto.startDate], the
+ * programme's start: a rule's pre-padding only makes it longer), or 0 when unknown.
+ */
+fun growingExpectedMs(start: LocalDateTime?, now: LocalDateTime): Long =
+	start?.let { Duration.between(it, now).toMillis() }?.takeIf { it in 1..86_400_000L } ?: 0L
+
+/**
+ * Whether Watch live can go to the live end now: what's written is as long as the recording
+ * should be (less a minute), or its last growth ([grewMs] over [overMs], between two playlist
+ * updates; negative before the second) was about real time, or it has waited
+ * [GROWING_RESUME_WAIT_MS]. The first playlist the player gets on a long recording holds only
+ * what the server remuxed in its first second (2:25 of a 35 min recording on 30 Oct).
+ */
+fun growingAtLiveEnd(writtenMs: Long, expectedMs: Long, grewMs: Long, overMs: Long, waitedMs: Long): Boolean =
+	waitedMs >= GROWING_RESUME_WAIT_MS ||
+		(writtenMs > 0 && expectedMs > 0 && writtenMs >= expectedMs - 60_000L) ||
+		(grewMs >= 0 && growingCaughtUp(grewMs, overMs))
 
 /** A recording that is still recording, by the item alone (before any PlaybackInfo). */
 fun isRecordingInProgress(item: BaseItemDto?): Boolean =

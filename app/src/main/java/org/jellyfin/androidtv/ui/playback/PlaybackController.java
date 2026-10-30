@@ -126,6 +126,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     private int growingRestarts = 0;
     // Watch live on a recording still recording: start at its live end (GROWING_LIVE_EDGE_MS)
     private boolean growingStartAtLive = false;
+    // Watch live waits for the server's remux to reach the live end, spinner up (growingSeekToLive)
+    private boolean growingGoLivePending = false;
     private final LiveTuneAttempts liveTunes = new LiveTuneAttempts();
     private boolean directStreamLiveTv;
     private int playbackRetries = 0;
@@ -578,7 +580,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
             newPos = getRealTimeProgress();
             // live tv
         } else if (hasInitializedVideoManager()) {
-            if (currentSkipPos != 0 || (!isPlaying() && mSeekPosition != -1)) {
+            if (skipPending || currentSkipPos != 0 || (!isPlaying() && mSeekPosition != -1)) {
                 newPos = mSeekPosition;
                 // use seekPosition until playback starts
             } else if (isPlaying()) {
@@ -1314,6 +1316,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     private void clearPlaybackSessionOptions() {
+        skipPending = false;
+        growingGoLivePending = false;
         mDefaultAudioIndex = -1;
         mSeekPosition = -1;
         finishedInitialSeek = false;
@@ -1364,6 +1368,12 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     public void seek(long pos, boolean skipToNext) {
         if (pos <= 0) pos = 0;
+        if (growingGoLivePending) {
+            // The person seeks before Watch live reached the live end: theirs wins
+            growingGoLivePending = false;
+            finishedInitialSeek = true;
+            stopSpinner();
+        }
         if (growingRecording && hasInitializedVideoManager()) {
             // Only within what's written so far; the end plays the latest part, it isn't the end
             pos = GrowingRecordingKt.growingSeekTarget(pos, mVideoManager.getDuration());
@@ -1500,7 +1510,11 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     private long currentSkipPos = 0;
+    // A skip is waiting to seek: currentSkipPos is its target, 0:00 included (#239: holding
+    // rewind down to 0:00 used to start again from the playing position, over and over)
+    private boolean skipPending = false;
     private final Runnable skipRunnable = () -> {
+        skipPending = false;
         if (!(isPlaying() || isPaused() || mPlaybackState == PlaybackState.SEEKING)) return; // in case we completed since this was requested
 
         seek(currentSkipPos);
@@ -1511,7 +1525,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         if (hasInitializedVideoManager() && (isPlaying() || isPaused() || mPlaybackState == PlaybackState.SEEKING) && spinnerOff && mVideoManager.getCurrentPosition() > 0) { //guard against skipping before playback has truly begun
             mHandler.removeCallbacks(skipRunnable);
             refreshCurrentPosition();
-            currentSkipPos = Utils.getSafeSeekPosition((currentSkipPos == 0 ? mCurrentPosition : currentSkipPos) + msec, getDuration());
+            currentSkipPos = Utils.getSafeSeekPosition((skipPending ? currentSkipPos : mCurrentPosition) + msec, getDuration());
+            skipPending = true;
 
             Timber.i("Skip amount requested was %s. Calculated position is %s", msec, currentSkipPos);
             Timber.i("Duration reported as: %s current pos: %s", getDuration(), mCurrentPosition);
@@ -1636,39 +1651,50 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     /**
      * Watch live on a recording still recording: the player starts at the end of what the server
-     * has remuxed so far, which on a long recording is still catching up (it reads the file from
-     * 0:00). Once it grows at about real time, go to the live end ([GrowingRecordingKt#growingCaughtUp]).
+     * has remuxed by then, which on a long recording is still catching up (it reads the file from
+     * 0:00, in about a second for 35 min on production). The spinner stays up until it has
+     * caught up ([GrowingRecordingKt#growingAtLiveEnd]), then the player goes to the live end.
+     * A seek of the person's own in the meantime ends the wait.
      */
     private void growingSeekToLive() {
+        growingGoLivePending = true;
         final long askedAt = Instant.now().toEpochMilli();
+        BaseItemDto item = getCurrentlyPlayingItem();
+        final long expectedMs = GrowingRecordingKt.growingExpectedMs(item != null ? item.getStartDate() : null, LocalDateTime.now());
         mHandler.post(new Runnable() {
-            long sinceAt = 0;
-            long sinceDuration = 0;
+            long lastDuration = -1;
+            long changedAt = 0;
+            long grew = -1;
+            long over = -1;
 
             @Override
             public void run() {
-                if (mVideoManager == null || !growingRecording) return;
+                if (!growingGoLivePending || mVideoManager == null || !growingRecording) return;
                 long now = Instant.now().toEpochMilli();
                 long duration = mVideoManager.getDuration();
-                if (sinceAt == 0 || duration <= 0) {
-                    sinceAt = now;
-                    sinceDuration = duration;
-                } else if (now - sinceAt >= 5000) {
-                    if (GrowingRecordingKt.growingCaughtUp(duration - sinceDuration, now - sinceAt) || now - askedAt >= GrowingRecordingKt.GROWING_RESUME_WAIT_MS) {
-                        Timber.i("Growing recording: %d ms written, going live after %d ms", duration, now - askedAt);
-                        jumpToLive();
-                        return;
+                if (duration != lastDuration) {
+                    if (lastDuration > 0) {
+                        grew = duration - lastDuration;
+                        over = now - changedAt;
                     }
-                    sinceAt = now;
-                    sinceDuration = duration;
+                    lastDuration = duration;
+                    changedAt = now;
                 }
-                mHandler.postDelayed(this, 500);
+                if (GrowingRecordingKt.growingAtLiveEnd(duration, expectedMs, grew, over, now - askedAt)) {
+                    Timber.i("Growing recording: %d ms written (expected %d), going live after %d ms", duration, expectedMs, now - askedAt);
+                    jumpToLive();
+                    finishedInitialSeek = true;
+                    stopSpinner();
+                    return;
+                }
+                mHandler.postDelayed(this, 300);
             }
         });
     }
 
     /** Jump to live on a recording still recording: its live end, in this player (#239). */
     public void jumpToLive() {
+        growingGoLivePending = false;
         if (growingRecording) seek(GrowingRecordingKt.GROWING_LIVE_EDGE_MS);
     }
 
@@ -1918,7 +1944,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                 } else if (mStartPosition > 0) {
                     initialSeek(mStartPosition);
                     mStartPosition = 0;
-                } else {
+                } else if (!growingGoLivePending) {
                     finishedInitialSeek = true;
                     stopSpinner();
                 }
@@ -1954,7 +1980,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     public long getCurrentPosition() {
-        if (currentSkipPos > 0) return currentSkipPos;
+        if (skipPending || currentSkipPos > 0) return currentSkipPos;
         return !isPlaying() && mSeekPosition != -1 ? mSeekPosition : mCurrentPosition;
     }
 

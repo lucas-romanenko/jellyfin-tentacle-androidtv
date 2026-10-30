@@ -65,6 +65,9 @@ public class VideoPlayerAdapter extends PlayerAdapter {
 
     @Override
     public long getDuration() {
+        // A recording still recording: the part written so far, which grows (#239). Its item may
+        // carry a runtime from a probe of the half-written file; that isn't its length.
+        if (playbackController.isGrowingRecording()) return playbackController.getDuration();
         Long runTimeTicks = null;
         if (getCurrentMediaSource() != null) runTimeTicks = getCurrentMediaSource().getRunTimeTicks();
         if (runTimeTicks == null && getCurrentlyPlayingItem() != null) runTimeTicks = getCurrentlyPlayingItem().getRunTimeTicks();
@@ -88,6 +91,7 @@ public class VideoPlayerAdapter extends PlayerAdapter {
     }
 
     void updateCurrentPosition() {
+        if (playbackController.isGrowingRecording()) getCallback().onDurationChanged(this);
         getCallback().onCurrentPositionChanged(this);
         getCallback().onBufferedPositionChanged(this);
     }
@@ -122,6 +126,10 @@ public class VideoPlayerAdapter extends PlayerAdapter {
 
     boolean isLiveTv() {
         return playbackController.isLiveTv();
+    }
+
+    boolean isGrowingRecording() {
+        return playbackController.isGrowingRecording();
     }
 
     void setMasterOverlayFragment(CustomPlaybackOverlayFragment customPlaybackOverlayFragment) {

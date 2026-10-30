@@ -8,15 +8,21 @@ import java.util.UUID
 class RecordingOkTests : FunSpec({
 	val since = LocalDateTime.of(2026, 10, 24, 19, 55)
 
-	test("recording now, channel known: OK watches live (joins the recording's own stream)") {
-		recordingOk(RecordingNowInfo(since, "TSN 2", UUID.randomUUID())) shouldBe RecordingOk.WATCH_LIVE
-	}
-
-	test("recording now, channel unknown: opens as before (Jellyfin won't stream the growing file)") {
-		recordingOk(RecordingNowInfo(since, null, null)) shouldBe RecordingOk.OPEN
+	test("recording now: OK asks how to watch it (#239)") {
+		recordingOk(RecordingNowInfo(since, "TSN 2", UUID.randomUUID())) shouldBe RecordingOk.CHOOSE
+		recordingOk(RecordingNowInfo(since, null, null)) shouldBe RecordingOk.CHOOSE
 	}
 
 	test("a finished recording opens as before") {
 		recordingOk(null) shouldBe RecordingOk.OPEN
+	}
+
+	test("the choices: Watch live first, then the saved position, then the start (one player, #239)") {
+		recordingNowChoices(resumeTicks = null) shouldBe
+			listOf(RecordingNowChoice.WATCH_LIVE, RecordingNowChoice.FROM_START)
+		recordingNowChoices(resumeTicks = 0) shouldBe
+			listOf(RecordingNowChoice.WATCH_LIVE, RecordingNowChoice.FROM_START)
+		recordingNowChoices(resumeTicks = 12_000_000_000) shouldBe
+			listOf(RecordingNowChoice.WATCH_LIVE, RecordingNowChoice.RESUME, RecordingNowChoice.FROM_START)
 	}
 })

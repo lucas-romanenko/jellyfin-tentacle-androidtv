@@ -30,24 +30,36 @@ data class RecordingNowInfo(val since: LocalDateTime?, val channelName: String?,
 
 /** What OK does on a recording card. */
 enum class RecordingOk {
-	/** Recording now: join the channel's live stream, the one the recording reads (no new provider connection). */
-	WATCH_LIVE,
+	/** Recording now: ask how to watch it ([recordingNowChoices]). */
+	CHOOSE,
 
 	/** Recorded: as before (the item's own launch). */
 	OPEN,
 }
 
+/** OK on a recording card: one still recording asks first (#239), a finished one opens as before. */
+fun recordingOk(now: RecordingNowInfo?): RecordingOk = if (now == null) RecordingOk.OPEN else RecordingOk.CHOOSE
+
 /**
- * OK on a recording that is still recording plays it (Lucas, 24 Oct): live, on the channel the
- * recording already streams, which Jellyfin shares (one provider connection for both, see
- * tentacle-share-streams). Not the growing file: Jellyfin offers no stream of a recording still
- * being written (PlaybackInfo: NoCompatibleStream, seen on the Sony 25 Oct), so with its channel
- * unknown, and once finished, it opens as before.
+ * The ways to watch a recording that is still recording, all in the same player on its file
+ * (Lucas, 30 Oct: one player, cable-box style; the recording's own provider connection).
  */
-fun recordingOk(now: RecordingNowInfo?): RecordingOk = when {
-	now == null -> RecordingOk.OPEN
-	now.channelId != null -> RecordingOk.WATCH_LIVE
-	else -> RecordingOk.OPEN
+enum class RecordingNowChoice {
+	/** Its live end; seek back into what's recorded, Jump to live returns to the end. */
+	WATCH_LIVE,
+
+	/** The saved position; offered when there is one. */
+	RESUME,
+
+	/** 0:00, seekable in the part already recorded, growing as it records. */
+	FROM_START,
+}
+
+/** What a recording still recording offers, in this order; [resumeTicks] is the saved position. */
+fun recordingNowChoices(resumeTicks: Long?): List<RecordingNowChoice> = buildList {
+	add(RecordingNowChoice.WATCH_LIVE)
+	if (resumeTicks != null && resumeTicks > 0) add(RecordingNowChoice.RESUME)
+	add(RecordingNowChoice.FROM_START)
 }
 
 data class RecordingsBrowseUiState(

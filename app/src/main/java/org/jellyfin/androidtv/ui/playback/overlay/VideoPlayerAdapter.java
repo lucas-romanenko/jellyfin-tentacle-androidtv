@@ -69,6 +69,8 @@ public class VideoPlayerAdapter extends PlayerAdapter {
         if (getCurrentMediaSource() != null) runTimeTicks = getCurrentMediaSource().getRunTimeTicks();
         if (runTimeTicks == null && getCurrentlyPlayingItem() != null) runTimeTicks = getCurrentlyPlayingItem().getRunTimeTicks();
         if (runTimeTicks != null) return runTimeTicks / 10000;
+        // A recording still recording has no runtime: the part written so far, which grows (#239)
+        if (playbackController.isGrowingRecording()) return playbackController.getDuration();
         return -1;
     }
 
@@ -88,6 +90,7 @@ public class VideoPlayerAdapter extends PlayerAdapter {
     }
 
     void updateCurrentPosition() {
+        if (playbackController.isGrowingRecording()) getCallback().onDurationChanged(this);
         getCallback().onCurrentPositionChanged(this);
         getCallback().onBufferedPositionChanged(this);
     }

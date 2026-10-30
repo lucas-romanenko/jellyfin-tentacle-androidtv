@@ -341,6 +341,11 @@ public class CustomPlaybackTransportControlGlue extends PlaybackTransportControl
     private void setEndTime() {
         if (mEndsText == null || getPlayerAdapter().getDuration() < 1)
             return;
+        if (getPlayerAdapter().isGrowingRecording()) {
+            // Still recording: its end isn't known (#239)
+            mEndsText.setText("");
+            return;
+        }
         long msLeft = getPlayerAdapter().getDuration() - getPlayerAdapter().getCurrentPosition();
         long realTimeLeft = round(msLeft / playbackController.getPlaybackSpeed());
 

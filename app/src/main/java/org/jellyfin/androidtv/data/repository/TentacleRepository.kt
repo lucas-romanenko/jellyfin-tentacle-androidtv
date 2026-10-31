@@ -2140,8 +2140,16 @@ data class SonarrEpisode(
 	val seasonNumber: Int = 0,
 	val episodeNumber: Int = 0,
 	val monitored: Boolean = false,
+	/** A downloaded file (servers before #889 also counted Tentacle's VOD .strm, see sonarrHasFile). */
 	val hasFile: Boolean = false,
 	val airDateUtc: String? = null,
+	// Where the episode plays from (#889); null from older servers.
+	val downloaded: Boolean? = null,
+	val stream: Boolean? = null,
+	/** "both", "download", "stream", "upcoming" (not aired yet) or "missing". */
+	val source: String? = null,
+	/** Sonarr's own hasFile, which counts a VOD .strm in the show's folder as a file. */
+	val sonarrHasFile: Boolean? = null,
 )
 
 @Serializable

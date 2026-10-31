@@ -23,6 +23,9 @@ android {
 		applicationId = "org.jellyfin.tentacle"
 		versionName = project.getVersionName()
 		versionCode = getVersionCode(versionName!!)
+
+		// Instrumented tests (app/src/androidTest) run only in the TV screenshots workflow
+		testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 	}
 
 	buildFeatures {
@@ -297,4 +300,9 @@ dependencies {
 	testImplementation(libs.kotest.runner.junit5)
 	testImplementation(libs.kotest.assertions)
 	testImplementation(libs.mockk)
+	androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+	androidTestImplementation(libs.androidx.test.ext.junit)
+	androidTestImplementation(libs.androidx.test.runner)
+	// The empty activity the Compose test rule renders into (debug builds only)
+	debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

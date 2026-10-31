@@ -51,7 +51,6 @@ import kotlinx.coroutines.launch
 import org.jellyfin.androidtv.data.repository.AddResult
 import org.jellyfin.androidtv.data.repository.SENT_FOR_APPROVAL
 import org.jellyfin.androidtv.data.repository.SelectedEpisode
-import org.jellyfin.androidtv.data.repository.SonarrEpisode
 import org.jellyfin.androidtv.data.repository.SonarrEpisodesResponse
 import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.data.repository.TmdbEpisode
@@ -141,6 +140,20 @@ fun EpisodePickerContent(
 	}
 
 	val today = remember { LocalDate.now() }
+
+	// What each episode row shows (and whether it can be ticked), from Sonarr's and the VOD lists
+	fun badgesFor(seasonNumber: Int, episode: TmdbEpisode): EpisodeBadges {
+		val sonarrEp = sonarrData.episodes.find {
+			it.seasonNumber == seasonNumber && it.episodeNumber == episode.episodeNumber
+		}
+		return episodeBadges(
+			mode = mode,
+			source = sonarrEp?.source,
+			inVodList = episode.episodeNumber in (vodData.episodes[seasonNumber.toString()] ?: emptyList()),
+			hasFile = sonarrEp?.hasFile == true,
+			unaired = isEpisodeUnaired(episode.airDate, today),
+		)
+	}
 
 	// Show success overlay instead of dialog content after submit
 	if (submitSuccess) {
@@ -312,23 +325,16 @@ fun EpisodePickerContent(
 								seasonNumber = listItem.seasonNumber,
 								isExpanded = expandedSeasons[listItem.seasonNumber] == true,
 								seasonEpisodes = seasonEpisodes[listItem.seasonNumber] ?: emptyList(),
-								sonarrEpisodes = sonarrData.episodes.filter { it.seasonNumber == listItem.seasonNumber },
-								vodEpisodes = vodData.episodes[listItem.seasonNumber.toString()] ?: emptyList(),
+								badgesFor = { badgesFor(listItem.seasonNumber, it) },
 								selectedEpisodes = selectedEpisodes,
-								today = today,
 								onToggleExpand = {
 									expandedSeasons[listItem.seasonNumber] = expandedSeasons[listItem.seasonNumber] != true
 								},
 								onSelectAll = { select ->
 									val eps = seasonEpisodes[listItem.seasonNumber] ?: emptyList()
-									val sonarrEps = sonarrData.episodes.filter { it.seasonNumber == listItem.seasonNumber }
-									val vodEps = vodData.episodes[listItem.seasonNumber.toString()] ?: emptyList()
 									for (ep in eps) {
 										val key = "${listItem.seasonNumber}:${ep.episodeNumber}"
-										val isVod = ep.episodeNumber in vodEps
-										val isDl = sonarrEps.any { it.episodeNumber == ep.episodeNumber && it.hasFile }
-										val isUnaired = isEpisodeUnaired(ep.airDate, today)
-										if (!isVod && !isDl && !isUnaired) selectedEpisodes[key] = select
+										if (badgesFor(listItem.seasonNumber, ep).selectable) selectedEpisodes[key] = select
 									}
 								},
 							)
@@ -338,20 +344,15 @@ fun EpisodePickerContent(
 						}
 						is PickerListItem.EpisodeRow -> {
 							val key = "${listItem.seasonNumber}:${listItem.episode.episodeNumber}"
-							val sonarrEp = sonarrData.episodes.find {
-								it.seasonNumber == listItem.seasonNumber && it.episodeNumber == listItem.episode.episodeNumber
-							}
-							val isVod = (vodData.episodes[listItem.seasonNumber.toString()] ?: emptyList())
-								.contains(listItem.episode.episodeNumber)
-							val isDl = sonarrEp?.hasFile == true
-							val isUnaired = isEpisodeUnaired(listItem.episode.airDate, today)
-							val isDisabled = isVod || isDl || isUnaired
+							val badges = badgesFor(listItem.seasonNumber, listItem.episode)
+							val isDisabled = !badges.selectable
 							EpisodeItemRow(
 								episode = listItem.episode,
-								isSelected = selectedEpisodes[key] == true || isVod || isDl,
-								isVod = isVod,
-								isDownloaded = isDl,
-								isUnaired = isUnaired,
+								isSelected = selectedEpisodes[key] == true || badges.vod || badges.downloaded,
+								isVod = badges.vod,
+								isDownloaded = badges.downloaded,
+								isUnaired = badges.unaired,
+								isMissing = badges.missing,
 								isDisabled = isDisabled,
 								onToggle = { if (!isDisabled) selectedEpisodes[key] = selectedEpisodes[key] != true },
 							)
@@ -371,27 +372,24 @@ private sealed class PickerListItem(val key: String) {
 }
 
 @Composable
-private fun SeasonHeaderRow(
+internal fun SeasonHeaderRow(
 	season: TmdbSeason,
 	seasonNumber: Int,
 	isExpanded: Boolean,
 	seasonEpisodes: List<TmdbEpisode>,
-	sonarrEpisodes: List<SonarrEpisode>,
-	vodEpisodes: List<Int>,
+	badgesFor: (TmdbEpisode) -> EpisodeBadges,
 	selectedEpisodes: Map<String, Boolean>,
-	today: LocalDate,
 	onToggleExpand: () -> Unit,
 	onSelectAll: (Boolean) -> Unit,
 ) {
 	var isFocused by remember { mutableStateOf(false) }
 
-	// Count coverage
+	// Count coverage (an episode both downloaded and streamed counts once)
+	val badges = seasonEpisodes.map(badgesFor)
 	val totalEps = seasonEpisodes.size
-	val airedEps = seasonEpisodes.count { !isEpisodeUnaired(it.airDate, today) }
+	val airedEps = badges.count { !it.unaired }
 	val unairedCount = totalEps - airedEps
-	val vodCount = vodEpisodes.size
-	val dlCount = sonarrEpisodes.count { it.hasFile && it.seasonNumber == seasonNumber }
-	val coveredCount = vodCount + dlCount
+	val coveredCount = badges.count { it.vod || it.downloaded }
 	val selectedInSeason = seasonEpisodes.count { ep ->
 		selectedEpisodes["$seasonNumber:${ep.episodeNumber}"] == true
 	}
@@ -464,17 +462,9 @@ private fun SeasonHeaderRow(
 
 		// Select all toggle for expanded season
 		if (isExpanded) {
-			val allSelectable = seasonEpisodes.count { ep ->
-				val isVod = ep.episodeNumber in vodEpisodes
-				val isDl = sonarrEpisodes.any { it.episodeNumber == ep.episodeNumber && it.hasFile }
-				val isUnaired = isEpisodeUnaired(ep.airDate, today)
-				!isVod && !isDl && !isUnaired
-			}
-			val allSelected = allSelectable > 0 && seasonEpisodes.all { ep ->
-				val isVod = ep.episodeNumber in vodEpisodes
-				val isDl = sonarrEpisodes.any { it.episodeNumber == ep.episodeNumber && it.hasFile }
-				val isUnaired = isEpisodeUnaired(ep.airDate, today)
-				isVod || isDl || isUnaired || selectedEpisodes["$seasonNumber:${ep.episodeNumber}"] == true
+			val allSelectable = badges.count { it.selectable }
+			val allSelected = allSelectable > 0 && seasonEpisodes.indices.all { i ->
+				!badges[i].selectable || selectedEpisodes["$seasonNumber:${seasonEpisodes[i].episodeNumber}"] == true
 			}
 
 			if (allSelectable > 0) {
@@ -513,13 +503,15 @@ private fun UnairedSeasonRow() {
 }
 
 @Composable
-private fun EpisodeItemRow(
+internal fun EpisodeItemRow(
 	episode: TmdbEpisode,
 	isSelected: Boolean,
 	isVod: Boolean,
 	isDownloaded: Boolean,
 	isUnaired: Boolean,
 	isDisabled: Boolean,
+	/** Aired, but neither downloaded nor a stream (Manage Episodes only). */
+	isMissing: Boolean = false,
 	onToggle: () -> Unit,
 ) {
 	var isFocused by remember { mutableStateOf(false) }
@@ -616,6 +608,9 @@ private fun EpisodeItemRow(
 			} ?: "TBA"
 			Badge(text = airText, color = Color(0xFF616161))
 		}
+		if (isMissing) {
+			Badge(text = "Missing", color = Color(0xFF616161))
+		}
 	}
 }
 
@@ -637,6 +632,41 @@ private fun isEpisodeUnaired(airDate: String?, today: LocalDate): Boolean {
 	} catch (_: Exception) {
 		false
 	}
+}
+
+/** What an episode row shows: its VOD, DL, air date and Missing badges. */
+internal data class EpisodeBadges(
+	val vod: Boolean,
+	val downloaded: Boolean,
+	val unaired: Boolean,
+	val missing: Boolean = false,
+) {
+	/** Only an aired episode with no copy can be ticked (Manage Episodes keeps the rest monitored). */
+	val selectable: Boolean get() = !vod && !downloaded && !unaired
+}
+
+/**
+ * Where an episode plays from (#889). Manage Episodes takes the server's `source` when it sends
+ * one; older servers, and the other modes, go by the VOD list, Sonarr's hasFile and the air date.
+ * Missing (aired, no copy) shows in Manage Episodes only: elsewhere an unticked row already means
+ * "can be downloaded".
+ */
+internal fun episodeBadges(
+	mode: EpisodePickerMode,
+	source: String?,
+	inVodList: Boolean,
+	hasFile: Boolean,
+	unaired: Boolean,
+): EpisodeBadges {
+	if (mode == EpisodePickerMode.MANAGE) when (source) {
+		"both" -> return EpisodeBadges(vod = true, downloaded = true, unaired = false)
+		"download" -> return EpisodeBadges(vod = false, downloaded = true, unaired = false)
+		"stream" -> return EpisodeBadges(vod = true, downloaded = false, unaired = false)
+		"upcoming" -> return EpisodeBadges(vod = false, downloaded = false, unaired = true)
+		"missing" -> return EpisodeBadges(vod = false, downloaded = false, unaired = false, missing = true)
+	}
+	val missing = mode == EpisodePickerMode.MANAGE && !inVodList && !hasFile && !unaired
+	return EpisodeBadges(vod = inVodList, downloaded = hasFile, unaired = unaired, missing = missing)
 }
 
 /**

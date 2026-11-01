@@ -30,6 +30,15 @@ class TentacleListRowsTests : FunSpec({
 		sections[2].shape shouldBe "poster"
 	}
 
+	test("Next Up (2026-10-30): a row of its own with its shape, its items from the plugin") {
+		val sections = TentacleSectionsResponse(
+			enabled = true,
+			sections = listOf(builtin("resumevideo", "poster"), builtin("nextup", "wide")),
+		).withTentacleListRows().sections
+		sections.map { it.type to it.playlistId } shouldBe listOf("row" to "tentacle-resumevideo", "row" to "tentacle-nextup")
+		sections[1].shape shouldBe "wide"
+	}
+
 	test("an older plugin's built-in rows (no shape) stay as they are") {
 		val old = TentacleSectionsResponse(enabled = true, sections = listOf(builtin("resumevideo"), builtin("nextup")))
 		old.withTentacleListRows() shouldBe old
@@ -38,6 +47,7 @@ class TentacleListRowsTests : FunSpec({
 	test("their items come from the plugin's own endpoints, a playlist's from its section") {
 		sectionItemsPath("tentacle-resumevideo") shouldBe "/TentacleHome/ContinueWatching"
 		sectionItemsPath("tentacle-recordings") shouldBe "/TentacleHome/Recordings"
+		sectionItemsPath("tentacle-nextup") shouldBe "/TentacleHome/NextUp"
 		sectionItemsPath("0123456789abcdef0123456789abcdef") shouldBe "/TentacleHome/Section/0123456789abcdef0123456789abcdef"
 		sectionItemsPath("tentacle-unknown") shouldBe "/TentacleHome/Section/tentacle-unknown"
 	}

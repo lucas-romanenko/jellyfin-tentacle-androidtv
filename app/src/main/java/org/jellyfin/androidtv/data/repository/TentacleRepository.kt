@@ -1527,11 +1527,14 @@ data class TentacleSection(
 
 /**
  * Tentacle's own rows the plugin works out once for every client (2026-10-26): Continue
- * Watching (with next episodes) and Recordings, by section id, and where their items are.
+ * Watching (with next episodes), Next Up (the next episodes on their own row, 2026-10-30, while
+ * Continue Watching's are off) and Recordings, by section id, and where their items are.
  * They are drawn like playlist rows, under a row id of their own ([TENTACLE_ROW_PREFIX]).
+ * An older plugin sends no shape for "nextup": it stays Jellyfin's own Next Up row.
  */
 internal val TENTACLE_LIST_ROWS = mapOf(
 	"resumevideo" to "/TentacleHome/ContinueWatching",
+	"nextup" to "/TentacleHome/NextUp",
 	"recordings" to "/TentacleHome/Recordings",
 )
 const val TENTACLE_ROW_PREFIX = "tentacle-"

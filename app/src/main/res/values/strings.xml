@@ -1149,5 +1149,6 @@
     <string name="msg_removed_from_favorites">Removed from Favorites</string>
     <string name="lbl_remove_from_continue_watching">Remove from Continue Watching</string>
     <string name="lbl_play_from_start">Play from start</string>
+    <string name="lbl_jump_to_live">Jump to live</string>
     <string name="msg_removed_from_continue_watching">Removed from Continue Watching</string>
 </resources>

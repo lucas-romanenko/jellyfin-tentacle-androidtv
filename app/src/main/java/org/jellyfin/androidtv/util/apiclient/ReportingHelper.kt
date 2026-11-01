@@ -10,10 +10,13 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.jellyfin.androidtv.data.compat.StreamInfo
 import org.jellyfin.androidtv.data.model.DataRefreshService
 import org.jellyfin.androidtv.ui.playback.PlaybackController
+import org.jellyfin.androidtv.ui.playback.growingStopPosition
+import org.jellyfin.androidtv.ui.playback.isGrowingRecordingSource
 import org.jellyfin.androidtv.util.UUIDUtils
 import org.jellyfin.androidtv.util.sdk.ApiClientFactory
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.hlsSegmentApi
+import org.jellyfin.sdk.api.client.extensions.itemsApi
 import org.jellyfin.sdk.api.client.extensions.playStateApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
@@ -23,6 +26,7 @@ import org.jellyfin.sdk.model.api.PlaybackProgressInfo
 import org.jellyfin.sdk.model.api.PlaybackStartInfo
 import org.jellyfin.sdk.model.api.PlaybackStopInfo
 import org.jellyfin.sdk.model.api.RepeatMode
+import org.jellyfin.sdk.model.api.UpdateUserItemDataDto
 import timber.log.Timber
 import java.time.Instant
 
@@ -49,10 +53,12 @@ class ReportingHelper(
 		position: Long,
 		paused: Boolean
 	) {
+		val growing = isGrowingRecordingSource(item.type, streamInfo.mediaSource)
 		val info = PlaybackStartInfo(
 			itemId = item.id,
-			positionTicks = position,
-			canSeek = (streamInfo.runTimeTicks ?: 0) > 0,
+			// No position on a recording still recording: Jellyfin would mark it watched (#239)
+			positionTicks = position.takeUnless { growing },
+			canSeek = growing || (streamInfo.runTimeTicks ?: 0) > 0,
 			isPaused = paused,
 			liveStreamId = streamInfo.mediaSource?.liveStreamId,
 			playSessionId = streamInfo.playSessionId,
@@ -82,10 +88,11 @@ class ReportingHelper(
 		position: Long,
 		paused: Boolean
 	) {
+		val growing = isGrowingRecordingSource(item.type, streamInfo.mediaSource)
 		val info = PlaybackProgressInfo(
 			itemId = item.id,
-			positionTicks = position,
-			canSeek = (streamInfo.runTimeTicks ?: 0) > 0,
+			positionTicks = position.takeUnless { growing },
+			canSeek = growing || (streamInfo.runTimeTicks ?: 0) > 0,
 			isPaused = paused,
 			liveStreamId = streamInfo.mediaSource?.liveStreamId,
 			playSessionId = streamInfo.playSessionId,
@@ -151,22 +158,35 @@ class ReportingHelper(
 		}
 	}
 
-	fun reportStopped(lifecycleOwner: LifecycleOwner, item: BaseItemDto, streamInfo: StreamInfo, position: Long?) {
+	fun reportStopped(lifecycleOwner: LifecycleOwner, item: BaseItemDto, streamInfo: StreamInfo, position: Long?) =
+		reportStopped(lifecycleOwner, item, streamInfo, position, false)
+
+	/**
+	 * [growing]: a recording still recording (#239). Jellyfin would take any stop of an item
+	 * without a runtime as "watched to the end", so the stop is reported as failed (Jellyfin then
+	 * leaves the person's data alone; the encode and session still end) and the position is saved
+	 * on its own, for Resume; the watched mark stays as it was.
+	 */
+	fun reportStopped(lifecycleOwner: LifecycleOwner, item: BaseItemDto, streamInfo: StreamInfo, position: Long?, growing: Boolean) {
 		val info = PlaybackStopInfo(
 			itemId = item.id,
 			positionTicks = position,
 			mediaSourceId = streamInfo.mediaSourceId,
 			liveStreamId = streamInfo.mediaSource?.liveStreamId,
 			playSessionId = streamInfo.playSessionId,
-			failed = false,
+			failed = growing,
 		)
 
 		lastStopReport = lifecycleOwner.lifecycleScope.launch(Dispatchers.IO + NonCancellable) {
-			Timber.i("Reporting ${item.name} playback stopped at $position")
+			Timber.i("Reporting ${item.name} playback stopped at $position${if (growing) " (still recording)" else ""}")
 			val itemApi = getApiClientForItem(item)
 			runCatching {
 				itemApi.playStateApi.reportPlaybackStopped(info)
 			}.onFailure { error -> Timber.e(error, "Failed to report stopped playback!") }
+			if (growing) runCatching {
+				val ticks = growingStopPosition((position ?: 0L) / 10_000L) * 10_000L
+				itemApi.itemsApi.updateItemUserData(itemId = item.id, data = UpdateUserItemDataDto(playbackPositionTicks = ticks))
+			}.onFailure { error -> Timber.w(error, "Failed to save the position of a recording still recording") }
 		}
 
 		// Update dataRefreshService

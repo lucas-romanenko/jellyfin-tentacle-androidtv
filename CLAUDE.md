@@ -140,6 +140,11 @@ seasonal effects.
   the previous stop report before reopening, or Jellyfin leaves the tuner
   stream open. Retries reset only after playback ran again. Never close
   a live stream id with `LiveStreams/Close`: a recording may share it.
+- A recording still recording (`ui/playback/GrowingRecording.kt`, #239): Jellyfin offers it
+  under another media source id, so never send the item's own id to PlaybackInfo (that was
+  #229's NoCompatibleStream); and never report a position for it, or Jellyfin marks it watched
+  with position 0 (no runtime = "watched to the end"). Stop is reported `Failed`, the
+  position saved on its own.
 - Refresh rate (`ui/playback/DisplayModeSwitch.kt`): the player asks for a display mode
   (`preferredDisplayModeId`) when the TV's "Match content frame rate" is Always. Media3's
   own `Surface.setFrameRate` is seamless-only, which over HDMI never leaves 60 Hz, so

@@ -33,6 +33,7 @@ import androidx.media3.common.TrackSelectionParameters;
 import androidx.media3.common.Tracks;
 import androidx.media3.common.VideoSize;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.exoplayer.hls.HlsManifest;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
@@ -356,6 +357,21 @@ public class VideoManager {
         return isInitialized() && mExoPlayer.getDuration() > 0 ? mExoPlayer.getDuration() : mMetaDuration;
     }
 
+    /**
+     * Where live is in a growing recording's playlist: three target durations from the end, the
+     * HLS rule (the player reloads a live playlist once per target duration), or -1 unknown.
+     * Jellyfin's target duration grows with its longest segment: 16 s on a game on 31 Oct, where
+     * 10 s from the end ran dry before each reload and stalled.
+     */
+    public long getLiveEdgePosition() {
+        if (!isInitialized()) return -1;
+        Object manifest = mExoPlayer.getCurrentManifest();
+        long duration = mExoPlayer.getDuration();
+        if (!(manifest instanceof HlsManifest) || duration <= 0) return -1;
+        long targetMs = ((HlsManifest) manifest).mediaPlaylist.targetDurationUs / 1000;
+        return Math.max(0, duration - 3 * targetMs);
+    }
+
     public long getBufferedPosition() {
         if (!isInitialized())
             return -1;
@@ -478,6 +494,14 @@ public class VideoManager {
     }
 
     public void setMediaStreamInfo(ApiClient api, StreamInfo streamInfo) {
+        setMediaStreamInfo(api, streamInfo, false);
+    }
+
+    /**
+     * @param fromStart start at the beginning of the stream's window, not at its live edge: a
+     *                  recording still recording is a live (EVENT) playlist from 0:00 (#239)
+     */
+    public void setMediaStreamInfo(ApiClient api, StreamInfo streamInfo, boolean fromStart) {
         mLastPlayerError = null;
         String path = streamInfo.getMediaUrl();
         if (path == null) {
@@ -514,7 +538,11 @@ public class VideoManager {
             }
             MediaItem mediaItem = mediaItemBuilder.build();
 
-            mExoPlayer.setMediaItem(mediaItem);
+            // 1 ms, not 0: Media3's MaskingMediaSource takes a start of 0 for "the default
+            // position", which on a live playlist is its live edge (3:42 into a 13 min recording
+            // on the Sony, 30 Oct)
+            if (fromStart) mExoPlayer.setMediaItem(mediaItem, 1);
+            else mExoPlayer.setMediaItem(mediaItem);
             mExoPlayer.prepare();
         } catch (IllegalStateException e) {
             Timber.e(e, "Unable to set video path.  Probably backing out.");

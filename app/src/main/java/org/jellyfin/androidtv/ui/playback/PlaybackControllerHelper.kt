@@ -20,6 +20,7 @@ import org.jellyfin.androidtv.util.sdk.end
 import org.jellyfin.androidtv.util.sdk.start
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.liveTvApi
+import org.jellyfin.sdk.api.client.extensions.userLibraryApi
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.MediaSegmentDto
 import org.jellyfin.sdk.model.api.MediaStreamType
@@ -42,6 +43,25 @@ fun PlaybackController.getLiveTvChannel(
 		}.onSuccess { channel ->
 			callback(channel)
 		}
+	}
+}
+
+/**
+ * Whether [item] is still recording, as the server has it now ([isRecordingInProgress]); an
+ * unreadable answer counts as finished, so the player ends as for any finished stream.
+ */
+fun PlaybackController.isStillRecording(
+	item: BaseItemDto?,
+	callback: (stillRecording: Boolean) -> Unit,
+) {
+	val api by fragment.inject<ApiClient>()
+	val id = item?.id ?: return callback(false)
+
+	fragment.lifecycleScope.launch {
+		val fresh = runCatching {
+			withContext(Dispatchers.IO) { api.userLibraryApi.getItem(itemId = id).content }
+		}.onFailure { Timber.w(it, "Could not read whether %s still records", id) }.getOrNull()
+		callback(isRecordingInProgress(fresh))
 	}
 }
 

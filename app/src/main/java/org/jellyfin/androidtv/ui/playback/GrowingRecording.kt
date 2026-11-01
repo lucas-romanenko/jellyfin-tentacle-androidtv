@@ -91,12 +91,18 @@ fun playbackMediaSourceId(item: BaseItemDto?, sourceId: String?): String? =
 /**
  * Where a seek in a growing recording lands: never past what's written (less a margin), so
  * seeking or skipping to the end plays the latest part instead of ending the recording.
- * [writtenMs] 0 or less is unknown: the seek is left as asked.
+ * [writtenMs] 0 or less is unknown: the seek is left as asked. [liveEdgeMs] is the player's own
+ * live position for the playlist (Media3: three segment durations back, the HLS rule), used when
+ * it is further back than the margin. Jellyfin's playlist can say segments are 16 s long (one
+ * long segment early in a game, 31 Oct): 10 s from the end then ran dry before the next playlist
+ * refresh and stalled at the edge.
  */
-fun growingSeekTarget(requestedMs: Long, writtenMs: Long): Long = when {
-	requestedMs <= 0 -> 0
-	writtenMs <= 0 -> requestedMs
-	else -> requestedMs.coerceAtMost((writtenMs - GROWING_EDGE_MARGIN_MS).coerceAtLeast(0))
+fun growingSeekTarget(requestedMs: Long, writtenMs: Long, liveEdgeMs: Long = -1): Long {
+	if (requestedMs <= 0) return 0
+	if (writtenMs <= 0) return requestedMs
+	var end = writtenMs - GROWING_EDGE_MARGIN_MS
+	if (liveEdgeMs in 1 until end) end = liveEdgeMs
+	return requestedMs.coerceAtMost(end.coerceAtLeast(0))
 }
 
 /**

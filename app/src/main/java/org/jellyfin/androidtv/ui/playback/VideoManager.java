@@ -356,6 +356,20 @@ public class VideoManager {
         return isInitialized() && mExoPlayer.getDuration() > 0 ? mExoPlayer.getDuration() : mMetaDuration;
     }
 
+    /**
+     * The player's own live position in a live window (its default position: for HLS three
+     * segment durations from the end), or -1 when there is none.
+     */
+    public long getLiveEdgePosition() {
+        if (!isInitialized()) return -1;
+        Timeline timeline = mExoPlayer.getCurrentTimeline();
+        if (timeline.isEmpty()) return -1;
+        Timeline.Window window = timeline.getWindow(mExoPlayer.getCurrentMediaItemIndex(), new Timeline.Window());
+        if (!window.isLive()) return -1;
+        long position = window.getDefaultPositionMs();
+        return position == C.TIME_UNSET ? -1 : position;
+    }
+
     public long getBufferedPosition() {
         if (!isInitialized())
             return -1;

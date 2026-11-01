@@ -1376,7 +1376,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
         }
         if (growingRecording && hasInitializedVideoManager()) {
             // Only within what's written so far; the end plays the latest part, it isn't the end
-            pos = GrowingRecordingKt.growingSeekTarget(pos, mVideoManager.getDuration());
+            pos = GrowingRecordingKt.growingSeekTarget(pos, mVideoManager.getDuration(), mVideoManager.getLiveEdgePosition());
             skipToNext = false;
         }
 

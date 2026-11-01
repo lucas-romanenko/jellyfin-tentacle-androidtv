@@ -154,7 +154,10 @@ class RecordingsBrowseViewModel(
 		val timers = withContext(Dispatchers.IO) { api.liveTvApi.getTimers(isActive = true).content.items }
 			.filter { it.status == RecordingStatus.IN_PROGRESS || it.status == null }
 		items.associate { item ->
-			val timer = timers.firstOrNull { it.name.equals(item.name, ignoreCase = true) }
+			// Its own timer first: two games at once are both "Live: NHL Hockey" (31 Oct, the
+			// Sportsnet East one showed Sportsnet Ontario)
+			val timer = item.timerId?.let { id -> timers.firstOrNull { it.id == id } }
+				?: timers.firstOrNull { it.name.equals(item.name, ignoreCase = true) }
 				?: timers.singleOrNull()?.takeIf { items.size == 1 }
 			item.id to RecordingNowInfo(timer?.startDate ?: item.dateCreated, timer?.channelName ?: item.channelName, timer?.channelId ?: item.channelId)
 		}

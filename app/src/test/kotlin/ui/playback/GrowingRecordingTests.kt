@@ -60,6 +60,13 @@ class GrowingRecordingTests : FunSpec({
 		growingSeekTarget(60_000, 0) shouldBe 60_000
 	}
 
+	test("live is the player's own live position when that is further back (16 s segments, 31 Oct)") {
+		growingSeekTarget(GROWING_LIVE_EDGE_MS, writtenMs = 5_227_200, liveEdgeMs = 5_179_200) shouldBe 5_179_200
+		growingSeekTarget(GROWING_LIVE_EDGE_MS, writtenMs = 3_600_000, liveEdgeMs = 3_595_000) shouldBe 3_590_000
+		growingSeekTarget(60_000, writtenMs = 3_600_000, liveEdgeMs = 3_550_000) shouldBe 60_000
+		growingSeekTarget(GROWING_LIVE_EDGE_MS, writtenMs = 3_600_000, liveEdgeMs = -1) shouldBe 3_590_000
+	}
+
 	test("a resume waits for the server's remux to reach it, at most 45 s") {
 		growingResumeReady(targetMs = 1_800_000, writtenMs = 600_000, waitedMs = 2_000) shouldBe false
 		growingResumeReady(targetMs = 1_800_000, writtenMs = 1_810_000, waitedMs = 2_000) shouldBe true

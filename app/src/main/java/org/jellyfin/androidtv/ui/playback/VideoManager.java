@@ -33,6 +33,7 @@ import androidx.media3.common.TrackSelectionParameters;
 import androidx.media3.common.Tracks;
 import androidx.media3.common.VideoSize;
 import androidx.media3.common.util.UnstableApi;
+import androidx.media3.exoplayer.hls.HlsManifest;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.HttpDataSource;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
@@ -357,17 +358,18 @@ public class VideoManager {
     }
 
     /**
-     * The player's own live position in a live window (its default position: for HLS three
-     * segment durations from the end), or -1 when there is none.
+     * Where live is in a growing recording's playlist: three target durations from the end, the
+     * HLS rule (the player reloads a live playlist once per target duration), or -1 unknown.
+     * Jellyfin's target duration grows with its longest segment: 16 s on a game on 31 Oct, where
+     * 10 s from the end ran dry before each reload and stalled.
      */
     public long getLiveEdgePosition() {
         if (!isInitialized()) return -1;
-        Timeline timeline = mExoPlayer.getCurrentTimeline();
-        if (timeline.isEmpty()) return -1;
-        Timeline.Window window = timeline.getWindow(mExoPlayer.getCurrentMediaItemIndex(), new Timeline.Window());
-        if (!window.isLive()) return -1;
-        long position = window.getDefaultPositionMs();
-        return position == C.TIME_UNSET ? -1 : position;
+        Object manifest = mExoPlayer.getCurrentManifest();
+        long duration = mExoPlayer.getDuration();
+        if (!(manifest instanceof HlsManifest) || duration <= 0) return -1;
+        long targetMs = ((HlsManifest) manifest).mediaPlaylist.targetDurationUs / 1000;
+        return Math.max(0, duration - 3 * targetMs);
     }
 
     public long getBufferedPosition() {

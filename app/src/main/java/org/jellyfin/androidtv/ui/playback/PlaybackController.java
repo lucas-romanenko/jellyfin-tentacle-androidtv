@@ -128,6 +128,8 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     private boolean growingStartAtLive = false;
     // Watch live waits for the server's remux to reach the live end, spinner up (growingSeekToLive)
     private boolean growingGoLivePending = false;
+    // A resume (or a retry) waiting for the remux to reach this position (ms), else -1
+    private long growingSeekPendingMs = -1;
     private final LiveTuneAttempts liveTunes = new LiveTuneAttempts();
     private boolean directStreamLiveTv;
     private int playbackRetries = 0;
@@ -1226,7 +1228,12 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
             if (mVideoManager != null && mVideoManager.isPlaying()) mVideoManager.stopPlayback();
             if (getCurrentlyPlayingItem() != null && mCurrentStreamInfo != null) {
-                Long mbPos = mCurrentPosition * 10000;
+                // A recording still recording that was still on its way to its position (a resume,
+                // a retry, Watch live) keeps that position, not the start it plays meanwhile
+                long stopAt = mCurrentPosition;
+                if (growingRecording && growingSeekPendingMs > 0) stopAt = growingSeekPendingMs;
+                else if (growingRecording && growingGoLivePending && mVideoManager != null) stopAt = mVideoManager.getDuration();
+                Long mbPos = stopAt * 10000;
                 reportingHelper.getValue().reportStopped(mFragment, getCurrentlyPlayingItem(), mCurrentStreamInfo, mbPos, growingRecording && !growingFinished);
             }
             clearPlaybackSessionOptions();
@@ -1316,6 +1323,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
     }
 
     private void clearPlaybackSessionOptions() {
+        growingSeekPendingMs = -1;
         skipPending = false;
         growingGoLivePending = false;
         mDefaultAudioIndex = -1;
@@ -1368,6 +1376,7 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     public void seek(long pos, boolean skipToNext) {
         if (pos <= 0) pos = 0;
+        growingSeekPendingMs = -1;
         if (growingGoLivePending) {
             // The person seeks before Watch live reached the live end: theirs wins
             growingGoLivePending = false;
@@ -1626,11 +1635,14 @@ public class PlaybackController implements PlaybackControllerNotifiable {
 
     private void initialSeek(final long position) {
         final long askedAt = Instant.now().toEpochMilli();
+        if (growingRecording) growingSeekPendingMs = position;
         mHandler.post(new Runnable() {
             @Override
             public void run() {
                 if (mVideoManager == null)
                     return;
+                // The person sought themselves meanwhile: theirs wins
+                if (growingRecording && growingSeekPendingMs != position) return;
                 if (growingRecording && !GrowingRecordingKt.growingResumeReady(position, mVideoManager.getDuration(), Instant.now().toEpochMilli() - askedAt)) {
                     // The server's remux of the growing file hasn't reached the position yet
                     mHandler.postDelayed(this, 500);
@@ -1639,8 +1651,10 @@ public class PlaybackController implements PlaybackControllerNotifiable {
                     // wait until we have valid duration
                     mHandler.postDelayed(this, 25);
                 } else if (mVideoManager.isSeekable()) {
+                    growingSeekPendingMs = -1;
                     seek(position);
                 } else {
+                    growingSeekPendingMs = -1;
                     finishedInitialSeek = true;
                 }
             }

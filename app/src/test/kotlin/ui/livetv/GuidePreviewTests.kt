@@ -2,6 +2,14 @@ package org.jellyfin.androidtv.ui.livetv
 
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import org.jellyfin.androidtv.data.repository.LivePreviewAnswer
 import org.jellyfin.androidtv.data.repository.parseLivePreview
 import java.time.LocalDateTime
@@ -45,5 +53,39 @@ class GuidePreviewTests : FunSpec({
 		parseLivePreview(500, """{"previews":true}""") shouldBe null
 		parseLivePreview(200, "<html>") shouldBe null
 		parseLivePreview(200, null) shouldBe null
+	}
+
+	test("#909: an open cancelled while its request runs gives its share back when the answer arrives") {
+		val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+		val started = CompletableDeferred<Unit>()
+		val answer = CompletableDeferred<Unit>()
+		val givenBack = CompletableDeferred<String>()
+		val caller = scope.launch {
+			openOrGiveBack(scope, {
+				started.complete(Unit)
+				answer.await()
+				"share"
+			}) { givenBack.complete(it) }
+		}
+		withTimeout(5_000) { started.await() }
+		caller.cancelAndJoin()
+		answer.complete(Unit)
+		withTimeout(5_000) { givenBack.await() } shouldBe "share"
+	}
+
+	test("an open that isn't cancelled returns its share and gives nothing back") {
+		val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+		var gaveBack = false
+		openOrGiveBack(scope, { "share" }) { gaveBack = true } shouldBe "share"
+		delay(100)
+		gaveBack shouldBe false
+	}
+
+	test("an open that fails throws to the caller and gives nothing back") {
+		val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+		var gaveBack = false
+		val thrown = runCatching { openOrGiveBack<String>(scope, { error("no answer") }) { gaveBack = true } }.exceptionOrNull()
+		thrown?.message shouldBe "no answer"
+		gaveBack shouldBe false
 	}
 })

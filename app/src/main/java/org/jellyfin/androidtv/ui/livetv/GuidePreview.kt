@@ -19,11 +19,13 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -56,6 +58,23 @@ const val GUIDE_PREVIEW_POLL_MS = 15_000L
  * full-screen player joins the stream already open (Jellyfin shares it) instead of opening another.
  */
 const val GUIDE_PREVIEW_HANDOFF_MS = 10_000L
+
+/**
+ * Runs [open] to its end in [scope] even when the caller is cancelled, and returns its result. Once
+ * the request went out Jellyfin opens (or joins) the live stream whatever happens to the caller, so a
+ * caller cancelled meanwhile (focus moved on, the guide left) hands the result to [giveBack] when it
+ * arrives, then is cancelled as usual (#909: a cancelled preview open was a share nobody gave back,
+ * and the stream ran for hours with no viewer).
+ */
+suspend fun <T : Any> openOrGiveBack(scope: CoroutineScope, open: suspend () -> T?, giveBack: (T) -> Unit): T? {
+	val opening = scope.async { open() }
+	return try {
+		opening.await()
+	} catch (e: CancellationException) {
+		scope.launch { runCatching { opening.await() }.getOrNull()?.let(giveBack) }
+		throw e
+	}
+}
 
 /** What the header's box shows for the focused programme while previews may run. */
 enum class GuidePreviewKind {
@@ -230,7 +249,9 @@ class GuidePreview(
 		openJob?.cancel()
 		openJob = fragment.lifecycleScope.launch {
 			val session = try {
-				withContext(Dispatchers.IO) { openStream(channelId) }
+				openOrGiveBack(releaseScope, { openStream(channelId) }) { release(it, after = 0) }
+			} catch (e: CancellationException) {
+				throw e
 			} catch (e: Exception) {
 				Timber.w(e, "GuidePreview: could not open channel $channelId")
 				null

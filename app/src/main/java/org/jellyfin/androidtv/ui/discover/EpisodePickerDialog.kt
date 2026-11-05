@@ -403,6 +403,8 @@ private fun SeasonHeaderRow(
 		else -> Color.White.copy(alpha = 0.5f)
 	}
 
+	// Not focusable itself: the expand area and Select All are side by side focus targets, so
+	// Right from the season reaches the button (a button inside a focused row can't be reached, #245).
 	Row(
 		modifier = Modifier
 			.fillMaxWidth()
@@ -411,21 +413,23 @@ private fun SeasonHeaderRow(
 				if (isFocused) Modifier.border(2.dp, Color(0xFF7C6AE8), RoundedCornerShape(0.dp))
 				else Modifier
 			)
-			.onFocusChanged { isFocused = it.isFocused }
-			.focusable()
-			.onKeyEvent { event ->
-				if (event.type == KeyEventType.KeyUp) {
-					when (event.key) {
-						Key.Enter, Key.DirectionCenter -> { onToggleExpand(); true }
-						else -> false
-					}
-				} else false
-			}
 			.padding(horizontal = 24.dp, vertical = 12.dp),
 		verticalAlignment = Alignment.CenterVertically,
 		horizontalArrangement = Arrangement.SpaceBetween,
 	) {
 		Row(
+			modifier = Modifier
+				.weight(1f)
+				.onFocusChanged { isFocused = it.isFocused }
+				.focusable()
+				.onKeyEvent { event ->
+					if (event.type == KeyEventType.KeyUp) {
+						when (event.key) {
+							Key.Enter, Key.DirectionCenter -> { onToggleExpand(); true }
+							else -> false
+						}
+					} else false
+				},
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.spacedBy(12.dp),
 		) {
@@ -559,16 +563,15 @@ private fun EpisodeItemRow(
 				)
 				.background(
 					color = when {
+						!isSelected -> Color.Transparent
 						isVod -> Color(0xFF4CAF50).copy(alpha = 0.3f)
-						isDownloaded -> Color(0xFF7C6AE8).copy(alpha = 0.3f)
-						isSelected -> Color(0xFF7C6AE8).copy(alpha = 0.3f)
-						else -> Color.Transparent
+						else -> Color(0xFF7C6AE8).copy(alpha = 0.3f)
 					},
 					shape = RoundedCornerShape(4.dp),
 				),
 			contentAlignment = Alignment.Center,
 		) {
-			if (isSelected || isVod || isDownloaded) {
+			if (isSelected) {
 				Text("✓", fontSize = 12.sp, color = Color.White.copy(alpha = alpha))
 			}
 		}
@@ -663,14 +666,15 @@ internal fun addEpisodesOutcome(result: AddResult, selectedCount: Int): Pair<Boo
 
 /**
  * A row that can't be ticked. Add and Download More lock what is already there (it streams or
- * is downloaded) and what hasn't aired, since there is nothing to download.
+ * is downloaded) and what hasn't aired, since there is nothing to download. Manage Episodes sets
+ * what Sonarr monitors, so every episode can be ticked there, as on the web UI (#245).
  */
 internal fun isEpisodeLocked(mode: EpisodePickerMode, isVod: Boolean, isDl: Boolean, isUnaired: Boolean): Boolean =
-	isVod || isDl || isUnaired
+	mode != EpisodePickerMode.MANAGE && (isVod || isDl || isUnaired)
 
-/** A row shown ticked: picked, or in Add and Download More already there. */
+/** A row shown ticked: picked, or in Add and Download More already there. In Manage: monitored. */
 internal fun isEpisodeTicked(mode: EpisodePickerMode, selected: Boolean, isVod: Boolean, isDl: Boolean): Boolean =
-	selected || isVod || isDl
+	selected || (mode != EpisodePickerMode.MANAGE && (isVod || isDl))
 
 /** The "s:e" keys a season's Select All sets: the season's rows that can be ticked. */
 internal fun selectAllKeys(

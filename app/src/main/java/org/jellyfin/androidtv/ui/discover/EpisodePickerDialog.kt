@@ -308,6 +308,7 @@ fun EpisodePickerContent(
 					when (listItem) {
 						is PickerListItem.SeasonHeader -> {
 							SeasonHeaderRow(
+								mode = mode,
 								season = listItem.season,
 								seasonNumber = listItem.seasonNumber,
 								isExpanded = expandedSeasons[listItem.seasonNumber] == true,
@@ -320,16 +321,14 @@ fun EpisodePickerContent(
 									expandedSeasons[listItem.seasonNumber] = expandedSeasons[listItem.seasonNumber] != true
 								},
 								onSelectAll = { select ->
-									val eps = seasonEpisodes[listItem.seasonNumber] ?: emptyList()
-									val sonarrEps = sonarrData.episodes.filter { it.seasonNumber == listItem.seasonNumber }
-									val vodEps = vodData.episodes[listItem.seasonNumber.toString()] ?: emptyList()
-									for (ep in eps) {
-										val key = "${listItem.seasonNumber}:${ep.episodeNumber}"
-										val isVod = ep.episodeNumber in vodEps
-										val isDl = sonarrEps.any { it.episodeNumber == ep.episodeNumber && it.hasFile }
-										val isUnaired = isEpisodeUnaired(ep.airDate, today)
-										if (!isVod && !isDl && !isUnaired) selectedEpisodes[key] = select
-									}
+									selectAllKeys(
+										mode = mode,
+										seasonNumber = listItem.seasonNumber,
+										episodes = seasonEpisodes[listItem.seasonNumber] ?: emptyList(),
+										sonarrEpisodes = sonarrData.episodes.filter { it.seasonNumber == listItem.seasonNumber },
+										vodEpisodes = vodData.episodes[listItem.seasonNumber.toString()] ?: emptyList(),
+										today = today,
+									).forEach { selectedEpisodes[it] = select }
 								},
 							)
 						}
@@ -345,10 +344,10 @@ fun EpisodePickerContent(
 								.contains(listItem.episode.episodeNumber)
 							val isDl = sonarrEp?.hasFile == true
 							val isUnaired = isEpisodeUnaired(listItem.episode.airDate, today)
-							val isDisabled = isVod || isDl || isUnaired
+							val isDisabled = isEpisodeLocked(mode, isVod, isDl, isUnaired)
 							EpisodeItemRow(
 								episode = listItem.episode,
-								isSelected = selectedEpisodes[key] == true || isVod || isDl,
+								isSelected = isEpisodeTicked(mode, selectedEpisodes[key] == true, isVod, isDl),
 								isVod = isVod,
 								isDownloaded = isDl,
 								isUnaired = isUnaired,
@@ -372,6 +371,7 @@ private sealed class PickerListItem(val key: String) {
 
 @Composable
 private fun SeasonHeaderRow(
+	mode: EpisodePickerMode,
 	season: TmdbSeason,
 	seasonNumber: Int,
 	isExpanded: Boolean,
@@ -403,6 +403,8 @@ private fun SeasonHeaderRow(
 		else -> Color.White.copy(alpha = 0.5f)
 	}
 
+	// Not focusable itself: the expand area and Select All are side by side focus targets, so
+	// Right from the season reaches the button (a button inside a focused row can't be reached, #245).
 	Row(
 		modifier = Modifier
 			.fillMaxWidth()
@@ -411,21 +413,23 @@ private fun SeasonHeaderRow(
 				if (isFocused) Modifier.border(2.dp, Color(0xFF7C6AE8), RoundedCornerShape(0.dp))
 				else Modifier
 			)
-			.onFocusChanged { isFocused = it.isFocused }
-			.focusable()
-			.onKeyEvent { event ->
-				if (event.type == KeyEventType.KeyUp) {
-					when (event.key) {
-						Key.Enter, Key.DirectionCenter -> { onToggleExpand(); true }
-						else -> false
-					}
-				} else false
-			}
 			.padding(horizontal = 24.dp, vertical = 12.dp),
 		verticalAlignment = Alignment.CenterVertically,
 		horizontalArrangement = Arrangement.SpaceBetween,
 	) {
 		Row(
+			modifier = Modifier
+				.weight(1f)
+				.onFocusChanged { isFocused = it.isFocused }
+				.focusable()
+				.onKeyEvent { event ->
+					if (event.type == KeyEventType.KeyUp) {
+						when (event.key) {
+							Key.Enter, Key.DirectionCenter -> { onToggleExpand(); true }
+							else -> false
+						}
+					} else false
+				},
 			verticalAlignment = Alignment.CenterVertically,
 			horizontalArrangement = Arrangement.spacedBy(12.dp),
 		) {
@@ -464,20 +468,10 @@ private fun SeasonHeaderRow(
 
 		// Select all toggle for expanded season
 		if (isExpanded) {
-			val allSelectable = seasonEpisodes.count { ep ->
-				val isVod = ep.episodeNumber in vodEpisodes
-				val isDl = sonarrEpisodes.any { it.episodeNumber == ep.episodeNumber && it.hasFile }
-				val isUnaired = isEpisodeUnaired(ep.airDate, today)
-				!isVod && !isDl && !isUnaired
-			}
-			val allSelected = allSelectable > 0 && seasonEpisodes.all { ep ->
-				val isVod = ep.episodeNumber in vodEpisodes
-				val isDl = sonarrEpisodes.any { it.episodeNumber == ep.episodeNumber && it.hasFile }
-				val isUnaired = isEpisodeUnaired(ep.airDate, today)
-				isVod || isDl || isUnaired || selectedEpisodes["$seasonNumber:${ep.episodeNumber}"] == true
-			}
+			val selectable = selectAllKeys(mode, seasonNumber, seasonEpisodes, sonarrEpisodes, vodEpisodes, today)
+			val allSelected = selectable.isNotEmpty() && selectable.all { selectedEpisodes[it] == true }
 
-			if (allSelectable > 0) {
+			if (selectable.isNotEmpty()) {
 				Button(
 					onClick = { onSelectAll(!allSelected) },
 					colors = ButtonDefaults.colors(
@@ -569,16 +563,15 @@ private fun EpisodeItemRow(
 				)
 				.background(
 					color = when {
+						!isSelected -> Color.Transparent
 						isVod -> Color(0xFF4CAF50).copy(alpha = 0.3f)
-						isDownloaded -> Color(0xFF7C6AE8).copy(alpha = 0.3f)
-						isSelected -> Color(0xFF7C6AE8).copy(alpha = 0.3f)
-						else -> Color.Transparent
+						else -> Color(0xFF7C6AE8).copy(alpha = 0.3f)
 					},
 					shape = RoundedCornerShape(4.dp),
 				),
 			contentAlignment = Alignment.Center,
 		) {
-			if (isSelected || isVod || isDownloaded) {
+			if (isSelected) {
 				Text("✓", fontSize = 12.sp, color = Color.White.copy(alpha = alpha))
 			}
 		}
@@ -630,7 +623,7 @@ private fun Badge(text: String, color: Color) {
 	}
 }
 
-private fun isEpisodeUnaired(airDate: String?, today: LocalDate): Boolean {
+internal fun isEpisodeUnaired(airDate: String?, today: LocalDate): Boolean {
 	if (airDate.isNullOrBlank()) return true
 	return try {
 		LocalDate.parse(airDate).isAfter(today)
@@ -670,3 +663,34 @@ internal fun addEpisodesOutcome(result: AddResult, selectedCount: Int): Pair<Boo
 	result.pending > 0 -> true to (result.detail?.takeIf { it.isNotBlank() } ?: SENT_FOR_APPROVAL)
 	else -> false to (result.detail ?: "Failed to add to Sonarr")
 }
+
+/**
+ * A row that can't be ticked. Add and Download More lock what is already there (it streams or
+ * is downloaded) and what hasn't aired, since there is nothing to download. Manage Episodes sets
+ * what Sonarr monitors, so every episode can be ticked there, as on the web UI (#245).
+ */
+internal fun isEpisodeLocked(mode: EpisodePickerMode, isVod: Boolean, isDl: Boolean, isUnaired: Boolean): Boolean =
+	mode != EpisodePickerMode.MANAGE && (isVod || isDl || isUnaired)
+
+/** A row shown ticked: picked, or in Add and Download More already there. In Manage: monitored. */
+internal fun isEpisodeTicked(mode: EpisodePickerMode, selected: Boolean, isVod: Boolean, isDl: Boolean): Boolean =
+	selected || (mode != EpisodePickerMode.MANAGE && (isVod || isDl))
+
+/** The "s:e" keys a season's Select All sets: the season's rows that can be ticked. */
+internal fun selectAllKeys(
+	mode: EpisodePickerMode,
+	seasonNumber: Int,
+	episodes: List<TmdbEpisode>,
+	sonarrEpisodes: List<SonarrEpisode>,
+	vodEpisodes: List<Int>,
+	today: LocalDate,
+): List<String> = episodes
+	.filterNot { ep ->
+		isEpisodeLocked(
+			mode,
+			isVod = ep.episodeNumber in vodEpisodes,
+			isDl = sonarrEpisodes.any { it.episodeNumber == ep.episodeNumber && it.hasFile },
+			isUnaired = isEpisodeUnaired(ep.airDate, today),
+		)
+	}
+	.map { "$seasonNumber:${it.episodeNumber}" }

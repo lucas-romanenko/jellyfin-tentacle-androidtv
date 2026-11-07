@@ -16,6 +16,7 @@ import androidx.fragment.app.FragmentManager
 import androidx.fragment.app.FragmentTransaction
 import androidx.lifecycle.Lifecycle
 import org.jellyfin.androidtv.R
+import org.jellyfin.androidtv.ui.discover.DiscoverFragment
 import org.jellyfin.androidtv.ui.home.HomeFragment
 import org.jellyfin.androidtv.ui.navigation.NavigationAction
 import timber.log.Timber
@@ -241,10 +242,12 @@ class DestinationFragmentView @JvmOverloads constructor(
 
 /**
  * Whether a fragment covered by the next screen keeps its view (hidden and paused) instead of
- * being detached, which destroys the view. Home only: building its view again on every Back from
+ * being detached, which destroys the view. Home: building its view again on every Back from
  * a details page took 1.3 to 1.5 s on a TV (one 800 ms frame), and its rows, focused card and
  * scroll position live on in the kept view. It catches up with changes made meanwhile when it
- * resumes (HomeRowsFragment.onResume). A fragment leaving the history is detached as before.
+ * resumes (HomeRowsFragment.onResume). Discover: its rows, their scroll and the focused card
+ * live only in its Compose view, so a detach sent Back from a trailer to the top of a reloaded
+ * page. A fragment leaving the history is detached as before.
  */
 internal fun keepsViewWhileCovered(covered: Class<out Fragment>, staysInHistory: Boolean): Boolean =
-	staysInHistory && covered == HomeFragment::class.java
+	staysInHistory && (covered == HomeFragment::class.java || covered == DiscoverFragment::class.java)

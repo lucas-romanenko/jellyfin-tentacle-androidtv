@@ -382,7 +382,7 @@ internal fun DiscoverDetailDialog(
 			Box(
 				modifier = Modifier
 					.fillMaxWidth(0.75f)
-					.fillMaxHeight(0.85f)
+					.fillMaxHeight(DiscoverDetailLayout.PANEL_HEIGHT_FRACTION)
 					.clip(RoundedCornerShape(16.dp))
 					.background(Color(0xFF1a1a2e))
 					// Only here to swallow taps; it must not take focus itself (see above).
@@ -426,7 +426,7 @@ internal fun DiscoverDetailDialog(
 						Box(
 							modifier = Modifier
 								.fillMaxWidth()
-								.height(280.dp)
+								.height(DiscoverDetailLayout.BACKDROP_DP.dp)
 						) {
 							val backdropUrl = d?.backdropPath ?: item.backdropPath
 							val isExternalBackdrop = backdropUrl?.startsWith("http") == true
@@ -502,12 +502,15 @@ internal fun DiscoverDetailDialog(
 							}
 						}
 
-						// Content area
+						// Text: scrolls on its own, above the pinned buttons, so focusing a button
+						// never scrolls it out of view (#249)
 						Column(
 							modifier = Modifier
-								.fillMaxSize()
+								.fillMaxWidth()
+								.weight(1f)
 								.verticalScroll(rememberScrollState())
-								.padding(horizontal = 32.dp, vertical = 16.dp),
+								.padding(horizontal = 32.dp)
+								.padding(top = DiscoverDetailLayout.TEXT_TOP_PADDING_DP.dp),
 						) {
 							// Metadata line: rating, runtime (movies), genres
 							val rating = d?.rating?.takeIf { it > 0 } ?: item.rating.takeIf { it > 0 }
@@ -545,7 +548,7 @@ internal fun DiscoverDetailDialog(
 										)
 									}
 								}
-								Spacer(modifier = Modifier.height(12.dp))
+								Spacer(modifier = Modifier.height(8.dp))
 							}
 
 							// Tagline
@@ -555,6 +558,8 @@ internal fun DiscoverDetailDialog(
 									fontSize = 14.sp,
 									color = Color.White.copy(alpha = 0.8f),
 									fontWeight = FontWeight.Medium,
+									maxLines = 1,
+									overflow = TextOverflow.Ellipsis,
 								)
 								Spacer(modifier = Modifier.height(8.dp))
 							}
@@ -565,47 +570,29 @@ internal fun DiscoverDetailDialog(
 								fontSize = 14.sp,
 								color = Color.White.copy(alpha = 0.8f),
 								lineHeight = 22.sp,
-								maxLines = 5,
+								maxLines = DiscoverDetailLayout.OVERVIEW_MAX_LINES,
 								overflow = TextOverflow.Ellipsis,
 							)
 
-							Spacer(modifier = Modifier.height(16.dp))
+							Spacer(modifier = Modifier.height(12.dp))
 
-							// Cast
+							// Cast and director, one line each
 							if (d != null && d.cast.isNotEmpty()) {
-								Text(
-									text = "Cast",
-									fontSize = 15.sp,
-									fontWeight = FontWeight.Bold,
-									color = Color.White,
-								)
+								CreditLine("Cast", d.cast.take(6).joinToString(", ") { it.name })
 								Spacer(modifier = Modifier.height(4.dp))
-								Text(
-									text = d.cast.take(6).joinToString(", ") { it.name },
-									fontSize = 13.sp,
-									color = Color.White.copy(alpha = 0.6f),
-								)
-								Spacer(modifier = Modifier.height(12.dp))
 							}
-
-							// Directors
 							if (d != null && d.directors.isNotEmpty()) {
-								Text(
-									text = "Director",
-									fontSize = 15.sp,
-									fontWeight = FontWeight.Bold,
-									color = Color.White,
-								)
-								Spacer(modifier = Modifier.height(4.dp))
-								Text(
-									text = d.directors.joinToString(", "),
-									fontSize = 13.sp,
-									color = Color.White.copy(alpha = 0.6f),
-								)
-								Spacer(modifier = Modifier.height(16.dp))
+								CreditLine("Director", d.directors.joinToString(", "))
 							}
+						}
 
-							// Action buttons
+						// Action buttons, pinned under the text
+						Column(
+							modifier = Modifier
+								.fillMaxWidth()
+								.padding(horizontal = 32.dp)
+								.padding(top = 12.dp, bottom = 20.dp),
+						) {
 							Row(
 								horizontalArrangement = Arrangement.spacedBy(12.dp),
 							) {
@@ -833,14 +820,64 @@ internal fun DiscoverDetailDialog(
 									fontWeight = FontWeight.Bold,
 								)
 							}
-
-							Spacer(modifier = Modifier.height(24.dp))
 						}
 					}
 				}
 			}
 		}
 	}
+}
+
+/** "Cast  name, name, …" on one line. */
+@Composable
+private fun CreditLine(label: String, names: String) {
+	Row(verticalAlignment = Alignment.CenterVertically) {
+		Text(
+			text = label,
+			fontSize = 13.sp,
+			fontWeight = FontWeight.Bold,
+			color = Color.White,
+		)
+		Spacer(modifier = Modifier.width(8.dp))
+		Text(
+			text = names,
+			fontSize = 13.sp,
+			color = Color.White.copy(alpha = 0.6f),
+			maxLines = 1,
+			overflow = TextOverflow.Ellipsis,
+		)
+	}
+}
+
+/**
+ * Sizes of the Discover detail dialog. The action buttons sit outside the text's scroll area,
+ * and the text (rating line, tagline, overview, cast, director) fits above them on a 1080p TV,
+ * 540 dp high: before #249 the buttons were the last thing in the scroll area, and focusing
+ * one on open scrolled the rating, tagline and overview out of view.
+ */
+internal object DiscoverDetailLayout {
+	const val PANEL_HEIGHT_FRACTION = 0.85f
+	const val BACKDROP_DP = 180
+	const val OVERVIEW_MAX_LINES = 4
+	const val TEXT_TOP_PADDING_DP = 8
+
+	// Heights at font scale 1: a 13–14 sp line, a 22 sp overview line, a 40 dp button
+	private const val SMALL_LINE_DP = 19
+	private const val OVERVIEW_LINE_DP = 22
+	const val ACTIONS_DP = 12 + 40 + 20
+
+	/** The tallest the text gets: every line present, the overview at its line limit. */
+	fun textDp(): Int =
+		TEXT_TOP_PADDING_DP +
+			SMALL_LINE_DP + 8 + // rating, runtime, genres
+			SMALL_LINE_DP + 8 + // tagline
+			OVERVIEW_MAX_LINES * OVERVIEW_LINE_DP + 12 +
+			SMALL_LINE_DP + 4 + // cast
+			SMALL_LINE_DP // director
+
+	/** Room left for the text between the backdrop and the pinned buttons. */
+	fun textRoomDp(screenHeightDp: Int): Int =
+		(screenHeightDp * PANEL_HEIGHT_FRACTION).toInt() - BACKDROP_DP - ACTIONS_DP
 }
 
 /**

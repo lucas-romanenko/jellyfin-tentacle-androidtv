@@ -60,6 +60,20 @@ class DiscoverFragment : Fragment() {
 
 	private var trailerJob: Job? = null
 
+	// The title whose dialog is open. Kept by the fragment, not its view, so it outlives a
+	// rebuilt view; its dialog is closed while a trailer plays and opened again on the way back.
+	private var selectedItem by mutableStateOf<DiscoverItem?>(null)
+	private var afterTrailer: DiscoverItem? = null
+
+	override fun onResume() {
+		super.onResume()
+		// Back from the trailer: where it was started, in the title's dialog
+		afterTrailer?.let {
+			afterTrailer = null
+			selectedItem = it
+		}
+	}
+
 	private fun playTrailer(videoId: String) {
 		// One lookup per press, owned by this page's view: leaving cancels it, and nothing
 		// opens once the page is no longer in front (#45)
@@ -69,7 +83,10 @@ class DiscoverFragment : Fragment() {
 				val segments = withContext(Dispatchers.IO) {
 					SponsorBlockApi.getSkipSegments(videoId)
 				}
-				if (!trailerMayOpen(lifecycle.currentState)) return@launch
+				if (!trailerMayOpen(lifecycle.currentState)) {
+					afterTrailer = null
+					return@launch
+				}
 				val startSeconds = SponsorBlockApi.calculateStartTime(segments)
 				val segmentsJson = segments.joinToString(",", "[", "]") { seg ->
 					"""{"start":${seg.startTime},"end":${seg.endTime},"category":"${seg.category}","action":"${seg.actionType}"}"""
@@ -84,6 +101,11 @@ class DiscoverFragment : Fragment() {
 				throw e
 			} catch (e: Exception) {
 				Timber.w(e, "Failed to play trailer")
+				// No trailer: the dialog it was asked from comes back
+				afterTrailer?.let {
+					afterTrailer = null
+					selectedItem = it
+				}
 				val context = context ?: return@launch
 				Toast.makeText(context, "Unable to play trailer", Toast.LENGTH_SHORT).show()
 			}
@@ -98,7 +120,6 @@ class DiscoverFragment : Fragment() {
 		JellyfinTheme {
 			var sections by remember { mutableStateOf<List<DiscoverSection>>(emptyList()) }
 			var isLoading by remember { mutableStateOf(true) }
-			var selectedItem by remember { mutableStateOf<DiscoverItem?>(null) }
 			val contentFocusRequester = remember { FocusRequester() }
 			val unavailable by tentacleRepository.discoverUnavailable.collectAsState()
 
@@ -204,6 +225,7 @@ class DiscoverFragment : Fragment() {
 						navigationRepository.navigate(Destinations.itemDetails(itemId))
 					},
 					onPlayTrailer = { videoId ->
+						afterTrailer = selectedItem
 						selectedItem = null
 						playTrailer(videoId)
 					},

@@ -24,6 +24,7 @@ import org.jellyfin.androidtv.data.repository.ActivityPoller
 import org.jellyfin.androidtv.data.repository.HomeChange
 import org.jellyfin.androidtv.data.repository.HomeVersionTracker
 import org.jellyfin.androidtv.data.repository.TentacleRepository
+import org.jellyfin.androidtv.ui.playback.segment.follow
 import org.jellyfin.androidtv.data.repository.homePushFrom
 import org.jellyfin.androidtv.data.syncplay.SyncPlayManager
 import org.jellyfin.androidtv.ui.itemhandling.ItemLauncher
@@ -87,6 +88,7 @@ class SocketHandler(
 	private val homeVersionTracker: HomeVersionTracker,
 	private val activityPoller: ActivityPoller,
 	private val tentacleRepository: TentacleRepository,
+	private val mediaSegmentRepository: org.jellyfin.androidtv.ui.playback.segment.MediaSegmentRepository,
 ) {
 	// The socket was connected once and then lost: its next Connected is a reconnect.
 	@Volatile
@@ -203,7 +205,8 @@ class SocketHandler(
 			}
 		}
 
-		// Tentacle's push: its requests, activity, notifications, recordings or status changed
+		// Tentacle's push: its requests, activity, notifications, recordings, status or the
+		// person's subtitle and skip choices ("watch") changed
 		// (Jellyfin's own RefreshProgress, for library scans, carries a real item id and is
 		// ignored). The polls stay as the fallback for a push that never comes. Resubscribes
 		// like LibraryChanged.
@@ -217,6 +220,10 @@ class SocketHandler(
 						if ("notifications" in topics) notificationFetches.trySend(Unit)
 						if ("recordings" in topics) RecordingChanges.changed()
 						if ("status" in topics) StatusChanges.changed()
+						// The person changed Skip intro / Skip credits in Tentacle: this device follows at once
+						if ("watch" in topics) coroutineScope.launch {
+							mediaSegmentRepository.follow(tentacleRepository.getSkipActions())
+						}
 					}
 				} catch (e: CancellationException) {
 					throw e

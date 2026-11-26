@@ -111,6 +111,7 @@ The code wins where they differ.
   `{"previews","limit","active","free","recordings_soon","known"}`, 3 s, every 15 s while the
   guide is on screen; no answer keeps what is shown). `previews` false = no box in the guide
   header (`ui/livetv/GuidePreview.kt`, `data/repository/LivePreview.kt`).
+- **Skip intro / Skip credits per person**: before each play (alongside the media segments, 3 s at most) and on the push topic "watch", `TentacleRepository.getSkipActions()` reads `/TentacleSubs/Prefs` (`skip_intro`/`skip_credits`: button → ASK_TO_SKIP, auto → SKIP, off → NOTHING; `tentacleSkipActions`) and the device's segment actions follow it (`MediaSegmentRepository.follow`). The segments themselves are Tentacle's, published by the plugin as Jellyfin media segments.
 - **Problems in plain words**: `/FamilyStatus`
   (`{"messages":[{"area":"livetv"|"requests"|"library","text"}]}`, 3 s,
   failures ignored). `ui/livetv/LiveTvStatusNotice.kt` shows the `livetv`
@@ -336,6 +337,7 @@ and has no callers: don't wire it to a button for ordinary users.
 | GET | `/TentacleDiscover/RadarrProfiles` | user |
 | POST | `/TentacleDiscover/ReplaceCopy/{mediaType}/{tmdbId}` | user |
 | GET | `/TentacleDiscover/RequestMode` | user |
+| GET | `/TentacleSubs/Prefs` | user |
 | GET | `/TentacleDiscover/Search` | user |
 | GET | `/TentacleDiscover/Season/{tmdbId}/{seasonNumber}` | user |
 | GET | `/TentacleDiscover/SeasonTvdb/{tvdbId}/{seasonNumber}` | user |

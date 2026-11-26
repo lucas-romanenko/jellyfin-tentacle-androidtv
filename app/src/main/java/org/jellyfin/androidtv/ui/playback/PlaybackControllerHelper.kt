@@ -6,12 +6,15 @@ import androidx.media3.common.C
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentAction
 import org.jellyfin.androidtv.ui.home.mediabar.SponsorBlockApi
 import org.jellyfin.androidtv.ui.livetv.getOrNullUnlessCancelled
 import org.jellyfin.androidtv.ui.playback.segment.MediaSegmentRepository
+import org.jellyfin.androidtv.ui.playback.segment.follow
+import org.jellyfin.androidtv.data.repository.TentacleRepository
 import org.jellyfin.androidtv.ui.playback.segment.sponsorBlockCategories
 import org.jellyfin.androidtv.ui.playback.segment.sponsorBlockSegmentType
 import org.jellyfin.androidtv.ui.playback.segment.sponsorBlockToMediaSegments
@@ -195,13 +198,18 @@ fun PlaybackController.applyMediaSegments(
 	callback: () -> Unit,
 ) {
 	val mediaSegmentRepository by fragment.inject<MediaSegmentRepository>()
+	val tentacleRepository by fragment.inject<TentacleRepository>()
 
 	fragment?.clearSkipOverlay()
 	fragment.lifecycleScope.launch {
+		// The person's Skip intro / Skip credits choice (Tentacle → Subtitles & skipping), asked
+		// alongside the segments so it adds no wait (3 s at most; the device's last one otherwise)
+		val skipChoice = async { runCatching { tentacleRepository.getSkipActions() }.getOrNull() }
 		// A cancelled request (the player closed meanwhile) ends here instead of starting playback
 		val mediaSegments = runCatching {
 			mediaSegmentRepository.getSegmentsForItem(item)
 		}.getOrNullUnlessCancelled().orEmpty()
+		mediaSegmentRepository.follow(skipChoice.await())
 
 		for (mediaSegment in mediaSegments) {
 			val action = mediaSegmentRepository.getMediaSegmentAction(mediaSegment)

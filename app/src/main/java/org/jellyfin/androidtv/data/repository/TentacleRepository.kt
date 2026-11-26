@@ -1419,6 +1419,23 @@ class TentacleRepository(
 			.build()
 	}
 
+	/**
+	 * The person's Skip intro / Skip credits choice from Tentacle (`/TentacleSubs/Prefs`), as this
+	 * app's segment actions; null when it can't say (then the device's own setting stays).
+	 */
+	suspend fun getSkipActions(): Map<org.jellyfin.sdk.model.api.MediaSegmentType, org.jellyfin.androidtv.ui.playback.segment.MediaSegmentAction>? =
+		withContext(Dispatchers.IO) {
+			try {
+				statusClient.newCall(Request.Builder().url(buildUrl("/TentacleSubs/Prefs")).get().build()).execute().use { response ->
+					if (!response.isSuccessful) null
+					else org.jellyfin.androidtv.ui.playback.segment.tentacleSkipActions(response.body?.string())
+				}
+			} catch (e: Exception) {
+				Timber.d(e, "Skip choice unavailable")
+				null
+			}
+		}
+
 	/** What is broken right now, in plain words per area (livetv, requests, library); null if unknown. */
 	suspend fun getFamilyStatus(): FamilyStatus? = withContext(Dispatchers.IO) {
 		try {

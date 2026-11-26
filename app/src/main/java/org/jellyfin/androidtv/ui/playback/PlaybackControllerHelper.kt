@@ -259,6 +259,14 @@ private fun PlaybackController.addSkipAction(mediaSegment: MediaSegmentDto) {
 			// the seek function in the PlaybackController checks this and optionally starts a transcode
 			// at the requested position
 			fragment.lifecycleScope.launch(Dispatchers.Main) {
+				// An intro that starts in the first seconds is reached before ExoPlayer knows the
+				// file is seekable (an MKV played directly): seeking then rebuilds the stream, which
+				// starts over at 0. Wait for it to become seekable, 5 s at most.
+				var waited = 0
+				while (mVideoManager?.isSeekable() == false && waited < 5000) {
+					kotlinx.coroutines.delay(250)
+					waited += 250
+				}
 				seek(mediaSegment.end.inWholeMilliseconds, true)
 			}
 		}
